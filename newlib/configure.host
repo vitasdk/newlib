@@ -397,6 +397,9 @@ case "${host}" in
   arc-*-*)
 	sys_dir=arc
 	;;
+  arm*vita*)
+	sys_dir=vita
+	;;
   arm*-*-*)
 	sys_dir=arm
 	if [ "x${newlib_may_supply_syscalls}" = "xno" ] ; then
@@ -609,6 +612,10 @@ case "${host}" in
 	;;
   arc-*-*)
 	syscall_dir=syscalls
+	;;
+  arm*vita*)
+	syscall_dir=syscalls
+	newlib_cflags="${newlib_cflags} -D__DYNAMIC_REENT__ -DREENTRANT_SYSCALLS_PROVIDED"
 	;;
   arm*-*-pe)
 	syscall_dir=syscalls
