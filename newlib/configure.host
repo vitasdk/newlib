@@ -474,6 +474,9 @@ case "${host}" in
 	sys_dir=amdgcn
 	have_crt0="no"
 	;;
+  arm*vita*)
+	sys_dir=vita
+	;;
   arm*-*-*)
 	newlib_cflags="${newlib_cflags} -D_COMPILING_NEWLIB"
 	sys_dir=arm
@@ -697,6 +700,10 @@ newlib_cflags="${newlib_cflags} -DCLOCK_PROVIDED -DMALLOC_PROVIDED -DEXIT_PROVID
   arc*-*-*)
 	syscall_dir=syscalls
 	default_newlib_io_long_long="yes"
+	;;
+  arm*vita*)
+	syscall_dir=syscalls
+	newlib_cflags="${newlib_cflags} -D__DYNAMIC_REENT__ -DREENTRANT_SYSCALLS_PROVIDED"
 	;;
   arm*-*-pe)
 	syscall_dir=syscalls
