@@ -7,8 +7,10 @@
 #undef __getreent
 #endif
 
+#if 0
 struct _reent *
 _DEFUN_VOID(__getreent)
 {
   return _impure_ptr;
 }
+#endif
