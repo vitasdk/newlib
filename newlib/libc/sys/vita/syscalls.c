@@ -88,7 +88,7 @@ _getpid_r(struct _reent *reent)
 }
 
 int
-_gettimeofday(struct _reent *reent, struct timeval  *ptimeval, void *ptimezone)
+_gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
 	reent->_errno = ENOSYS;
 	return -1;
