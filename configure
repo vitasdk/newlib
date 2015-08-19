@@ -3499,6 +3499,9 @@ case "${target}" in
   alpha*-dec-osf*)
     noconfigdirs="$noconfigdirs target-newlib target-libgloss"
     ;;
+  arm*vita*)
+    noconfigdirs="$noconfigdirs target-libgloss"
+    ;;
   i[3456789]86-*-linux*)
     # This section makes it possible to build newlib natively on linux.
     # If we are using a cross compiler then don't configure newlib.
