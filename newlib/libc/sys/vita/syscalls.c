@@ -41,7 +41,7 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 void
 _exit(int rc)
 {
-	while (1) {}
+	uvl_exit(rc);
 }
 
 int
