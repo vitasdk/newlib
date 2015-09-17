@@ -11,5 +11,6 @@ void _init_vita_newlib(void) {
 
 void _start() {
 	_init_vita_newlib();
+	__libc_init_array();
 	exit(main(1, (const char*[]){"", 0}));
 }
