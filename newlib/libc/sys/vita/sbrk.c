@@ -2,6 +2,7 @@
 #include <reent.h>
 
 int _newlib_heap_memblock;
+extern unsigned int _newlib_heap_size_user __attribute__((weak));
 unsigned _newlib_heap_size;
 char *_newlib_heap_base, *_newlib_heap_end, *_newlib_heap_cur;
 
@@ -29,8 +30,12 @@ void _init_vita_heap(void) {
 	if (sceKernelCreateLwMutex(_newlib_sbrk_mutex, "sbrk mutex", 0, 0, 0) < 0) {
 		goto failure;
 	}
-	// Create a memblock for the heap memory, 32MB
-	_newlib_heap_size = 32 * 1024 * 1024;
+	if (&_newlib_heap_size_user != NULL) {
+		_newlib_heap_size = _newlib_heap_size_user;
+	} else {
+		// Create a memblock for the heap memory, 32MB
+		_newlib_heap_size = 32 * 1024 * 1024;
+	}
 	_newlib_heap_memblock = sceKernelAllocMemBlock("Newlib heap", 0x0c20d060, _newlib_heap_size, 0);
 	if (_newlib_heap_memblock < 0) {
 		goto failure;

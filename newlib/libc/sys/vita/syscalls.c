@@ -21,6 +21,11 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 		return -1;
 	}
 	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
+		ret = uvl_log_write(buf, nbytes);
+		if (ret < 0) {
+			reent->_errno = ret & SCE_ERRNO_MASK;
+			return -1;
+		}
 		reent->_errno = 0;
 		return nbytes;
 	}
@@ -36,7 +41,7 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 void
 _exit(int rc)
 {
-	while (1) {}
+	uvl_exit(rc);
 }
 
 int
