@@ -95,8 +95,13 @@ _getpid_r(struct _reent *reent)
 int
 _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
-	reent->_errno = ENOSYS;
-	return -1;
+	int ret = sceKernelLibcGettimeofday(ptimeval, ptimezone);
+	if (ret < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	reent->_errno = 0;
+	return 0;
 }
 
 int
