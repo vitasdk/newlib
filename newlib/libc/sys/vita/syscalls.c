@@ -179,15 +179,16 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 			found = i;
 			break;
 		}
-	if (!found)
-		goto fail;
+	if (!found) {
+		sceKernelUnlockLwMutex(_newlib_fd_mutex, 1);
+		sceIoClose(ret);
+		reent->_errno = EMFILE;
+		return -1;
+	}
 	fd_to_scefd[found] = ret;
 	sceKernelUnlockLwMutex(_newlib_fd_mutex, 1);
 	reent->_errno = 0;
 	return found;
-fail:
-	reent->_errno = EMFILE;
-	return -1;
 }
 
 _ssize_t
