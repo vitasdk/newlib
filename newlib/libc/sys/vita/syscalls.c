@@ -77,13 +77,6 @@ _fork_r(struct _reent *reent)
 }
 
 int
-_fstat_r(struct _reent *reent, int fd, struct stat *st)
-{
-	reent->_errno = ENOSYS;
-	return -1;
-}
-
-int
 _getpid_r(struct _reent *reent)
 {
 	reent->_errno = 0;
@@ -218,13 +211,6 @@ _readlink_r(struct _reent *reent, const char *path, char *buf, size_t bufsize)
 }
 
 int
-_stat_r(struct _reent *reent, const char *path, struct stat *buf)
-{
-	reent->_errno = EIO;
-	return -1;
-}
-
-int
 _unlink_r(struct _reent *reent, const char * path)
 {
 	int ret;
@@ -259,4 +245,78 @@ _times_r(struct _reent *reent, struct tms *ptms)
 	ptms->tms_cutime = 0;
 	ptms->tms_cstime = 0;
 	return result;
+}
+
+struct SceDateTime {
+	unsigned short year;
+	unsigned short month;
+	unsigned short day;
+	unsigned short hour;
+	unsigned short minute;
+	unsigned short second;
+	unsigned int microsecond;
+};
+
+struct SceIoStat {
+	int st_mode;
+	unsigned int st_attr;
+	long long st_size;
+	struct SceDateTime st_ctime;
+	struct SceDateTime st_atime;
+	struct SceDateTime st_mtime;
+	unsigned st_private[6];
+};
+
+enum {
+	SCE_DIR = 0x1000,
+	SCE_REG = 0x2000,
+	SCE_STATFMT = 0xf000
+};
+
+#define SCE_ISREG(x) (((x) & SCE_STATFMT) == SCE_REG)
+#define SCE_ISDIR(x) (((x) & SCE_STATFMT) == SCE_DIR)
+
+static void
+scestat_to_stat(struct SceIoStat *in, struct stat *out) {
+	memset(out, 0, sizeof(*out));
+	out->st_size = in->st_size;
+	if (SCE_ISREG(in->st_mode))
+		out->st_mode |= _IFREG;
+	if (SCE_ISDIR(in->st_mode))
+		out->st_mode |= _IFDIR;
+	sceRtcGetTime_t(&in->st_atime, &out->st_atime);
+	sceRtcGetTime_t(&in->st_mtime, &out->st_mtime);
+	sceRtcGetTime_t(&in->st_ctime, &out->st_ctime);
+}
+
+int
+_fstat_r(struct _reent *reent, int fd, struct stat *st)
+{
+	struct SceIoStat stat = {0};
+	int ret;
+	if ((unsigned)fd > MAX_OPEN_FILES) {
+		reent->_errno = EINVAL;
+		return -1;
+	}
+	if ((ret = sceIoGetstatByFd(fd_to_scefd[fd], &stat)) < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	scestat_to_stat(&stat, st);
+	reent->_errno = 0;
+	return 0;
+}
+
+int
+_stat_r(struct _reent *reent, const char *path, struct stat *st)
+{
+	struct SceIoStat stat = {0};
+	int ret;
+	if ((ret = sceIoGetstat(path, &stat)) < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	scestat_to_stat(&stat, st);
+	reent->_errno = 0;
+	return 0;
 }
