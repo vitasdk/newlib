@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/times.h>
 #include <sys/unistd.h>
 
 #define SCE_ERRNO_MASK 0xFF
@@ -247,4 +248,15 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 	}
 	reent->_errno = 0;
 	return 0;
+}
+
+clock_t
+_times_r(struct _reent *reent, struct tms *ptms)
+{
+	unsigned result = sceKernelGetProcessTimeLow();
+	ptms->tms_utime = result;
+	ptms->tms_stime = 0;
+	ptms->tms_cutime = 0;
+	ptms->tms_cstime = 0;
+	return result;
 }
