@@ -10,9 +10,9 @@ typedef struct reent_for_thread {
 	struct _reent reent;
 } reent_for_thread;
 
-reent_for_thread reent_list[MAX_THREADS];
-int _newlib_reent_mutex;
-struct _reent _newlib_global_reent;
+static reent_for_thread reent_list[MAX_THREADS];
+static int _newlib_reent_mutex;
+static struct _reent _newlib_global_reent;
 
 int sceKernelExitThread(int);
 int sceKernelExitDeleteThread(int);
