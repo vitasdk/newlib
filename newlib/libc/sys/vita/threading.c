@@ -100,6 +100,6 @@ void _init_vita_reent(void) {
 	_newlib_reent_mutex = sceKernelCreateMutex("reent list access mutex", 0, 0, 0);
 	reent_list[0].thread_id = sceKernelGetThreadId();
 	_REENT_INIT_PTR(&reent_list[0].reent);
-	*(struct _reent **)(sceKernelGetTLSAddr(0x88)) = &reent_list[0].reent;
+	*(struct _reent **)(TLS_REENT_PTR) = &reent_list[0].reent;
 	_REENT_INIT_PTR(&_newlib_global_reent);
 }
