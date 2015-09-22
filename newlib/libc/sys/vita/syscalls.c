@@ -22,14 +22,11 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 	}
 	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
 		ret = uvl_log_write(buf, nbytes);
-		if (ret < 0) {
-			reent->_errno = ret & SCE_ERRNO_MASK;
-			return -1;
-		}
-		reent->_errno = 0;
-		return nbytes;
+		if (ret == 0)
+			ret = nbytes;
+	} else {
+		ret = sceIoWrite(fd_to_scefd[fd], buf, nbytes);
 	}
-	ret = sceIoWrite(fd_to_scefd[fd], buf, nbytes);
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
