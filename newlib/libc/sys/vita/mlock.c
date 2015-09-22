@@ -1,4 +1,4 @@
-char _newlib_malloc_mutex[32] __attribute__ ((aligned (8)));
+static char _newlib_malloc_mutex[32] __attribute__ ((aligned (8)));
 
 void __malloc_lock(struct _reent *r) {
 	sceKernelLockLwMutex(_newlib_malloc_mutex, 1, 0);

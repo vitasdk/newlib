@@ -9,7 +9,7 @@
 #define SCE_ERRNO_MASK 0xFF
 #define MAX_OPEN_FILES 1024
 
-int fd_to_scefd[MAX_OPEN_FILES];
+static int fd_to_scefd[MAX_OPEN_FILES];
 char _newlib_fd_mutex[32] __attribute__ ((aligned (8)));
 
 _ssize_t
