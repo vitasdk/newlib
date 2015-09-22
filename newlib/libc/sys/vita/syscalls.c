@@ -235,3 +235,16 @@ _unlink_r(struct _reent *reent, const char * path)
 	reent->_errno = 0;
 	return 0;
 }
+
+int
+_rename_r(struct _reent *reent, const char *old, const char *new)
+{
+	int ret;
+	ret = sceIoRename(old, new);
+	if (ret < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	reent->_errno = 0;
+	return 0;
+}
