@@ -226,6 +226,12 @@ _stat_r(struct _reent *reent, const char *path, struct stat *buf)
 int
 _unlink_r(struct _reent *reent, const char * path)
 {
-	reent->_errno = EIO;
-	return (-1);
+	int ret;
+	ret = sceIoRemove(path);
+	if (ret < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	reent->_errno = 0;
+	return 0;
 }
