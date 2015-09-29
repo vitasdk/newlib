@@ -4,6 +4,33 @@
 
 <sect1 id="ov-new"><title>What's new and what changed in Cygwin</title>
 
+<sect2 id="ov-new2.3"><title>What's new and what changed in 2.3</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+posix_madvise(POSIX_MADV_WILLNEED) now utilizes OS functionality available
+starting with Windows 8/Server 2012.
+</para><para>
+posix_madvise(POSIX_MADV_DONTNEED) now utilizes OS functionality available
+starting with Windows 8.1/Server 2012R2.
+</para></listitem>
+
+<listitem><para>
+sysconf() now supports returning CPU cache information:
+  <screen>
+  _SC_LEVEL1_ICACHE_SIZE, _SC_LEVEL1_ICACHE_ASSOC, _SC_LEVEL1_ICACHE_LINESIZE,
+  _SC_LEVEL1_DCACHE_SIZE, _SC_LEVEL1_DCACHE_ASSOC, _SC_LEVEL1_DCACHE_LINESIZE,
+  _SC_LEVEL2_CACHE_SIZE, _SC_LEVEL2_CACHE_ASSOC, _SC_LEVEL2_CACHE_LINESIZE,
+  _SC_LEVEL3_CACHE_SIZE, _SC_LEVEL3_CACHE_ASSOC, _SC_LEVEL3_CACHE_LINESIZE,
+  _SC_LEVEL4_CACHE_SIZE, _SC_LEVEL4_CACHE_ASSOC, _SC_LEVEL4_CACHE_LINESIZE
+  </screen>
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
 <sect2 id="ov-new2.2"><title>What's new and what changed in 2.2</title>
 
 <itemizedlist mark="bullet">
