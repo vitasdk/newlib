@@ -9,6 +9,10 @@ void _init_vita_newlib(void) {
 	sceKernelCreateLwMutex(_newlib_fd_mutex, "fd conversion table mutex", 0, 0, 0);
 }
 
+void _free_vita_newlib(void) {
+	_free_vita_heap();
+}
+
 void _start() {
 	_init_vita_newlib();
 	__libc_init_array();
