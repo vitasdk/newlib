@@ -183,9 +183,9 @@ int _EXFUN(pthread_sigmask, (int how, const sigset_t *set, sigset_t *oset));
 int _EXFUN(_kill, (pid_t, int));
 #endif /* _COMPILING_NEWLIB */
 #endif /* __CYGWIN__ || __rtems__ */
-#if defined(__CYGWIN__) || defined(__rtems__) || defined(__SPU__)
+
 int _EXFUN(kill, (pid_t, int));
-#endif /* __CYGWIN__ || __rtems__ || __SPU__ */
+
 #if defined(__CYGWIN__) || defined(__rtems__)
 int _EXFUN(killpg, (pid_t, int));
 int _EXFUN(sigaction, (int, const struct sigaction *, struct sigaction *));
@@ -350,6 +350,12 @@ int _EXFUN(sigqueue, (pid_t pid, int signo, const union sigval value));
 
 #ifdef __cplusplus
 }
+#endif
+
+#if defined(__CYGWIN__)
+#if __POSIX_VISIBLE >= 200809
+#include <sys/ucontext.h>
+#endif
 #endif
 
 #ifndef _SIGNAL_H_

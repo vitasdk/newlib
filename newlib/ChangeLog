@@ -1,3 +1,51 @@
+2015-09-22  James Bowman  <james.bowman@ftdichip.com>
+
+	* configure.host (ft32): minimise newlib code size
+
+2015-09-04  James Bowman  <james.bowman@ftdichip.com>
+
+	* configure.host: Add ft32 support.
+	* libc/include/machine/ieeefp.h: Ditto.
+	* libc/include/machine/setjmp.h: Ditto.
+	* libc/machine/configure.in: Ditto.
+	* libc/machine/configure: Ditto.
+	* libc/machine/ft32/Makefile.am: New file.
+	* libc/machine/ft32/Makefile.in: Ditto.
+	* libc/machine/ft32/aclocal.m4: Ditto.
+	* libc/machine/ft32/configure.in: Ditto.
+	* libc/machine/ft32/configure: Ditto.
+	* libc/machine/ft32/memcpy.S: Ditto.
+	* libc/machine/ft32/memset.S: Ditto.
+	* libc/machine/ft32/setjmp.S: Ditto.
+	* libc/machine/ft32/stpcmp.S: Ditto.
+	* libc/machine/ft32/strcmp.S: Ditto.
+	* libc/machine/ft32/strcpy.S: Ditto.
+	* libc/machine/ft32/strlen.S: Ditto.
+
+2015-09-03  Hans-Peter Nilsson  <hp@axis.com>
+
+	* libc/machine/cris/sys/signal.h (kill): Declare.
+
+2015-08-29  Corinna Vinschen  <corinna@vinschen.de>
+
+	* include/sys/unistd.h (_SC_LEVEL*): Add cache-related variables as
+	on Linux.
+
+2015-08-27  Markus Eisenmann  <meisenmann.lba@fh-salzburg.ac.at>
+
+	* libc/machine/arm/strlen-armv7.S: Fix prepocessor check to avoid
+	double definition of strlen.
+
+2015-08-27  Andre Vieira  <andre.simoesdiasvieira@arm.com>
+
+	* libc/include/sys/_intsup.h: Defined new __INTxx, __FASTxx and
+	__LEASTxx macro's to hold information regarding the respective types
+	print and scan formats.
+	* libc/include/inttypes.h: Defined LEAST and FAST specific PRI and SCN
+	macro's as these are not always the same as the INT variants. Used the
+	new __INTxx, __FASTxx and __LEASTxx macro's in their corresponding PRI
+	and SCN macros.
+
 2015-08-07  Stefan Wallentowitz  <stefan.wallentowitz@tum.de>
 
 	* libc/sys/or1k/mlock.c: Fix exception enable saving

@@ -1,3 +1,173 @@
+2015-09-08  Corinna Vinschen  <corinna@vinschen.de>
+
+	* flock.cc (lockf_t::create_lock_obj_attr): Add buffer parameter.
+	Call _everyone_sd with buffer argument from caller rather than
+	everyone_sd with locally allocated stack buffer.
+	(lockf_t::create_lock_obj): Call create_lock_obj_attr only once
+	outside the loop and with additional buffer argument.
+	(lockf_t::open_lock_obj): Call create_lock_obj_attr with additional
+	buffer argument.
+
+2015-08-29  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_proc.cc (format_proc_cpuinfo): Fetch cache information
+	from new cache functions in sysconf.cc, get_cpu_cache_intel and
+	get_cpu_cache_amd.
+	* sysconf.cc (__nt_query_system): New local helper.
+	(get_nproc_values): Utilize __nt_query_system on pre-Windows 7 systems.
+	Use GetLogicalProcessorInformationEx otherwise to handle more than
+	64 CPUs.  Only handle _SC_NPROCESSORS_CONF and _SC_NPROCESSORS_ONLN.
+	(get_phys_pages): New helper to handle _SC_PHYS_PAGES.
+	(cpuid2_cache_descriptor): New array to map Intel CPUID 2 descriptor
+	values to cache type, cache size, associativity and linesize.
+	(cpuid2_cache_desc_compar): Comparision function for bsearch over
+	cpuid2_cache_descriptor.
+	(get_cpu_cache_intel_cpuid2): New function to fetch cache info from
+	Intel CPUID 2.
+	(get_cpu_cache_intel_cpuid4): Ditto from Intel CPUID 4.
+	(get_cpu_cache_intel): New function as CPU-specific entry point.
+	(assoc): New array to map associativity values from AMD CPUID
+	0x80000006.
+	(get_cpu_cache_amd): New function to fetch cache info from AMD CPUIDs
+	0x80000005 and 0x80000006.
+	(get_cpu_cache): New function to fetch cache info.
+	(sca): Call get_phys_pages if _SC_PHYS_PAGES is requested.  Call
+	get_cpu_cache for new _SC_* cache requests.
+	(SC_MAX): Set to _SC_LEVEL4_CACHE_LINESIZE.
+	(get_phys_pages(void)): Call get_phys_pages(int).
+	* include/cygwin/version.h (CYGWIN_VERSION_API_MINOR): Bump.
+
+2015-08-27  Corinna Vinschen  <corinna@vinschen.de>
+
+	* autoload.cc (DiscardVirtualMemory): Import.
+	(PrefetchVirtualMemory): Import.
+	* mmap.cc (posix_madvise): Actually implement POSIX_MADV_WILLNEED
+	utilizing PrefetchVirtualMemory and POSIX_MADV_DONTNEED utilizing
+	DiscardVirtualMemory on systems supporting them.
+	* wincap.h (wincaps::has_broken_prefetchvm): New element.
+	* wincap.cc: Implement above element throughout.
+	(wincapc::init): Make sure has_broken_prefetchvm is only true on
+	W10 under WOW64.
+	* include/cygwin/version.h (CYGWIN_VERSION_DLL_MAJOR): Bump to 2003.
+	(CYGWIN_VERSION_API_MINOR): Reset to 0.
+
+2015-08-26  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_proc.cc (format_proc_cpuinfo): Only fetch group relations,
+	we don't need anything else.
+
+2015-08-25  Corinna Vinschen  <corinna@vinschen.de>
+
+	* winsup.h (_WIN32_WINNT): Set to 0x0a00 for Windows 10.
+	(WINVER): Ditto.  Remove outdated comment.
+
+2015-08-25  Corinna Vinschen  <corinna@vinschen.de>
+
+	* autoload.cc (std_dll_init): Revert using full paths to system DLLs.
+
+2015-08-25  Corinna Vinschen  <corinna@vinschen.de>
+
+	* autoload.cc (noload): i686 only: Save and restore $edx when calling
+	SetLastError to avoid clobbering return address stating with Windows 7.
+
+2015-08-25  Corinna Vinschen  <corinna@vinschen.de>
+
+	* mmap.cc: Fix a few comments.
+
+2015-08-24  Corinna Vinschen  <corinna@vinschen.de>
+
+	* ntdll.h (PROCESSINFOCLASS): Define ProcessDebugFlags.
+	* sigproc.cc (child_info::child_info): Only propagate _CI_STRACED to
+	child if strace is actually tracing child processes.
+
+2015-08-24  Corinna Vinschen  <corinna@vinschen.de>
+
+	* include/cygwin/version.h (CYGWIN_VERSION_DLL_MINOR): Bump to 2.
+
+2015-08-18  Corinna Vinschen  <corinna@vinschen.de>
+
+	* netdb.cc (parse_services_line): Convert port number to network byte
+	order.
+
+2015-08-18  Corinna Vinschen  <corinna@vinschen.de>
+
+	* exceptions.cc: Drop including ucontext.h.
+
+2015-08-17  Corinna Vinschen  <corinna@vinschen.de>
+
+	* grp.cc (internal_getgrfull): Drop asking caches.  Explain why.
+	(internal_getgroups): In case we're not utilizing the Windows account
+	DBs, don't call LsaLookupSids but iterate over the group SIDs in the
+	token and call internal_getgrsid for each of them.  Explain why.
+
+2015-08-17  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_disk_file.cc (fhandler_base::fstat_by_nfs_ea): Rearrange
+	to fall back to myself uid/gid in case we don't utilize Windows
+	account DBs, just as prior to 1.7.34.
+	* sec_helper.cc (cygpsid::get_id): Disable Samba user/group mapping per
+	RFC2307 if we're not utilizing Windows account DBs.
+	* security.cc (convert_samba_sd): Revert previous patch.
+
+2015-08-17  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_proc.cc (format_proc_cpuinfo): Handle AMDs providing
+	extended topology info in CPUID leaf 0x8000001e.  Fix handling of
+	AMD CPUs providing extended legacy core info in CPUID leaf 0x80000008.
+
+2015-08-17  Orgad Shaneh  <orgads@gmail.com>
+
+	* mkglobals_h: Handle CRLF earlier.
+
+2015-08-17  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_proc.cc (format_proc_cpuinfo): Print cpb and eff_freq_ro
+	power management flags.
+
+2015-08-15  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler.cc (fhandler_base_overlapped::raw_write): When performing
+	nonblocking I/O, copy user space data into own buffer.  Add longish
+	comment to explain why.
+	* fhandler.h (fhandler_base_overlapped::atomic_write_buf): New member.
+	(fhandler_base_overlapped::fhandler_base_overlapped): Initialize
+	atomic_write_buf.
+	(fhandler_base_overlapped::fhandler_base_overlapped): New destructor,
+	free'ing atomic_write_buf.
+	(fhandler_base_overlapped::copyto): Set atomic_write_buf to NULL in
+	copied fhandler.
+
+2015-08-14  Corinna Vinschen  <corinna@vinschen.de>
+
+	* security.cc (convert_samba_sd): Fix copy/paste error in previous
+	patch.
+
+2015-08-14  Corinna Vinschen  <corinna@vinschen.de>
+
+	* fhandler_disk_file.cc (fhandler_base::fstat_by_nfs_ea): Only try
+	to map user and group info per RFC2307 if account info is fetched
+	from Windows account DB.
+	* security.cc (convert_samba_sd): Ditto.
+
+2015-08-14  Corinna Vinschen  <corinna@vinschen.de>
+
+	* security,cc (get_attribute_from_acl): Merge all group perms into
+	user perms if user is member of group.
+
+2015-08-13  Corinna Vinschen  <corinna@vinschen.de>
+
+	* autoload.cc (GetLogicalProcessorInformationEx): Import.
+	(SetThreadGroupAffinity): Import.
+	* fhandler_proc.cc (add_size): New macro.
+	(get_msb): New inline function.
+	(mask_bits): Ditto.
+	(format_proc_cpuinfo): Drop handling of old CPUs.  Check if we're
+	running on a OS version supporting porcessor groups.  If so, use
+	SetThreadGroupAffinity to set thread affinity.  Improve cache info
+	to include 3rd level cache on Intel CPUs.  Improve multi core info.
+	* wincap.h (wincaps::has_processor_groups): New element.
+	* wincap.cc: Implement above element throughout.
+
 2015-08-10  Corinna Vinschen  <corinna@vinschen.de>
 
 	*  miscfuncs.cc: Fix comment preceeding x86_64 memset and friends.

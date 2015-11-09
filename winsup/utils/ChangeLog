@@ -1,3 +1,22 @@
+2015-08-30  Corinna Vinschen  <corinna@vinschen.de>
+
+	* cygcheck.cc (dump_sysinfo): Fix missing commas in products array.
+
+2015-08-30  Corinna Vinschen  <corinna@vinschen.de>
+
+	* cygcheck.cc (load_cygwin): Only unload cygwin DLL if not running
+	under a debugger.  Explain why.
+
+2015-08-30  Corinna Vinschen  <corinna@vinschen.de>
+
+	* cygcheck.cc (dump_sysinfo): Correctly handle Windows 10/Server 2016.
+	Add missing product types.
+
+2015-08-30  Corinna Vinschen  <corinna@vinschen.de>
+
+	* cygcheck.cc (track_down): Skip error output for "api-ms-win-"
+	downlevel DLLs.
+
 2015-08-03  Corinna Vinschen  <corinna@vinschen.de>
 
 	* strace.cc (main2): Don't call setvbuf on NULL descriptor.

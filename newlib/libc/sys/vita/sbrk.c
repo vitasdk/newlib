@@ -52,3 +52,12 @@ failure:
 	_newlib_heap_base = 0;
 	_newlib_heap_cur = 0;
 }
+
+void _free_vita_heap(void) {
+	// Free the heap memblock to avoid memory leakage.
+	sceKernelFreeMemBlock(_newlib_heap_memblock);
+
+	_newlib_heap_memblock = 0;
+	_newlib_heap_base = 0;
+	_newlib_heap_cur = 0;
+}
