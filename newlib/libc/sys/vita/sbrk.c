@@ -54,6 +54,9 @@ failure:
 }
 
 void _free_vita_heap(void) {
+	// Destroy the sbrk mutex
+	sceKernelDeleteLwMutex(_newlib_sbrk_mutex);
+
 	// Free the heap memblock to avoid memory leakage.
 	sceKernelFreeMemBlock(_newlib_heap_memblock);
 
