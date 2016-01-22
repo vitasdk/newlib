@@ -11,3 +11,7 @@ void __malloc_unlock(struct _reent *r) {
 void _init_vita_malloc(void) {
 	sceKernelCreateLwMutex(_newlib_malloc_mutex, "malloc mutex", 2, 0, 0);
 }
+
+void _free_vita_malloc(void) {
+	sceKernelDeleteLwMutex(_newlib_malloc_mutex);
+}
