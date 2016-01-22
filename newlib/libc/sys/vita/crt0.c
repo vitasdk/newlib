@@ -10,6 +10,8 @@ void _init_vita_newlib(void) {
 }
 
 void _free_vita_newlib(void) {
+	_free_vita_malloc();
+	_free_vita_reent();
 	_free_vita_heap();
 }
 

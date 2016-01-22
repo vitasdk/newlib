@@ -103,3 +103,7 @@ void _init_vita_reent(void) {
 	*(struct _reent **)(TLS_REENT_PTR) = &reent_list[0].reent;
 	_REENT_INIT_PTR(&_newlib_global_reent);
 }
+
+void _free_vita_reent(void) {
+	sceKernelDeleteMutex(_newlib_reent_mutex);
+}
