@@ -13,6 +13,7 @@ void _free_vita_newlib(void) {
 	_free_vita_malloc();
 	_free_vita_reent();
 	_free_vita_heap();
+	sceKernelDeleteLwMutex(_newlib_fd_mutex);
 }
 
 void _start() {
