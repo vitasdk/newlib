@@ -10,7 +10,7 @@
 #define SCE_ERRNO_MASK 0xFF
 #define MAX_OPEN_FILES 1024
 
-static int fd_to_scefd[MAX_OPEN_FILES];
+int fd_to_scefd[MAX_OPEN_FILES];
 char _newlib_fd_mutex[32] __attribute__ ((aligned (8)));
 
 _ssize_t
@@ -21,9 +21,9 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 		reent->_errno = EINVAL;
 		return -1;
 	}
-	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
-		if (ret == 0)
-			ret = nbytes;
+	if ((fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) 
+			&& fd_to_scefd[fd] == 0) {
+		ret = nbytes;
 	} else {
 		ret = sceIoWrite(fd_to_scefd[fd], buf, nbytes);
 	}
@@ -190,8 +190,10 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 		return 01;
 	}
 	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
-		reent->_errno = 0;
-		return len;
+		if (fd_to_scefd[fd] == 0) {
+			reent->_errno = 0;
+			return len;
+		}
 	}
 	ret = sceIoRead(fd_to_scefd[fd], ptr, len);
 	if (ret < 0) {
