@@ -157,7 +157,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret, i, found = 0;
 	flags = _fcntl2sony(flags);
-	ret = sceIoOpen(file, flags, 0600);
+	ret = sceIoOpen(file, flags, 0666);
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
