@@ -192,7 +192,7 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
 		if (fd_to_scefd[fd] == 0) {
 			reent->_errno = 0;
-			return len;
+			return 0;
 		}
 	}
 	ret = sceIoRead(fd_to_scefd[fd], ptr, len);
