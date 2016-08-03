@@ -39,6 +39,7 @@ void
 _exit(int rc)
 {
 	_free_vita_newlib();
+	sceKernelExitProcess(rc);
 }
 
 int
