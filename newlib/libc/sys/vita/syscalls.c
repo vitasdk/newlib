@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <reent.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -105,8 +106,21 @@ _isatty_r(struct _reent *reent, int file)
 int
 _kill_r(struct _reent *reent, int pid, int sig)
 {
-	reent->_errno = ENOSYS;
-	return -1;
+	if (pid != sceKernelGetProcessId()) {
+		reent->_errno = EPERM;
+		return -1;
+	}
+	switch (sig) {
+	default:
+		__builtin_trap();
+	case SIGINT:
+	case SIGTERM:
+		sceKernelExitProcess(-sig);
+		break;
+	case SIGCHLD:
+	case SIGCONT:
+		return 0;
+	}
 }
 
 int
