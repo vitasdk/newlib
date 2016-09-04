@@ -8,30 +8,52 @@
 #include <sys/times.h>
 #include <sys/unistd.h>
 
-#define SCE_ERRNO_MASK 0xFF
-#define MAX_OPEN_FILES 1024
+#include <psp2/io/fcntl.h>
+#include <psp2/io/dirent.h>
+#include <psp2/io/stat.h>
+#include <psp2/rtc.h>
 
-int fd_to_scefd[MAX_OPEN_FILES];
-char _newlib_fd_mutex[32] __attribute__ ((aligned (8)));
+#include <psp2/kernel/processmgr.h>
+
+#include <string.h>
+
+#include "vitadescriptor.h"
+#include "vitaglue.h"
+
+
+// TODO: add to SDK
+int sceKernelLibcGettimeofday(struct timeval *ptimeval, void *ptimezone);
+
+#define SCE_ERRNO_MASK 0xFF
 
 _ssize_t
 _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 {
 	int ret;
-	if ((unsigned)fd > MAX_OPEN_FILES) {
-		reent->_errno = EINVAL;
+
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
 		return -1;
 	}
-	if ((fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) 
-			&& fd_to_scefd[fd] == 0) {
-		ret = nbytes;
-	} else {
-		ret = sceIoWrite(fd_to_scefd[fd], buf, nbytes);
+
+	switch (__vita_fdmap[fd]->type)
+	{
+	case VITA_DESCRIPTOR_FILE:
+	case VITA_DESCRIPTOR_TTY:
+		ret = sceIoWrite(__vita_fdmap[fd]->sce_uid, buf, nbytes);
+		break;
+	case VITA_DESCRIPTOR_SOCKET:
+		if (__vita_glue_socket_send)
+			ret = __vita_glue_socket_send(fd, buf, nbytes, 0);
+		break;
 	}
+
 	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+		if (ret != -1)
+			reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
 	}
+
 	reent->_errno = 0;
 	return ret;
 }
@@ -41,22 +63,45 @@ _exit(int rc)
 {
 	_free_vita_newlib();
 	sceKernelExitProcess(rc);
+	while (1);
 }
 
 int
 _close_r(struct _reent *reent, int fd)
 {
-	if ((unsigned)fd > MAX_OPEN_FILES) {
-		reent->_errno = EINVAL;
+	int ret = 0;
+
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
 		return -1;
 	}
-	reent->_errno = sceIoClose(fd_to_scefd[fd]) & SCE_ERRNO_MASK;
-	if (reent->_errno == 0) {
-		sceKernelLockLwMutex(_newlib_fd_mutex, 1, 0);
-		fd_to_scefd[fd] = 0;
-		sceKernelUnlockLwMutex(_newlib_fd_mutex, 1);
+
+	switch (__vita_fdmap[fd]->type)
+	{
+	case VITA_DESCRIPTOR_FILE:
+	case VITA_DESCRIPTOR_TTY:
+	{
+		int sce_uid = __vita_fdmap[fd]->sce_uid;
+		int ref_count = __vita_release_descriptor(fd);
+
+		if (ref_count == 0)
+			ret = sceIoClose(fd);
+		break;
 	}
-	return 0;
+	case VITA_DESCRIPTOR_SOCKET:
+		if (__vita_glue_socket_close)
+			ret = __vita_glue_socket_close(fd);
+		break;
+	}
+
+	if (ret < 0) {
+		if (ret != -1)
+			reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+
+	reent->_errno = 0;
+	return ret;
 }
 
 char *__env[1] = { 0 };
@@ -97,10 +142,14 @@ _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 }
 
 int
-_isatty_r(struct _reent *reent, int file)
+_isatty_r(struct _reent *reent, int fd)
 {
-	reent->_errno = ENOSYS;
-	return 0;
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
+		return 0;
+	}
+
+	return (__vita_fdmap[fd]->type == VITA_DESCRIPTOR_TTY);
 }
 
 int
@@ -134,36 +183,49 @@ _off_t
 _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 {
 	int ret;
-	if ((unsigned)fd > MAX_OPEN_FILES || fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
-		reent->_errno = EINVAL;
+
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
 		return -1;
 	}
-	ret = sceIoLseek32(fd_to_scefd[fd], ptr, dir);
+
+	switch (__vita_fdmap[fd]->type)
+	{
+	case VITA_DESCRIPTOR_FILE:
+		ret = sceIoLseek32(__vita_fdmap[fd]->sce_uid, ptr, dir);
+		break;
+	case VITA_DESCRIPTOR_TTY:
+	case VITA_DESCRIPTOR_SOCKET:
+		ret = EBADF;
+		break;
+	}
+
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
 	}
+
 	return ret;
 }
 
 int _fcntl2sony(int flags) {
 	int out = 0;
 	if (flags & O_RDWR)
-		out |= 3;
+		out |= SCE_O_RDWR;
 	else if (flags & O_WRONLY)
-		out |= 2;
+		out |= SCE_O_WRONLY;
 	else
-		out |= 1;
+		out |= SCE_O_RDONLY;
 	if (flags & O_NONBLOCK)
-		out |= 4;
+		out |= SCE_O_NBLOCK;
 	if (flags & O_APPEND)
-		out |= 0x100;
+		out |= SCE_O_APPEND;
 	if (flags & O_CREAT)
-		out |= 0x200;
+		out |= SCE_O_CREAT;
 	if (flags & O_TRUNC)
-		out |= 0x400;
+		out |= SCE_O_TRUNC;
 	if (flags & O_EXCL)
-		out |= 0x800;
+		out |= SCE_O_EXCL;
 	return out;
 }
 
@@ -172,26 +234,25 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret, i, found = 0;
 	flags = _fcntl2sony(flags);
+
 	ret = sceIoOpen(file, flags, 0666);
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
 	}
-	sceKernelLockLwMutex(_newlib_fd_mutex, 1, 0);
-	// skip stdin, stdout, stderr
-	for (i = 3; i < MAX_OPEN_FILES; ++i)
-		if (fd_to_scefd[i] == 0) {
-			found = i;
-			break;
-		}
-	if (!found) {
-		sceKernelUnlockLwMutex(_newlib_fd_mutex, 1);
+
+	int fd = __vita_acquire_descriptor();
+
+	if (fd < 0)
+	{
 		sceIoClose(ret);
 		reent->_errno = EMFILE;
 		return -1;
 	}
-	fd_to_scefd[found] = ret;
-	sceKernelUnlockLwMutex(_newlib_fd_mutex, 1);
+
+	__vita_fdmap[fd]->sce_uid = ret;
+	__vita_fdmap[fd]->type = VITA_DESCRIPTOR_FILE;
+
 	reent->_errno = 0;
 	return found;
 }
@@ -200,21 +261,30 @@ _ssize_t
 _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 {
 	int ret;
-	if ((unsigned)fd > MAX_OPEN_FILES) {
-		reent->_errno = EINVAL;
-		return 01;
-	}
-	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
-		if (fd_to_scefd[fd] == 0) {
-			reent->_errno = 0;
-			return 0;
-		}
-	}
-	ret = sceIoRead(fd_to_scefd[fd], ptr, len);
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
 		return -1;
 	}
+
+	switch (__vita_fdmap[fd]->type)
+	{
+	case VITA_DESCRIPTOR_TTY:
+	case VITA_DESCRIPTOR_FILE:
+		ret = sceIoRead(__vita_fdmap[fd]->sce_uid, ptr, len);
+		break;
+	case VITA_DESCRIPTOR_SOCKET:
+		if (__vita_glue_socket_recv)
+			ret = __vita_glue_socket_recv(fd, ptr, len, 0);
+		break;
+	}
+
+	if (ret < 0) {
+		if (ret != -1)
+			reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+
 	reent->_errno = 0;
 	return ret;
 }
@@ -263,42 +333,13 @@ _times_r(struct _reent *reent, struct tms *ptms)
 	return result;
 }
 
-struct SceDateTime {
-	unsigned short year;
-	unsigned short month;
-	unsigned short day;
-	unsigned short hour;
-	unsigned short minute;
-	unsigned short second;
-	unsigned int microsecond;
-};
-
-struct SceIoStat {
-	int st_mode;
-	unsigned int st_attr;
-	long long st_size;
-	struct SceDateTime st_ctime;
-	struct SceDateTime st_atime;
-	struct SceDateTime st_mtime;
-	unsigned st_private[6];
-};
-
-enum {
-	SCE_DIR = 0x1000,
-	SCE_REG = 0x2000,
-	SCE_STATFMT = 0xf000
-};
-
-#define SCE_ISREG(x) (((x) & SCE_STATFMT) == SCE_REG)
-#define SCE_ISDIR(x) (((x) & SCE_STATFMT) == SCE_DIR)
-
 static void
 scestat_to_stat(struct SceIoStat *in, struct stat *out) {
 	memset(out, 0, sizeof(*out));
 	out->st_size = in->st_size;
-	if (SCE_ISREG(in->st_mode))
+	if (SCE_S_ISREG(in->st_mode))
 		out->st_mode |= _IFREG;
-	if (SCE_ISDIR(in->st_mode))
+	if (SCE_S_ISDIR(in->st_mode))
 		out->st_mode |= _IFDIR;
 	sceRtcGetTime_t(&in->st_atime, &out->st_atime);
 	sceRtcGetTime_t(&in->st_mtime, &out->st_mtime);
@@ -310,14 +351,28 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 {
 	struct SceIoStat stat = {0};
 	int ret;
-	if ((unsigned)fd > MAX_OPEN_FILES) {
-		reent->_errno = EINVAL;
+
+	if (!is_fd_valid(fd)) {
+		reent->_errno = EBADF;
 		return -1;
 	}
-	if ((ret = sceIoGetstatByFd(fd_to_scefd[fd], &stat)) < 0) {
+
+	switch (__vita_fdmap[fd]->type)
+	{
+	case VITA_DESCRIPTOR_TTY:
+	case VITA_DESCRIPTOR_FILE:
+		ret = sceIoGetstatByFd(__vita_fdmap[fd]->sce_uid, &stat);
+		break;
+	case VITA_DESCRIPTOR_SOCKET:
+		ret = EBADF;
+		break;
+	}
+
+	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
 	}
+
 	scestat_to_stat(&stat, st);
 	reent->_errno = 0;
 	return 0;
