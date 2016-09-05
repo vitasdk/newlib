@@ -31,22 +31,26 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 {
 	int ret;
 
-	if (!is_fd_valid(fd)) {
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
 		reent->_errno = EBADF;
 		return -1;
 	}
 
-	switch (__vita_fdmap[fd]->type)
+	switch (fdmap->type)
 	{
 	case VITA_DESCRIPTOR_FILE:
 	case VITA_DESCRIPTOR_TTY:
-		ret = sceIoWrite(__vita_fdmap[fd]->sce_uid, buf, nbytes);
+		ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
 		if (__vita_glue_socket_send)
-			ret = __vita_glue_socket_send(fd, buf, nbytes, 0);
+			ret = __vita_glue_socket_send(fdmap->sce_uid, buf, nbytes, 0);
 		break;
 	}
+
+	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
 		if (ret != -1)
@@ -69,39 +73,16 @@ _exit(int rc)
 int
 _close_r(struct _reent *reent, int fd)
 {
-	int ret = 0;
+	int res = __vita_release_descriptor(fd);
 
-	if (!is_fd_valid(fd)) {
-		reent->_errno = EBADF;
-		return -1;
-	}
-
-	switch (__vita_fdmap[fd]->type)
+	if (res < 0)
 	{
-	case VITA_DESCRIPTOR_FILE:
-	case VITA_DESCRIPTOR_TTY:
-	{
-		int sce_uid = __vita_fdmap[fd]->sce_uid;
-		int ref_count = __vita_release_descriptor(fd);
-
-		if (ref_count == 0)
-			ret = sceIoClose(fd);
-		break;
-	}
-	case VITA_DESCRIPTOR_SOCKET:
-		if (__vita_glue_socket_close)
-			ret = __vita_glue_socket_close(fd);
-		break;
-	}
-
-	if (ret < 0) {
-		if (ret != -1)
-			reent->_errno = ret & SCE_ERRNO_MASK;
+		reent->_errno = -res;
 		return -1;
 	}
 
 	reent->_errno = 0;
-	return ret;
+	return 0;
 }
 
 char *__env[1] = { 0 };
@@ -144,12 +125,17 @@ _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 int
 _isatty_r(struct _reent *reent, int fd)
 {
-	if (!is_fd_valid(fd)) {
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
 		reent->_errno = EBADF;
 		return 0;
 	}
 
-	return (__vita_fdmap[fd]->type == VITA_DESCRIPTOR_TTY);
+	int istty = fdmap->type == VITA_DESCRIPTOR_TTY;
+
+	__vita_fd_drop(fdmap);
+	return istty;
 }
 
 int
@@ -183,22 +169,20 @@ _off_t
 _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 {
 	int ret;
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
-	if (!is_fd_valid(fd)) {
-		reent->_errno = EBADF;
-		return -1;
-	}
-
-	switch (__vita_fdmap[fd]->type)
+	switch (fdmap->type)
 	{
 	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoLseek32(__vita_fdmap[fd]->sce_uid, ptr, dir);
+		ret = sceIoLseek32(fdmap->sce_uid, ptr, dir);
 		break;
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_SOCKET:
 		ret = EBADF;
 		break;
 	}
+
+	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
@@ -232,7 +216,7 @@ int _fcntl2sony(int flags) {
 int
 _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
-	int ret, i, found = 0;
+	int ret;
 	flags = _fcntl2sony(flags);
 
 	ret = sceIoOpen(file, flags, 0666);
@@ -254,7 +238,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	__vita_fdmap[fd]->type = VITA_DESCRIPTOR_FILE;
 
 	reent->_errno = 0;
-	return found;
+	return fd;
 }
 
 _ssize_t
@@ -262,22 +246,26 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 {
 	int ret;
 
-	if (!is_fd_valid(fd)) {
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
 		reent->_errno = EBADF;
 		return -1;
 	}
 
-	switch (__vita_fdmap[fd]->type)
+	switch (fdmap->type)
 	{
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoRead(__vita_fdmap[fd]->sce_uid, ptr, len);
+		ret = sceIoRead(fdmap->sce_uid, ptr, len);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
 		if (__vita_glue_socket_recv)
-			ret = __vita_glue_socket_recv(fd, ptr, len, 0);
+			ret = __vita_glue_socket_recv(fdmap->sce_uid, ptr, len, 0);
 		break;
 	}
+
+	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
 		if (ret != -1)
@@ -352,21 +340,25 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 	struct SceIoStat stat = {0};
 	int ret;
 
-	if (!is_fd_valid(fd)) {
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
 		reent->_errno = EBADF;
 		return -1;
 	}
 
-	switch (__vita_fdmap[fd]->type)
+	switch (fdmap->type)
 	{
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoGetstatByFd(__vita_fdmap[fd]->sce_uid, &stat);
+		ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
 		ret = EBADF;
 		break;
 	}
+
+	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;

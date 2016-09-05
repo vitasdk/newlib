@@ -48,6 +48,8 @@ extern DescriptorTranslation *__vita_fdmap[];
 int __vita_acquire_descriptor(void);
 int __vita_release_descriptor(int fd);
 int __vita_descriptor_ref_count(int fd);
+DescriptorTranslation *__vita_fd_grab(int fd);
+int __vita_fd_drop(DescriptorTranslation *fdmap);
 
 static inline int is_fd_valid(int fd)
 {
