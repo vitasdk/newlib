@@ -25,8 +25,10 @@ DEALINGS IN THE SOFTWARE.
 #ifndef _VITAGLUE_H_
 #define _VITAGLUE_H_
 
-extern int __attribute__((weak)) __vita_glue_socket_close(int s);
-extern int __attribute__((weak)) __vita_glue_socket_recv(int s, void *buf, size_t len, int flags);
-extern int __attribute__((weak)) __vita_glue_socket_send(int s, const void *buf, size_t len, int flags);
+#include <psp2/types.h>
+
+extern int __attribute__((weak)) __vita_glue_socket_close(SceUID scefd);
+extern int __attribute__((weak)) __vita_glue_socket_recv(SceUID scefd, void *buf, size_t len, int flags);
+extern int __attribute__((weak)) __vita_glue_socket_send(SceUID scefd, const void *buf, size_t len, int flags);
 
 #endif // _VITAGLUE_H_

@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 
 #include <psp2/net/net.h>
+#include <psp2/types.h>
 
 #include "vitadescriptor.h"
 
@@ -39,13 +40,17 @@ static inline int is_socket_valid(int s)
 #ifdef F_accept
 int accept(int s, struct sockaddr *addr, socklen_t *addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetAccept(__vita_fdmap[s]->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+	int res = sceNetAccept(fdmap->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -70,13 +75,17 @@ int accept(int s, struct sockaddr *addr, socklen_t *addrlen)
 #ifdef F_bind
 int	bind(int s, const struct sockaddr *addr, socklen_t addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetBind(__vita_fdmap[s]->sce_uid, (SceNetSockaddr *)addr, (unsigned int)addrlen);
+	int res = sceNetBind(fdmap->sce_uid, (SceNetSockaddr *)addr, (unsigned int)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -91,13 +100,17 @@ int	bind(int s, const struct sockaddr *addr, socklen_t addrlen)
 #ifdef F_connect
 int	connect(int s, const struct sockaddr *addr, socklen_t addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetConnect(__vita_fdmap[s]->sce_uid, (SceNetSockaddr *)addr, (unsigned int)addrlen);
+	int res = sceNetConnect(fdmap->sce_uid, (SceNetSockaddr *)addr, (unsigned int)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -112,13 +125,17 @@ int	connect(int s, const struct sockaddr *addr, socklen_t addrlen)
 #ifdef F_getpeername
 int	getpeername(int s, struct sockaddr *addr, socklen_t *addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetGetpeername(__vita_fdmap[s]->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+	int res = sceNetGetpeername(fdmap->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -133,13 +150,17 @@ int	getpeername(int s, struct sockaddr *addr, socklen_t *addrlen)
 #ifdef F_getsockname
 int	getsockname(int s, struct sockaddr *addr, socklen_t *addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetGetsockname(__vita_fdmap[s]->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+	int res = sceNetGetsockname(fdmap->sce_uid, (SceNetSockaddr *)addr, (unsigned int *)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -154,13 +175,17 @@ int	getsockname(int s, struct sockaddr *addr, socklen_t *addrlen)
 #ifdef F_getsockopt
 int	getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetGetsockopt(__vita_fdmap[s]->sce_uid, level, optname, optval, (unsigned int *)optlen);
+	int res = sceNetGetsockopt(fdmap->sce_uid, level, optname, optval, (unsigned int *)optlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -175,13 +200,17 @@ int	getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
 #ifdef F_listen
 int	listen(int s, int backlog)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetListen(__vita_fdmap[s]->sce_uid, backlog);
+	int res = sceNetListen(fdmap->sce_uid, backlog);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -196,13 +225,17 @@ int	listen(int s, int backlog)
 #ifdef F_recv
 ssize_t	recv(int s, void *buf, size_t len, int flags)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetRecv(__vita_fdmap[s]->sce_uid, buf, len, flags);
+	int res = sceNetRecv(fdmap->sce_uid, buf, len, flags);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -218,13 +251,17 @@ ssize_t	recv(int s, void *buf, size_t len, int flags)
 ssize_t	recvfrom(int s, void *buf, size_t len, int flags,
 		struct sockaddr *src_addr, socklen_t *addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetRecvfrom(__vita_fdmap[s]->sce_uid, buf, len, flags, (SceNetSockaddr *)src_addr, (unsigned int *)addrlen);
+	int res = sceNetRecvfrom(fdmap->sce_uid, buf, len, flags, (SceNetSockaddr *)src_addr, (unsigned int *)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -239,13 +276,17 @@ ssize_t	recvfrom(int s, void *buf, size_t len, int flags,
 #ifdef F_recvmsg
 ssize_t recvmsg(int s, struct msghdr *msg, int flags)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetRecvmsg(__vita_fdmap[s]->sce_uid, (SceNetMsghdr *)msg, flags);
+	int res = sceNetRecvmsg(fdmap->sce_uid, (SceNetMsghdr *)msg, flags);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -260,13 +301,17 @@ ssize_t recvmsg(int s, struct msghdr *msg, int flags)
 #ifdef F_send
 ssize_t	send(int s, const void *buf, size_t len, int flags)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetSend(__vita_fdmap[s]->sce_uid, buf, len, flags);
+	int res = sceNetSend(fdmap->sce_uid, buf, len, flags);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -283,13 +328,17 @@ ssize_t	send(int s, const void *buf, size_t len, int flags)
 ssize_t	sendto(int s, const void *buf,
 		size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetSendto(__vita_fdmap[s]->sce_uid, buf, len, flags, (SceNetSockaddr *)dest_addr, (unsigned int)addrlen);
+	int res = sceNetSendto(fdmap->sce_uid, buf, len, flags, (SceNetSockaddr *)dest_addr, (unsigned int)addrlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -304,13 +353,17 @@ ssize_t	sendto(int s, const void *buf,
 #ifdef F_sendmsg
 ssize_t sendmsg(int s, const struct msghdr *msg, int flags)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetSendmsg(__vita_fdmap[s]->sce_uid, (const SceNetMsghdr *)msg, flags);
+	int res = sceNetSendmsg(fdmap->sce_uid, (const SceNetMsghdr *)msg, flags);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -325,13 +378,17 @@ ssize_t sendmsg(int s, const struct msghdr *msg, int flags)
 #ifdef F_setsockopt
 int	setsockopt(int s, int level, int optname, const void *optval, socklen_t optlen)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetSetsockopt(__vita_fdmap[s]->sce_uid, level, optname, optval, optlen);
+	int res = sceNetSetsockopt(fdmap->sce_uid, level, optname, optval, optlen);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -346,13 +403,17 @@ int	setsockopt(int s, int level, int optname, const void *optval, socklen_t optl
 #ifdef F_shutdown
 int	shutdown(int s, int how)
 {
-	if (!is_socket_valid(s))
+	DescriptorTranslation *fdmap = __vita_fd_grab(s);
+
+	if (!fdmap)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceNetShutdown(__vita_fdmap[s]->sce_uid, how);
+	int res = sceNetShutdown(fdmap->sce_uid, how);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
@@ -388,46 +449,18 @@ int	socket(int domain, int type, int protocol)
 	return s;
 }
 
-int __vita_glue_socket_close(int s)
+int __vita_glue_socket_close(SceUID scefd)
 {
-	int res = 0;
-
-	if (!is_socket_valid(s))
-	{
-		errno = EBADF;
-		return -1;
-	}
-
-	int sce_uid = __vita_fdmap[s]->sce_uid;
-	int ref_count = __vita_release_descriptor(s);
-
-	if (ref_count < 0)
-	{
-		errno = EBADF;
-		return -1;
-	}
-
-	if (ref_count == 0)
-	{
-		res = sceNetSocketClose(sce_uid);
-	}
-
-	if (res < 0)
-	{
-		errno = res & SCE_ERRNO_MASK;
-		return -1;
-	}
-
-	return 0;
+	return sceNetSocketClose(scefd);
 }
 
-ssize_t __vita_glue_socket_recv(int s, void *buf, size_t len, int flags)
+ssize_t __vita_glue_socket_recv(SceUID scefd, void *buf, size_t len, int flags)
 {
-	return recv(s, buf, len, flags);
+	return sceNetRecv(scefd, buf, len, flags);
 }
 
-ssize_t	__vita_glue_socket_send(int s, const void *buf, size_t len, int flags)
+ssize_t	__vita_glue_socket_send(SceUID scefd, const void *buf, size_t len, int flags)
 {
-	return send(s, buf, len, flags);
+	return sceNetSend(scefd, buf, len, flags);
 }
 #endif
