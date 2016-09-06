@@ -68,10 +68,11 @@ CONFIG_CLEAN_VPATH_FILES =
 LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 lib_a_AR = $(AR) $(ARFLAGS)
-lib_a_DEPENDENCIES = $(SOCKET_OBJS)
+lib_a_DEPENDENCIES = $(SOCKET_OBJS) $(DIRENT_OBJS)
 am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-sbrk.$(OBJEXT) \
 	lib_a-threading.$(OBJEXT) lib_a-mlock.$(OBJEXT) \
-	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT)
+	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT) \
+	lib_a-dirent.$(OBJEXT)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp =
@@ -197,8 +198,9 @@ INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 AM_CCASFLAGS = $(INCLUDES)
 noinst_LIBRARIES = lib.a
 SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o
-lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c
-lib_a_LIBADD = ${SOCKET_OBJS}
+DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
+lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dirent.c
+lib_a_LIBADD = ${SOCKET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
 ACLOCAL_AMFLAGS = -I ../../.. -I ../../../..
@@ -296,6 +298,12 @@ lib_a-socket.o: socket.c
 
 lib_a-socket.obj: socket.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-socket.obj `if test -f 'socket.c'; then $(CYGPATH_W) 'socket.c'; else $(CYGPATH_W) '$(srcdir)/socket.c'; fi`
+
+lib_a-dirent.o: dirent.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dirent.o `test -f 'dirent.c' || echo '$(srcdir)/'`dirent.c
+
+lib_a-dirent.obj: dirent.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dirent.obj `if test -f 'dirent.c'; then $(CYGPATH_W) 'dirent.c'; else $(CYGPATH_W) '$(srcdir)/dirent.c'; fi`
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
@@ -471,6 +479,9 @@ uninstall-am:
 all-local: crt0.o
 
 $(SOCKET_OBJS): socket.c
+	$(COMPILE) -DF_$* $< -c -o $@
+
+$(DIRENT_OBJS): dirent.c
 	$(COMPILE) -DF_$* $< -c -o $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
