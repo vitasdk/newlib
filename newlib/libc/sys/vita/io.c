@@ -84,7 +84,8 @@ int __vita_acquire_descriptor(void)
 	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
 
 	// get free descriptor
-	for (fd = 0; fd < MAX_OPEN_FILES; ++fd)
+	// only allocate descriptors after stdin/stdout/stderr -> aka 0/1/2
+	for (fd = 3; fd < MAX_OPEN_FILES; ++fd)
 	{
 		if (__vita_fdmap[fd] == NULL)
 		{
