@@ -245,7 +245,6 @@ _ssize_t
 _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 {
 	int ret;
-
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
 	if (!fdmap) {
