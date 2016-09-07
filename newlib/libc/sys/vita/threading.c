@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <vitasdkutils.h>
+#include <vitasdk/utils.h>
 #include <psp2/kernel/threadmgr.h>
 
 // not in sdk
@@ -189,7 +189,7 @@ struct _reent *__getreent(void) {
 	return  __getreent_for_thread(sceKernelGetThreadId());
 }
 
-void **vitasdk_get_tls_data(SceUID thid)
+void *vitasdk_get_tls_data(SceUID thid)
 {
 	struct reent_for_thread *for_thread;
 	struct _reent *reent = __getreent_for_thread(thid);
@@ -198,7 +198,7 @@ void **vitasdk_get_tls_data(SceUID thid)
 	return &for_thread->tls_data_ext;
 }
 
-void **vitasdk_get_pthread_data(SceUID thid)
+void *vitasdk_get_pthread_data(SceUID thid)
 {
 	struct reent_for_thread *for_thread;
 	struct _reent *reent = __getreent_for_thread(thid);
