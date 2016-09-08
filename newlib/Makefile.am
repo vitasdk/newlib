@@ -322,6 +322,12 @@ endif
 	     $(INSTALL_DATA) $$i $(DESTDIR)$(tooldir)/include/`basename $$i`; \
 	    else true; fi ; \
 	  done ; \
+	  $(mkinstalldirs) $(DESTDIR)$(tooldir)/include/netinet; \
+	  for i in $(srcdir)/libc/sys/$(sys_dir)/include/netinet/*.h; do \
+	    if [ -f $$i ]; then \
+	     $(INSTALL_DATA) $$i $(DESTDIR)$(tooldir)/include/netinet/`basename $$i`; \
+	    else true; fi ; \
+	  done ; \
 	  for i in $(srcdir)/libc/sys/$(sys_dir)/include/*; do \
 	    if [ -d $$i ]; then \
 		for j in $$i/*.h; do \
