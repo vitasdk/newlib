@@ -71,7 +71,7 @@ lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_DEPENDENCIES = $(SOCKET_OBJS)
 am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-sbrk.$(OBJEXT) \
 	lib_a-threading.$(OBJEXT) lib_a-mlock.$(OBJEXT) \
-	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT)
+	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT) lib_a-dup.$(OBJEXT)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp =
@@ -197,7 +197,7 @@ INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 AM_CCASFLAGS = $(INCLUDES)
 noinst_LIBRARIES = lib.a
 SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o
-lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c
+lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c
 lib_a_LIBADD = ${SOCKET_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
@@ -296,6 +296,12 @@ lib_a-socket.o: socket.c
 
 lib_a-socket.obj: socket.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-socket.obj `if test -f 'socket.c'; then $(CYGPATH_W) 'socket.c'; else $(CYGPATH_W) '$(srcdir)/socket.c'; fi`
+
+lib_a-dup.o: dup.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dup.o `test -f 'dup.c' || echo '$(srcdir)/'`dup.c
+
+lib_a-dup.obj: dup.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dup.obj `if test -f 'dup.c'; then $(CYGPATH_W) 'dup.c'; else $(CYGPATH_W) '$(srcdir)/dup.c'; fi`
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \

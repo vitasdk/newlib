@@ -132,6 +132,35 @@ int __vita_release_descriptor(int fd)
 	return 0;
 }
 
+int __vita_duplicate_descriptor(int fd)
+{
+	int fd2 = -1;
+
+	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
+
+	if (!is_fd_valid(fd))
+	{
+		sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+		return -1;
+	}
+
+	// get free descriptor
+	// only allocate descriptors after stdin/stdout/stderr -> aka 0/1/2
+	for (fd2 = 3; fd2 < MAX_OPEN_FILES; ++fd2)
+	{
+		if (__vita_fdmap[fd2] == NULL)
+		{
+			__vita_fdmap[fd2] = __vita_fdmap[fd];
+			__vita_fdmap[fd2]->ref_count++;
+			sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+			return fd2;
+		}
+	}
+
+	sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+	return -1;
+}
+
 int __vita_descriptor_ref_count(int fd)
 {
 	int res = 0;
