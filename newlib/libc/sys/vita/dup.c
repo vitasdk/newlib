@@ -22,40 +22,19 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#ifndef _VITADESCRIPTOR_H_
-#define _VITADESCRIPTOR_H_
+#include <errno.h>
+#include "vitadescriptor.h"
 
-
-#define MAX_OPEN_FILES 1024
-
-typedef enum
+int dup(int oldfd)
 {
-	VITA_DESCRIPTOR_FILE,
-	VITA_DESCRIPTOR_SOCKET,
-	VITA_DESCRIPTOR_TTY
-} DescriptorTypes;
+    int fd = __vita_duplicate_descriptor(oldfd);
 
-typedef struct
-{
-	int sce_uid;
-	DescriptorTypes type;
-	int ref_count;
-} DescriptorTranslation;
+    if (fd < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
 
-extern DescriptorTranslation *__vita_fdmap[];
-
-
-int __vita_acquire_descriptor(void);
-int __vita_release_descriptor(int fd);
-int __vita_duplicate_descriptor(int fd);
-int __vita_descriptor_ref_count(int fd);
-DescriptorTranslation *__vita_fd_grab(int fd);
-int __vita_fd_drop(DescriptorTranslation *fdmap);
-
-static inline int is_fd_valid(int fd)
-{
-	return (fd > 0) && (fd < MAX_OPEN_FILES) && (__vita_fdmap[fd] != NULL);
+    errno = 0;
+    return fd;
 }
-
-#endif // _VITADESCRIPTOR_H_
-
