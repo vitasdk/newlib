@@ -37,10 +37,6 @@ DEALINGS IN THE SOFTWARE.
 
 #define MAX_EVENTS 255
 
-#define LOCK_ARRAY_LENGTH   (MAX_OPEN_FILES / 8) + ((MAX_OPEN_FILES % 8) ? 1 : 0)
-#define BIT_SET(arr, idx)	(arr)[(idx)/8] |= (1<<((idx)%8))
-#define IS_SET(arr, idx)	((arr)[(idx)/8] & (1<<((idx)%8))) != 0
-
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		   struct timeval *timeout)
 {
@@ -51,7 +47,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		return 0;
 	}
 
-	uint8_t locked[LOCK_ARRAY_LENGTH] = {0};
+	fd_set lock = {0};
 
 	int i;
 	int res;
@@ -84,7 +80,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 			__vita_fd_drop(fdmap);
 			continue;
 		}
-		BIT_SET(locked, i);
+		FD_SET(i, &lock);
 
 		sceNetEpollControl(eid, SCE_NET_EPOLL_CTL_ADD, fdmap->sce_uid, &ev);
 	}
@@ -129,7 +125,7 @@ clean:
 	sceNetEpollDestroy(eid);
 exit:
 	for (i = 0; i < nfds; i++) {
-		if (IS_SET(locked, i) && __vita_fdmap[i] != NULL) {
+		if (FD_ISSET(i, &lock) && __vita_fdmap[i] != NULL) {
 			__vita_fd_drop(__vita_fdmap[i]);
 		}
 	}
