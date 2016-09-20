@@ -26,7 +26,7 @@ DEALINGS IN THE SOFTWARE.
 #define _VITADESCRIPTOR_H_
 
 
-#define MAX_OPEN_FILES 1024
+#define MAX_OPEN_FILES 256
 
 typedef enum
 {
