@@ -111,25 +111,18 @@ int __vita_acquire_descriptor(void)
 int __vita_release_descriptor(int fd)
 {
 	DescriptorTranslation *map = NULL;
+	int res = -1;
 
 	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
 
-	if (!is_fd_valid(fd))
+	if (is_fd_valid(fd) && __vita_fd_drop(__vita_fdmap[fd]) >= 0)
 	{
-		sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-		return 0;
+		__vita_fdmap[fd] = NULL;
+		res = 0;
 	}
-
-	if (__vita_fd_drop(__vita_fdmap[fd]) < 0)
-	{
-		sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-		return -1;
-	}
-
-	__vita_fdmap[fd] = NULL;
 
 	sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-	return 0;
+	return res;
 }
 
 int __vita_duplicate_descriptor(int fd)
@@ -138,22 +131,19 @@ int __vita_duplicate_descriptor(int fd)
 
 	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
 
-	if (!is_fd_valid(fd))
+	if (is_fd_valid(fd))
 	{
-		sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-		return -1;
-	}
-
-	// get free descriptor
-	// only allocate descriptors after stdin/stdout/stderr -> aka 0/1/2
-	for (fd2 = 3; fd2 < MAX_OPEN_FILES; ++fd2)
-	{
-		if (__vita_fdmap[fd2] == NULL)
+		// get free descriptor
+		// only allocate descriptors after stdin/stdout/stderr -> aka 0/1/2
+		for (fd2 = 3; fd2 < MAX_OPEN_FILES; ++fd2)
 		{
-			__vita_fdmap[fd2] = __vita_fdmap[fd];
-			__vita_fdmap[fd2]->ref_count++;
-			sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-			return fd2;
+			if (__vita_fdmap[fd2] == NULL)
+			{
+				__vita_fdmap[fd2] = __vita_fdmap[fd];
+				__vita_fdmap[fd2]->ref_count++;
+				sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+				return fd2;
+			}
 		}
 	}
 
@@ -176,16 +166,13 @@ DescriptorTranslation *__vita_fd_grab(int fd)
 
 	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
 
-	if (!is_fd_valid(fd))
+	if (is_fd_valid(fd))
 	{
-		sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-		return NULL;
+		map = __vita_fdmap[fd];
+
+		if (map)
+			map->ref_count++;
 	}
-
-	map = __vita_fdmap[fd];
-
-	if (map)
-		map->ref_count++;
 
 	sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
 	return map;
