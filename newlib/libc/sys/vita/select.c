@@ -47,15 +47,16 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		return 0;
 	}
 
-	fd_set lock = {0};
-
 	int i;
-	int res;
+
 	int eid = sceNetEpollCreate("", 0);
 	if (eid < 0) {
-		res = (int)eid;
-		goto exit;
+		errno = eid & SCE_ERRNO_MASK;
+		return -1;
 	}
+
+	DescriptorTranslation *lock[MAX_OPEN_FILES] = {0};
+
 	for (i = 0; i < nfds; i++) {
 		SceNetEpollEvent ev = {0};
 		ev.data.fd = i;
@@ -80,16 +81,19 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 			__vita_fd_drop(fdmap);
 			continue;
 		}
-		FD_SET(i, &lock);
+		lock[i] = fdmap;
 
 		sceNetEpollControl(eid, SCE_NET_EPOLL_CTL_ADD, fdmap->sce_uid, &ev);
 	}
+
 	SceNetEpollEvent events[MAX_EVENTS] = {0};
 	int nev = sceNetEpollWait(eid, events, MAX_EVENTS, wait);
+	int res = 0;
 
 	if (nev < 0) {
-		res = nev;
-		goto clean;
+		errno = nev & SCE_ERRNO_MASK;
+		res = -1;
+		goto exit;
 	}
 
 	if (readfds) {
@@ -101,8 +105,6 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	if (exceptfds) {
 		FD_ZERO(exceptfds);
 	}
-
-	res = 0;
 
 	for (i = 0; i < nev; i++) {
 		if (events[i].events) {
@@ -121,18 +123,14 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		}
 	}
 
-clean:
-	sceNetEpollDestroy(eid);
 exit:
+	sceNetEpollDestroy(eid);
+
 	for (i = 0; i < nfds; i++) {
-		if (FD_ISSET(i, &lock) && __vita_fdmap[i] != NULL) {
-			__vita_fd_drop(__vita_fdmap[i]);
+		if (lock[i] != NULL) {
+			__vita_fd_drop(lock[i]);
 		}
 	}
 
-	if (res < 0) {
-		errno = res & SCE_ERRNO_MASK;
-		return -1;
-	}
 	return res;
 }
