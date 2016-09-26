@@ -40,6 +40,11 @@ DEALINGS IN THE SOFTWARE.
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		   struct timeval *timeout)
 {
+	if (nfds < 0 || nfds >= MAX_OPEN_FILES) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	uint64_t wait = timeout->tv_sec * 1000000 + timeout->tv_usec;
 
 	if (nfds == 0) {
