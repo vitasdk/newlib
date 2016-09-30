@@ -19,7 +19,7 @@ void _free_vita_newlib(void) {
 
 void _start(unsigned int args, void *argp)
 {
-	char *argv[ARG_MAX + 1];
+	char *argv[ARGC_MAX + 1];
 	int argc = 0;
 	int loc = 0;
 	char *ptr = argp;
@@ -36,7 +36,7 @@ void _start(unsigned int args, void *argp)
 		}
 	}
 
-	argv[argc] = NULL;
+	argv[argc] = 0;
 	_init_vita_newlib();
 	__libc_init_array();
 	exit(main(argc, argv));
