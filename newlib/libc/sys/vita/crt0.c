@@ -24,8 +24,8 @@ void _free_vita_newlib(void) {
 
 void _start(unsigned int args, void *argp)
 {
-	char *argv[ARGC_MAX + 1];
-	int argc = 0;
+	char *argv[ARGC_MAX + 1] = {""}; // Program name
+	int argc = 1;
 	int loc = 0;
 	char *ptr = argp;
 
