@@ -17,6 +17,11 @@ void _free_vita_newlib(void) {
 	_free_vita_heap();
 }
 
+/* 
+ * Code below is based on the PSPSDK implementation  
+ * Copyright (c) 2005 Marcus R. Brown <mrbrown@ocgnet.org> 
+ */
+
 void _start(unsigned int args, void *argp)
 {
 	char *argv[ARGC_MAX + 1];
