@@ -110,7 +110,7 @@ typedef uint32_t socklen_t;
 #define	SO_ERROR	0x1007		/* get error status and clear */
 #define	SO_TYPE		0x1008		/* get socket type */
 #define	SO_OVERFLOWED	0x1009		/* datagrams: return packets dropped */
-#define	SO_NONBLOCK     0x1009		/* non-blocking I/O */
+#define	SO_NONBLOCK     0x1100		/* non-blocking I/O */
 
 /*
  * Structure used for manipulating linger option.
