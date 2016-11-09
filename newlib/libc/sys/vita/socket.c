@@ -23,6 +23,7 @@ DEALINGS IN THE SOFTWARE.
 */
 
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <errno.h>
 
 #include <psp2/net/net.h>
@@ -386,7 +387,21 @@ int	setsockopt(int s, int level, int optname, const void *optval, socklen_t optl
 		return -1;
 	}
 
-	int res = sceNetSetsockopt(fdmap->sce_uid, level, optname, optval, optlen);
+	int res;
+	if (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO)
+	{
+		if (optlen < sizeof(struct timeval))
+		{
+			__vita_fd_drop(fdmap);
+			errno = EINVAL;
+			return -1;
+		}
+		struct timeval *timeout = optval;
+		int wait = timeout->tv_sec * 1000000 + timeout->tv_usec;
+		res = sceNetSetsockopt(fdmap->sce_uid, level, optname, &wait, sizeof(wait));
+	} else {
+		res = sceNetSetsockopt(fdmap->sce_uid, level, optname, optval, optlen);
+	}
 
 	__vita_fd_drop(fdmap);
 
