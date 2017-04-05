@@ -7,6 +7,9 @@
 #include <vitasdk/utils.h>
 #include <psp2/kernel/threadmgr.h>
 
+// not in sdk		
+ -void sceClibPrintf(const char *fmt, ...);
+
 #define MAX_THREADS 256
 
 typedef struct reent_for_thread {
