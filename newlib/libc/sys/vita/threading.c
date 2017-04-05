@@ -7,9 +7,6 @@
 #include <vitasdk/utils.h>
 #include <psp2/kernel/threadmgr.h>
 
-// not in sdk
-void sceClibPrintf(const char *fmt, ...);
-
 #define MAX_THREADS 256
 
 typedef struct reent_for_thread {
@@ -80,7 +77,7 @@ int _exit_thread_common(int exit_status, int (*exit_func)(int)) {
 
 	if (res)
 	{
-		struct _reent **on_tls = TLS_REENT_THID_PTR(thid);
+		struct _reent **on_tls = TLS_REENT_PTR;
 		struct reent_for_thread *for_thread = list_entry(*on_tls, struct reent_for_thread, reent);
 
 		for_thread->thread_id = thid;
@@ -133,21 +130,23 @@ static inline struct reent_for_thread *__vita_allocate_reent(void)
 }
 
 struct _reent *__getreent_for_thread(int thid) {
-	int i;
 	struct reent_for_thread *free_reent = 0;
 	struct _reent *returned_reent = 0;
 
-	if (thid == 0)
-		thid = sceKernelGetThreadId();
-
-	sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
-
 	// A pointer to our reent should be on the TLS
-	struct _reent **on_tls = TLS_REENT_THID_PTR(thid);
+	struct _reent **on_tls = NULL;
+	
+	if (thid == 0)
+		on_tls = TLS_REENT_PTR;
+	else
+		on_tls = TLS_REENT_THID_PTR(thid);	
+	
 	if (*on_tls) {
-		sceKernelUnlockMutex(_newlib_reent_mutex, 1);
 		return *on_tls;
 	}
+  
+  sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
+
 	// If it's not on the TLS this means the thread doesn't have a reent allocated yet
 	// We allocate one and put a pointer to it on the TLS
 	free_reent = __vita_allocate_reent();
@@ -186,7 +185,7 @@ struct _reent *__getreent_for_thread(int thid) {
 }
 
 struct _reent *__getreent(void) {
-	return  __getreent_for_thread(sceKernelGetThreadId());
+	return  __getreent_for_thread(0);
 }
 
 void *vitasdk_get_tls_data(SceUID thid)
