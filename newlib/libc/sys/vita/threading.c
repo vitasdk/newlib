@@ -36,7 +36,13 @@ int __vita_delete_thread_reent(int thid)
 
 	// We only need to cleanup if reent is allocated, i.e. if it's on our TLS
 	// We also don't need to clean up the global reent
-	struct _reent **on_tls = TLS_REENT_THID_PTR(thid);
+	struct _reent **on_tls = NULL;
+	
+	if (thid == 0)
+		on_tls = TLS_REENT_PTR;
+	else
+		on_tls = TLS_REENT_THID_PTR(thid);
+
 	if (!*on_tls || *on_tls == &_newlib_global_reent)
 		return 0;
 
@@ -74,13 +80,13 @@ int _exit_thread_common(int exit_status, int (*exit_func)(int)) {
 	// Lock the list because we'll be modifying it
 	sceKernelLockMutex(_newlib_reent_mutex, 1, NULL);
 
-	res = __vita_delete_thread_reent(thid);
+	res = __vita_delete_thread_reent(0);
 
 	ret = exit_func(exit_status);
 
 	if (res)
 	{
-		struct _reent **on_tls = TLS_REENT_THID_PTR(thid);
+		struct _reent **on_tls = TLS_REENT_PTR;
 		struct reent_for_thread *for_thread = list_entry(*on_tls, struct reent_for_thread, reent);
 
 		for_thread->thread_id = thid;
@@ -133,21 +139,23 @@ static inline struct reent_for_thread *__vita_allocate_reent(void)
 }
 
 struct _reent *__getreent_for_thread(int thid) {
-	int i;
 	struct reent_for_thread *free_reent = 0;
 	struct _reent *returned_reent = 0;
 
-	if (thid == 0)
-		thid = sceKernelGetThreadId();
-
-	sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
-
 	// A pointer to our reent should be on the TLS
-	struct _reent **on_tls = TLS_REENT_THID_PTR(thid);
+	struct _reent **on_tls = NULL;
+	
+	if (thid == 0)
+		on_tls = TLS_REENT_PTR;
+	else
+		on_tls = TLS_REENT_THID_PTR(thid);	
+	
 	if (*on_tls) {
-		sceKernelUnlockMutex(_newlib_reent_mutex, 1);
 		return *on_tls;
 	}
+  
+  	sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
+
 	// If it's not on the TLS this means the thread doesn't have a reent allocated yet
 	// We allocate one and put a pointer to it on the TLS
 	free_reent = __vita_allocate_reent();
@@ -173,6 +181,9 @@ struct _reent *__getreent_for_thread(int thid) {
 		memset(free_reent, 0, sizeof(struct reent_for_thread));
 
 		// Set it up
+		if(thid==0){
+			thid = sceKernelGetThreadId();
+		}
 		free_reent->thread_id = thid;
 		_REENT_INIT_PTR(&free_reent->reent);
 		returned_reent = &free_reent->reent;
@@ -186,7 +197,7 @@ struct _reent *__getreent_for_thread(int thid) {
 }
 
 struct _reent *__getreent(void) {
-	return  __getreent_for_thread(sceKernelGetThreadId());
+	return  __getreent_for_thread(0);
 }
 
 void *vitasdk_get_tls_data(SceUID thid)
