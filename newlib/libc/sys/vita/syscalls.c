@@ -29,7 +29,7 @@ int sceKernelLibcGettimeofday(struct timeval *ptimeval, void *ptimezone);
 _ssize_t
 _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 {
-	int ret;
+	int ret = 0;
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
@@ -47,6 +47,10 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 	case VITA_DESCRIPTOR_SOCKET:
 		if (__vita_glue_socket_send)
 			ret = __vita_glue_socket_send(fdmap->sce_uid, buf, nbytes, 0);
+		break;
+	case VITA_DESCRIPTOR_PIPE:
+		if (__vita_glue_pipe_write)
+			ret = __vita_glue_pipe_write(fdmap->sce_uid, buf, nbytes);
 		break;
 	}
 
@@ -178,6 +182,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 		break;
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_SOCKET:
+	case VITA_DESCRIPTOR_PIPE:
 		ret = EBADF;
 		break;
 	}
@@ -261,6 +266,10 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	case VITA_DESCRIPTOR_SOCKET:
 		if (__vita_glue_socket_recv)
 			ret = __vita_glue_socket_recv(fdmap->sce_uid, ptr, len, 0);
+		break;
+	case VITA_DESCRIPTOR_PIPE:
+		if (__vita_glue_pipe_read)
+			ret = __vita_glue_pipe_read(fdmap->sce_uid, ptr, len);
 		break;
 	}
 
@@ -353,6 +362,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 		ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
+	case VITA_DESCRIPTOR_PIPE:
 		ret = EBADF;
 		break;
 	}

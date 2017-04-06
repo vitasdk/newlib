@@ -31,4 +31,8 @@ extern int __attribute__((weak)) __vita_glue_socket_close(SceUID scefd);
 extern int __attribute__((weak)) __vita_glue_socket_recv(SceUID scefd, void *buf, size_t len, int flags);
 extern int __attribute__((weak)) __vita_glue_socket_send(SceUID scefd, const void *buf, size_t len, int flags);
 
+extern int __attribute__((weak))  __vita_glue_pipe_write(SceUID pipeid, const void *buf, size_t size);
+extern int __attribute__((weak))  __vita_glue_pipe_read(SceUID pipeid, void *ptr, size_t len);
+extern int __attribute__((weak))  __vita_glue_pipe_close(SceUID pipeid);
+
 #endif // _VITAGLUE_H_

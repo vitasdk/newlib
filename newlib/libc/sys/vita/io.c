@@ -198,6 +198,9 @@ int __vita_fd_drop(DescriptorTranslation *map)
 			if (__vita_glue_socket_close)
 				ret = __vita_glue_socket_close(map->sce_uid);
 			break;
+		case VITA_DESCRIPTOR_PIPE:
+			if (__vita_glue_pipe_close)
+				ret = __vita_glue_pipe_close(map->sce_uid);
 		}
 
 		if (ret < 0) {

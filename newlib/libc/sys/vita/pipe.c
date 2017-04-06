@@ -22,41 +22,59 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#ifndef _VITADESCRIPTOR_H_
-#define _VITADESCRIPTOR_H_
 
+#include <errno.h>
+#include "vitadescriptor.h"
 
-#define MAX_OPEN_FILES 256
+#include <psp2/kernel/threadmgr.h>
 
-typedef enum
+int pipe(int pipefd[2])
 {
-	VITA_DESCRIPTOR_FILE,
-	VITA_DESCRIPTOR_SOCKET,
-	VITA_DESCRIPTOR_TTY,
-	VITA_DESCRIPTOR_PIPE
-} DescriptorTypes;
+    SceUID pipeid = sceKernelCreateMsgPipe("", 0, 0, NULL, NULL);
 
-typedef struct
-{
-	int sce_uid;
-	DescriptorTypes type;
-	int ref_count;
-} DescriptorTranslation;
+    if (pipeid < 0)
+    {
+        errno = EFAULT;
+        return -1;
+    }
 
-extern DescriptorTranslation *__vita_fdmap[];
+    int fd = __vita_acquire_descriptor();
 
+    if (fd < 0)
+    {
+        sceKernelDeleteMsgPipe(pipeid);
+        errno = EMFILE;
+        return -1;
+    }
 
-int __vita_acquire_descriptor(void);
-int __vita_release_descriptor(int fd);
-int __vita_duplicate_descriptor(int fd);
-int __vita_descriptor_ref_count(int fd);
-DescriptorTranslation *__vita_fd_grab(int fd);
-int __vita_fd_drop(DescriptorTranslation *fdmap);
+    __vita_fdmap[fd]->sce_uid = pipeid;
+    __vita_fdmap[fd]->type = VITA_DESCRIPTOR_PIPE;
 
-static inline int is_fd_valid(int fd)
-{
-	return (fd > 0) && (fd < MAX_OPEN_FILES) && (__vita_fdmap[fd] != NULL);
+    int fd2 = __vita_duplicate_descriptor(fd);
+
+    if (fd2 < 0)
+    {
+        __vita_release_descriptor(fd);
+        errno = EMFILE;
+        return -1;
+    }
+
+    pipefd[0] = fd;
+    pipefd[1] = fd2;
+    return 0;
 }
 
-#endif // _VITADESCRIPTOR_H_
+int __vita_glue_pipe_write(SceUID pipeid, const void *buf, size_t size)
+{
+    return sceKernelSendMsgPipe(pipeid, buf, size, 0, NULL, NULL);
+}
 
+int __vita_glue_pipe_read(SceUID pipeid, void *ptr, size_t len)
+{
+    return sceKernelReceiveMsgPipe(pipeid, ptr, len, 0, NULL, NULL);
+}
+
+int __vita_glue_pipe_close(SceUID pipeid)
+{
+    return sceKernelDeleteMsgPipe(pipeid);
+}
