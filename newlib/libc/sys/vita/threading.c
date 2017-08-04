@@ -24,7 +24,7 @@ static reent_for_thread reent_list[MAX_THREADS];
 static int _newlib_reent_mutex;
 static struct _reent _newlib_global_reent;
 
-#define TLS_REENT_THID_PTR(thid)	sceKernelGetThreadTLSAddr(thid, 0x88)
+#define TLS_REENT_THID_PTR(thid)	_sceKernelGetThreadTLSAddr(thid, 0x88)
 #define TLS_REENT_PTR				sceKernelGetTLSAddr(0x88)
 
 #define list_entry(ptr, type, member) \
