@@ -82,7 +82,7 @@ DIR *opendir(const char *dirname)
 	}
 
 	dirp->uid = uid;
-	strncpy(dirp->dirname, dirname, sizeof(dirp->dirname) );
+	strncpy(dirp->dirname, dirname, sizeof(dirp->dirname)-1 );
 	dirp->index = 0;
 
 	errno = 0;
@@ -112,6 +112,7 @@ struct dirent *readdir(DIR *dirp)
 	}
 
 	struct dirent *dir = &dirp->dir;
+	dirp->index++;
 	return dir;
 }
 
@@ -133,6 +134,9 @@ void rewinddir(DIR *dirp)
 
 	sceIoDclose(dirp->uid);
 
+	dirp->uid = dirfd;
+	dirp->index = 0;
+	errno = 0;
 }
 
 void seekdir(DIR *dirp, long int index)
