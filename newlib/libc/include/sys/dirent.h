@@ -1,13 +1,23 @@
-/* <dirent.h> includes <sys/dirent.h>, which is this file.  On a
-   system which supports <dirent.h>, this file is overridden by
-   dirent.h in the libc/sys/.../sys directory.  On a system which does
-   not support <dirent.h>, we will get this file which uses #error to force
-   an error.  */
+#ifndef _SYS_DIRENT_H
+#define _SYS_DIRENT_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-#error "<dirent.h> not supported"
+
+#define dirent SceIoDirent
+typedef struct {
+	SceIoDirent ent; //< updated and returned by readdir
+	SceUID fd;       //< the directory file descriptor
+} DIR;
+
+int __lastdir;
+#define opendir(path)  ((__lastdir=sceIoDopen(path)) < 0 ? NULL : &(DIR){.fd=__lastdir})
+#define readdir(dirp)  (sceIoDread(dirp->fd, &dirp->ent) <= 0 ? NULL : &dirp->ent)
+#define closedir(dirp) (sceIoDclose(dirp->fd))
+
 #ifdef __cplusplus
 }
+#endif
+
 #endif
