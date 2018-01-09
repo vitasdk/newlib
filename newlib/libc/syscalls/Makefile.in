@@ -79,7 +79,8 @@ am__objects_1 = lib_a-sysclose.$(OBJEXT) lib_a-sysfcntl.$(OBJEXT) \
 	lib_a-syslseek.$(OBJEXT) lib_a-sysopen.$(OBJEXT) \
 	lib_a-sysread.$(OBJEXT) lib_a-syssbrk.$(OBJEXT) \
 	lib_a-sysstat.$(OBJEXT) lib_a-systimes.$(OBJEXT) \
-	lib_a-sysunlink.$(OBJEXT) lib_a-syswrite.$(OBJEXT)
+	lib_a-sysunlink.$(OBJEXT) lib_a-syswrite.$(OBJEXT) \
+	lib_a-sysftruncate.$(OBJEXT) lib_a-systruncate.$(OBJEXT)
 @ELIX_LEVEL_1_FALSE@@ELIX_LEVEL_2_FALSE@am__objects_2 = lib_a-sysexecve.$(OBJEXT) \
 @ELIX_LEVEL_1_FALSE@@ELIX_LEVEL_2_FALSE@	lib_a-sysfork.$(OBJEXT) \
 @ELIX_LEVEL_1_FALSE@@ELIX_LEVEL_2_FALSE@	lib_a-syswait.$(OBJEXT)
@@ -91,7 +92,7 @@ libsyscalls_la_LIBADD =
 am__objects_3 = sysclose.lo sysfcntl.lo sysfstat.lo sysgetpid.lo \
 	sysgettod.lo sysisatty.lo syskill.lo syslink.lo syslseek.lo \
 	sysopen.lo sysread.lo syssbrk.lo sysstat.lo systimes.lo \
-	sysunlink.lo syswrite.lo
+	sysunlink.lo syswrite.lo sysftruncate.lo systruncate.lo
 @ELIX_LEVEL_1_FALSE@@ELIX_LEVEL_2_FALSE@am__objects_4 = sysexecve.lo \
 @ELIX_LEVEL_1_FALSE@@ELIX_LEVEL_2_FALSE@	sysfork.lo syswait.lo
 @USE_LIBTOOL_TRUE@am_libsyscalls_la_OBJECTS = $(am__objects_3) \
@@ -272,6 +273,7 @@ GENERAL_SOURCES = \
 	sysclose.c	\
 	sysfcntl.c	\
 	sysfstat.c	\
+	sysftruncate.c	\
 	sysgetpid.c	\
 	sysgettod.c	\
 	sysisatty.c	\
@@ -283,6 +285,7 @@ GENERAL_SOURCES = \
 	syssbrk.c	\
 	sysstat.c	\
 	systimes.c	\
+	systruncate.c	\
 	sysunlink.c	\
 	syswrite.c
 
@@ -392,6 +395,18 @@ lib_a-sysfstat.o: sysfstat.c
 
 lib_a-sysfstat.obj: sysfstat.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysfstat.obj `if test -f 'sysfstat.c'; then $(CYGPATH_W) 'sysfstat.c'; else $(CYGPATH_W) '$(srcdir)/sysfstat.c'; fi`
+
+lib_a-sysftruncate.o: sysftruncate.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysftruncate.o `test -f 'sysftruncate.c' || echo '$(srcdir)/'`sysftruncate.c
+
+lib_a-sysftruncate.obj: sysftruncate.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysftruncate.obj `if test -f 'sysftruncate.c'; then $(CYGPATH_W) 'sysftruncate.c'; else $(CYGPATH_W) '$(srcdir)/sysftruncate.c'; fi`
+
+lib_a-systruncate.o: systruncate.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-systruncate.o `test -f 'systruncate.c' || echo '$(srcdir)/'`systruncate.c
+
+lib_a-systruncate.obj: systruncate.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-systruncate.obj `if test -f 'systruncate.c'; then $(CYGPATH_W) 'systruncate.c'; else $(CYGPATH_W) '$(srcdir)/systruncate.c'; fi`
 
 lib_a-sysgetpid.o: sysgetpid.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysgetpid.o `test -f 'sysgetpid.c' || echo '$(srcdir)/'`sysgetpid.c
