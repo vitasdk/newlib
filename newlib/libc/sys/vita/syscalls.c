@@ -382,3 +382,57 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 	reent->_errno = 0;
 	return 0;
 }
+
+int
+_truncate_r(struct _reent *reent, char* path, off_t length)
+{
+	struct SceIoStat stat = {0};
+	stat.st_size = length;
+	int ret;
+
+	ret = sceIoChstat(path, &stat, SCE_CST_SIZE);
+
+	if (ret < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+
+	reent->_errno = 0;
+	return 0;
+}
+
+int
+_ftruncate_r(struct _reent *reent, int fd, off_t length)
+{
+	struct SceIoStat stat = {0};
+	stat.st_size = length;
+	int ret;
+	
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
+		reent->_errno = EBADF;
+		return -1;
+	}
+
+	switch (fdmap->type)
+	{
+	case VITA_DESCRIPTOR_FILE:
+		ret = sceIoChstatByFd(fdmap->sce_uid, &stat, SCE_CST_SIZE);
+		break;
+	case VITA_DESCRIPTOR_TTY:
+	case VITA_DESCRIPTOR_SOCKET:
+		ret = EBADF;
+		break;
+	}
+
+	__vita_fd_drop(fdmap);
+
+	if (ret < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+
+	reent->_errno = 0;
+	return 0;
+}
