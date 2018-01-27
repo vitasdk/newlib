@@ -33,7 +33,7 @@ void _start(unsigned int args, void *argp)
 	while(loc < args)
 	{
 		argv[argc] = &ptr[loc];
-		loc += strlen(&ptr[loc]) + 1;
+		loc += strnlen(&ptr[loc], args - loc) + 1;
 		argc++;
 		if(argc == ARGC_MAX)
 		{
