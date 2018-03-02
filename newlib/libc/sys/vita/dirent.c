@@ -44,20 +44,23 @@ struct DIR_
 
 int	closedir(DIR *dirp)
 {
-	if (!dirp)
+	if (!dirp || dirp->uid < 0)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
 	int res = sceIoDclose(dirp->uid);
+	dirp->uid = -1;
+
+	free(dirp);
 
 	if (res < 0)
 	{
 		errno = res & SCE_ERRNO_MASK;
 		return -1;
 	}
-	
+
 	errno = 0;
 	return 0;
 }
