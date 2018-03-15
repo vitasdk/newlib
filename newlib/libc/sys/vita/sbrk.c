@@ -3,7 +3,7 @@
 
 extern unsigned int _newlib_heap_size_user __attribute__((weak));
 
-static int _newlib_heap_memblock;
+int _newlib_heap_memblock;
 static unsigned _newlib_heap_size;
 static char *_newlib_heap_base, *_newlib_heap_end, *_newlib_heap_cur;
 static char _newlib_sbrk_mutex[32] __attribute__ ((aligned (8)));
