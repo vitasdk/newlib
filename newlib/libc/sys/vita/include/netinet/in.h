@@ -55,6 +55,12 @@ struct sockaddr_in {
 	char			sin_zero[6];
 } sockaddr_in;
 
+/* Address to accept any incoming messages. */
+#define	INADDR_ANY		((in_addr_t) 0x00000000)
+
+/* Address to send to all hosts. */
+#define	INADDR_BROADCAST	((in_addr_t) 0xffffffff)
+
 #define ntohs __builtin_bswap16
 #define htons __builtin_bswap16
 #define ntohl __builtin_bswap32
