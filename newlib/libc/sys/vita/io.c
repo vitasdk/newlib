@@ -18,7 +18,7 @@ SceKernelLwMutexWork _newlib_fd_mutex __attribute__ ((aligned (8)));
 
 void _init_vita_io(void) {
 	int ret;
-	sceKernelCreateLwMutex(&_newlib_fd_mutex, "fd conversion table mutex", 0, 1, NULL);
+	sceKernelCreateLwMutex(&_newlib_fd_mutex, "fd conversion table mutex", SCE_KERNEL_MUTEX_ATTR_RECURSIVE, 1, NULL);
 
 	memset(__vita_fdmap, 0, sizeof(__vita_fdmap));
 	memset(__vita_fdmap_pool, 0, sizeof(__vita_fdmap_pool));
