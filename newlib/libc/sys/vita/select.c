@@ -32,8 +32,7 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/types.h>
 
 #include "vitadescriptor.h"
-
-#define SCE_ERRNO_MASK 0xFF
+#include "vitaerror.h"
 
 #define MAX_EVENTS 255
 
@@ -56,7 +55,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 
 	int eid = sceNetEpollCreate("", 0);
 	if (eid < 0) {
-		errno = eid & SCE_ERRNO_MASK;
+		errno = __vita_sce_errno_to_errno(eid);
 		return -1;
 	}
 
@@ -96,7 +95,7 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	int res = 0;
 
 	if (nev < 0) {
-		errno = nev & SCE_ERRNO_MASK;
+		errno = __vita_sce_errno_to_errno(nev);
 		res = -1;
 		goto exit;
 	}
