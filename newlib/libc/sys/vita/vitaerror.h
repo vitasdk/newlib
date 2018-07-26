@@ -1,5 +1,6 @@
 /*
 
+Copyright (C) 2017, David "Davee" Morgan
 Copyright (C) 2018, Sunguk Lee
 
 Permission is hereby granted, free of charge, to any person obtaining a
