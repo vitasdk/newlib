@@ -174,7 +174,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 	switch (fdmap->type)
 	{
 	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoLseek32(fdmap->sce_uid, ptr, dir);
+		ret = sceIoLseek(fdmap->sce_uid, ptr, dir);
 		break;
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_SOCKET:
