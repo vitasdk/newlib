@@ -58,8 +58,8 @@ extern __IMPORT int _sys_nerr;
 #define ERANGE		34	/* Result too large */
 #define ENOMSG		35	/* No message of desired type */
 #define EIDRM		36	/* Identifier removed */
-#define edeadlk		45	/* deadlock */
-#define enolck		46	/* no lock */
+#define EDEADLK		45	/* deadlock */
+#define ENOLCK		46	/* no lock */
 #define ENOSTR		60	/* Not a stream */
 #define ENODATA		61	/* No data (for no delay io) */
 #define ETIME		62	/* Stream ioctl timeout */
