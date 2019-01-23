@@ -200,6 +200,6 @@ int __vita_sce_errno_to_errno(int sce_errno)
 		case SCE_NET_ERROR_ETIME:
 			return ETIME;
 		default:
-			return EINVAL;
+			return sce_errno;
 	}
 }
