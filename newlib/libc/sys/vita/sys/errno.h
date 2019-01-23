@@ -26,7 +26,7 @@ extern __IMPORT int _sys_nerr;
 #define ENOENT		2	/* No such file or directory */
 #define ESRCH		3	/* No such process */
 #define EINTR		4	/* Interrupted system call */
-#define EIO			5	/* I/O error */
+#define EIO		5	/* I/O error */
 #define ENXIO		6	/* No such device or address */
 #define E2BIG		7	/* Arg list too long */
 #define ENOEXEC		8	/* Exec format error */
