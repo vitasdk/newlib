@@ -34,8 +34,8 @@
 #include <psp2/net/net.h>
 
 #define IPPROTO_IP		SCE_NET_IPPROTO_IP
-#define IPPROTO_ICMP	SCE_NET_IPPROTO_ICMP
-#define IPPROTO_IGMP	SCE_NET_IPPROTO_IGMP
+#define IPPROTO_ICMP		SCE_NET_IPPROTO_ICMP
+#define IPPROTO_IGMP		SCE_NET_IPPROTO_IGMP
 #define IPPROTO_TCP		SCE_NET_IPPROTO_TCP
 #define IPPROTO_UDP		SCE_NET_IPPROTO_UDP
 
@@ -50,7 +50,7 @@ struct sockaddr_in {
 	uint8_t			sin_len;
 	sa_family_t		sin_family;
 	in_port_t		sin_port;
-	struct in_addr	sin_addr;
+	struct in_addr		sin_addr;
 	in_port_t		sin_vport;
 	char			sin_zero[6];
 } sockaddr_in;
@@ -60,6 +60,9 @@ struct sockaddr_in {
 
 /* Address to send to all hosts. */
 #define	INADDR_BROADCAST	((in_addr_t) 0xffffffff)
+
+#define	INADDR_LOOPBACK		((in_addr_t) 0x7f000001) // 127.0.0.1
+#define	INADDR_NONE		((in_addr_t) 0xffffffff)
 
 #define ntohs __builtin_bswap16
 #define htons __builtin_bswap16
