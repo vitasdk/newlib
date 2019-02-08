@@ -50,7 +50,7 @@ struct sockaddr_in {
 	uint8_t			sin_len;
 	sa_family_t		sin_family;
 	in_port_t		sin_port;
-	struct in_addr	sin_addr;
+	struct in_addr		sin_addr;
 	in_port_t		sin_vport;
 	char			sin_zero[6];
 } sockaddr_in;
