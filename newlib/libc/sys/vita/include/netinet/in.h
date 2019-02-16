@@ -42,11 +42,11 @@
 typedef uint32_t in_addr_t;
 typedef uint16_t in_port_t;
 
-struct in_addr {
+typedef struct in_addr {
 	in_addr_t s_addr;
 } in_addr;
 
-struct sockaddr_in {
+typedef struct sockaddr_in {
 	uint8_t			sin_len;
 	sa_family_t		sin_family;
 	in_port_t		sin_port;
