@@ -19,6 +19,7 @@
 
 #include "vitadescriptor.h"
 #include "vitaglue.h"
+#include "vitaerror.h"
 
 
 // TODO: add to SDK
