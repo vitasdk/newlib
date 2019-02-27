@@ -30,7 +30,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "vitaerror.h"
 
-#define TRY(x) {rid=x; if (rid < 0) {errno = __vita_sce_errno_to_errno(rid); return NULL;}}
+#define TRY(x) {rid=x; if (rid < 0) {errno = rid; return NULL;}}
 
 
 struct tm *localtime_r(const time_t *timep, struct tm *result)
