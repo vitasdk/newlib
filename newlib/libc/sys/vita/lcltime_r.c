@@ -35,17 +35,16 @@ DEALINGS IN THE SOFTWARE.
 
 struct tm *localtime_r(const time_t *timep, struct tm *result)
 {
-    SceDateTime dt;
-    SceRtcTick tick;
-    time_t localtime;
-    int rid;
+	SceDateTime dt;
+	SceRtcTick tick;
+	time_t localtime;
+	int rid;
 
-    TRY(sceRtcConvertTime_tToDateTime(*timep, &dt));
-    TRY(sceRtcConvertDateTimeToTick(&dt, &tick));
-    TRY(sceRtcConvertUtcToLocalTime(&tick, &tick));
-    TRY(sceRtcConvertTickToDateTime(&tick, &dt));
-    TRY(sceRtcConvertDateTimeToTime_t(&dt, &localtime));
+	TRY(sceRtcConvertTime_tToDateTime(*timep, &dt));
+	TRY(sceRtcConvertDateTimeToTick(&dt, &tick));
+	TRY(sceRtcConvertUtcToLocalTime(&tick, &tick));
+	TRY(sceRtcConvertTickToDateTime(&tick, &dt));
+	TRY(sceRtcConvertDateTimeToTime_t(&dt, &localtime));
 
-    return gmtime_r(&localtime, result);
+	return gmtime_r(&localtime, result);
 }
-
