@@ -29,6 +29,9 @@
 #ifndef _NETDB_H_
 #define _NETDB_H_
 
+#include <sys/socket.h>
+#include <sys/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,7 +45,28 @@ struct hostent {
 };
 #define h_addr h_addr_list[0]
 
+struct servent {
+	char *s_name;
+	char **s_aliases;
+	int s_port;
+	char *s_proto;
+};
+
+struct addrinfo {
+	int ai_flags;
+	int ai_family;
+	int ai_socktype;
+	int ai_protocol;
+	size_t ai_addrlen;
+	char *ai_canonname;
+	struct sockaddr *ai_addr;
+	struct addrinfo *ai_next;
+};
+
 struct hostent *gethostbyname(const char *name);
+struct servent *getservbyname(const char *name, const char *proto);
+int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
+void freeaddrinfo(struct addrinfo *res);
 
 #ifdef __cplusplus
 }
