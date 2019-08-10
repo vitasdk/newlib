@@ -29,6 +29,7 @@
 #ifndef _NETDB_H_
 #define _NETDB_H_
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
