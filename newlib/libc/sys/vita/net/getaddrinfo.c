@@ -58,7 +58,6 @@
  * will be used if you have broken getaddrinfo or no getaddrinfo.
  */
 
-#include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
 #include <netdb.h>
@@ -75,9 +74,7 @@ static struct addrinfo *malloc_ai(int port, u_long addr, int socktype, int proto
 		ai->ai_addr = (struct sockaddr *)(ai + 1);
 		/* XXX -- ssh doesn't use sa_len */
 		ai->ai_addrlen = sizeof(struct sockaddr_in);
-#ifdef HAVE_SOCKADDR_SA_LEN
 		ai->ai_addr->sa_len = sizeof(struct sockaddr_in);
-#endif
 		ai->ai_addr->sa_family = ai->ai_family = AF_INET;
 		((struct sockaddr_in *)(ai)->ai_addr)->sin_port = port;
 		((struct sockaddr_in *)(ai)->ai_addr)->sin_addr.s_addr = addr;
