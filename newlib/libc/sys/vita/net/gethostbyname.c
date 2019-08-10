@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <netdb.h>
 #include <errno.h>
 #include <psp2/net/net.h>
@@ -24,6 +25,8 @@ struct hostent *gethostbyname(const char *name) {
 		errno = err & SCE_ERRNO_MASK;
 		return NULL;
 	}
+
+	strncpy(sname, name, MAX_NAME - 1);
 
 	ent.h_name = sname;
 	ent.h_aliases = 0;
