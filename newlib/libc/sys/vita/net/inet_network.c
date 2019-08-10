@@ -36,9 +36,9 @@
 
 in_addr_t inet_network(const char *cp)
 {
-	register u_int32_t val, base, n, i;
+	register uint32_t val, base, n, i;
 	register char c;
-	u_int32_t parts[4], *pp = parts;
+	uint32_t parts[4], *pp = parts;
 	int digit;
 
 again:
