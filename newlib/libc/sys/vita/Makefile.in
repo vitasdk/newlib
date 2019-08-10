@@ -71,7 +71,12 @@ lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_DEPENDENCIES = $(SOCKET_OBJS) $(NET_OBJS) $(DIRENT_OBJS)
 am__objects_1 = lib_a-gethostbyname.$(OBJEXT) \
 	lib_a-getaddrinfo.$(OBJEXT) lib_a-freeaddrinfo.$(OBJEXT) \
-	lib_a-getservbyname.$(OBJEXT)
+	lib_a-getservbyname.$(OBJEXT) lib_a-inet_ntop.$(OBJEXT) \
+	lib_a-inet_ntoa.$(OBJEXT) lib_a-inet_netof.$(OBJEXT) \
+	lib_a-inet_pton.$(OBJEXT) lib_a-inet_lnaof.$(OBJEXT) \
+	lib_a-inet_addr.$(OBJEXT) lib_a-inet_network.$(OBJEXT) \
+	lib_a-inet_net_ntop.$(OBJEXT) lib_a-inet_aton.$(OBJEXT) \
+	lib_a-inet_net_pton.$(OBJEXT) lib_a-inet_makeaddr.$(OBJEXT)
 am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-sbrk.$(OBJEXT) \
 	lib_a-threading.$(OBJEXT) lib_a-mlock.$(OBJEXT) \
 	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT) lib_a-dup.$(OBJEXT) \
@@ -202,9 +207,9 @@ INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 AM_CCASFLAGS = $(INCLUDES)
 noinst_LIBRARIES = lib.a
 SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o error.o
-NET_OBJS = gethostbyname.o getaddrinfo.o
+NET_OBJS = gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
-NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c
+NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
 lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
@@ -358,6 +363,72 @@ lib_a-getservbyname.o: net/getservbyname.c
 
 lib_a-getservbyname.obj: net/getservbyname.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-getservbyname.obj `if test -f 'net/getservbyname.c'; then $(CYGPATH_W) 'net/getservbyname.c'; else $(CYGPATH_W) '$(srcdir)/net/getservbyname.c'; fi`
+
+lib_a-inet_ntop.o: net/inet_ntop.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_ntop.o `test -f 'net/inet_ntop.c' || echo '$(srcdir)/'`net/inet_ntop.c
+
+lib_a-inet_ntop.obj: net/inet_ntop.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_ntop.obj `if test -f 'net/inet_ntop.c'; then $(CYGPATH_W) 'net/inet_ntop.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_ntop.c'; fi`
+
+lib_a-inet_ntoa.o: net/inet_ntoa.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_ntoa.o `test -f 'net/inet_ntoa.c' || echo '$(srcdir)/'`net/inet_ntoa.c
+
+lib_a-inet_ntoa.obj: net/inet_ntoa.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_ntoa.obj `if test -f 'net/inet_ntoa.c'; then $(CYGPATH_W) 'net/inet_ntoa.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_ntoa.c'; fi`
+
+lib_a-inet_netof.o: net/inet_netof.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_netof.o `test -f 'net/inet_netof.c' || echo '$(srcdir)/'`net/inet_netof.c
+
+lib_a-inet_netof.obj: net/inet_netof.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_netof.obj `if test -f 'net/inet_netof.c'; then $(CYGPATH_W) 'net/inet_netof.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_netof.c'; fi`
+
+lib_a-inet_pton.o: net/inet_pton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_pton.o `test -f 'net/inet_pton.c' || echo '$(srcdir)/'`net/inet_pton.c
+
+lib_a-inet_pton.obj: net/inet_pton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_pton.obj `if test -f 'net/inet_pton.c'; then $(CYGPATH_W) 'net/inet_pton.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_pton.c'; fi`
+
+lib_a-inet_lnaof.o: net/inet_lnaof.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_lnaof.o `test -f 'net/inet_lnaof.c' || echo '$(srcdir)/'`net/inet_lnaof.c
+
+lib_a-inet_lnaof.obj: net/inet_lnaof.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_lnaof.obj `if test -f 'net/inet_lnaof.c'; then $(CYGPATH_W) 'net/inet_lnaof.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_lnaof.c'; fi`
+
+lib_a-inet_addr.o: net/inet_addr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_addr.o `test -f 'net/inet_addr.c' || echo '$(srcdir)/'`net/inet_addr.c
+
+lib_a-inet_addr.obj: net/inet_addr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_addr.obj `if test -f 'net/inet_addr.c'; then $(CYGPATH_W) 'net/inet_addr.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_addr.c'; fi`
+
+lib_a-inet_network.o: net/inet_network.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_network.o `test -f 'net/inet_network.c' || echo '$(srcdir)/'`net/inet_network.c
+
+lib_a-inet_network.obj: net/inet_network.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_network.obj `if test -f 'net/inet_network.c'; then $(CYGPATH_W) 'net/inet_network.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_network.c'; fi`
+
+lib_a-inet_net_ntop.o: net/inet_net_ntop.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_net_ntop.o `test -f 'net/inet_net_ntop.c' || echo '$(srcdir)/'`net/inet_net_ntop.c
+
+lib_a-inet_net_ntop.obj: net/inet_net_ntop.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_net_ntop.obj `if test -f 'net/inet_net_ntop.c'; then $(CYGPATH_W) 'net/inet_net_ntop.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_net_ntop.c'; fi`
+
+lib_a-inet_aton.o: net/inet_aton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_aton.o `test -f 'net/inet_aton.c' || echo '$(srcdir)/'`net/inet_aton.c
+
+lib_a-inet_aton.obj: net/inet_aton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_aton.obj `if test -f 'net/inet_aton.c'; then $(CYGPATH_W) 'net/inet_aton.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_aton.c'; fi`
+
+lib_a-inet_net_pton.o: net/inet_net_pton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_net_pton.o `test -f 'net/inet_net_pton.c' || echo '$(srcdir)/'`net/inet_net_pton.c
+
+lib_a-inet_net_pton.obj: net/inet_net_pton.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_net_pton.obj `if test -f 'net/inet_net_pton.c'; then $(CYGPATH_W) 'net/inet_net_pton.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_net_pton.c'; fi`
+
+lib_a-inet_makeaddr.o: net/inet_makeaddr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_makeaddr.o `test -f 'net/inet_makeaddr.c' || echo '$(srcdir)/'`net/inet_makeaddr.c
+
+lib_a-inet_makeaddr.obj: net/inet_makeaddr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-inet_makeaddr.obj `if test -f 'net/inet_makeaddr.c'; then $(CYGPATH_W) 'net/inet_makeaddr.c'; else $(CYGPATH_W) '$(srcdir)/net/inet_makeaddr.c'; fi`
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
@@ -535,7 +606,7 @@ all-local: crt0.o
 $(SOCKET_OBJS): socket.c error.c
 	$(COMPILE) -DF_$* $< -c -o $@
 
-$(NET_OBJS): net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c
+$(NET_OBJS): net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
 	$(COMPILE) -DF_$* $< -c -o $@
 
 $(DIRENT_OBJS): dirent.c
