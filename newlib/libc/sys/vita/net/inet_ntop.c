@@ -25,27 +25,11 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <psp2/net/net.h>
 
 #define SPRINTF(x) ((socklen_t) sprintf x)
 
-/*
- * WARNING: Don't even consider trying to compile this on a system where
- * sizeof(int) < 4.  sizeof(int) > 4 is fine; all the world's not a VAX.
- */
-
-static const char *inet_ntop4(const u_char *src, char *dst, socklen_t size)
-{
-	static const char fmt[] = "%u.%u.%u.%u";
-	char tmp[sizeof "255.255.255.255"];
-
-	if (SPRINTF((tmp, fmt, src[0], src[1], src[2], src[3])) > size) {
-		errno = ENOSPC;
-		return NULL;
-	}
-
-	strcpy(dst, tmp);
-	return dst;
-}
+#define inet_ntop4(src, dst, size) sceNetInetNtop(AF_INET, src, dst, size)
 
 static const char *inet_ntop6(const u_char *src, char *dst, socklen_t size)
 {
