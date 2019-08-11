@@ -99,6 +99,18 @@ struct addrinfo {
 #define AI_ADDRCONFIG       0x00000400      /* Only if any address is assigned */
 #define AI_V4MAPPED         0x00000800      /* Accept IPv4-mapped IPv6 address */
 
+/* Constants for getnameinfo() */
+#define NI_MAXHOST          1025
+#define NI_MAXSERV          32
+
+/* Flag values for getnameinfo() */
+#define NI_NOFQDN           0x00000001
+#define NI_NUMERICHOST      0x00000002
+#define NI_NAMEREQD         0x00000004
+#define NI_NUMERICSERV      0x00000008
+#define NI_DGRAM            0x00000010
+#define NI_WITHSCOPEID      0x00000020
+
 struct hostent *gethostbyname(const char *name);
 struct servent *getservbyname(const char *name, const char *proto);
 int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
