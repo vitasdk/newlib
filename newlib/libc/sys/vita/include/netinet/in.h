@@ -42,9 +42,9 @@
 typedef uint32_t in_addr_t;
 typedef uint16_t in_port_t;
 
-typedef struct in_addr {
+struct in_addr {
 	in_addr_t s_addr;
-} in_addr;
+};
 
 typedef struct sockaddr_in {
 	uint8_t			sin_len;
@@ -54,6 +54,28 @@ typedef struct sockaddr_in {
 	in_port_t		sin_vport;
 	char			sin_zero[6];
 } sockaddr_in;
+
+struct in6_addr {
+	union {
+		uint8_t		__s6_addr[16];
+		uint16_t	__s6_addr16[8];
+		uint32_t	__s6_addr32[4];
+	} __in6_union;
+};
+
+#define s6_addr			__in6_union.__s6_addr
+#define s6_addr16		__in6_union.__s6_addr16
+#define s6_addr32		__in6_union.__s6_addr32
+
+struct sockaddr_in6 {
+	uint8_t			sin6_len;
+	sa_family_t		sin6_family;
+	in_port_t		sin6_port;
+	uint32_t		sin6_flowinfo;
+	struct in6_addr		sin6_addr;
+	in_port_t		sin6_vport;
+	uint32_t		sin6_scope_id;
+};
 
 /* Address to accept any incoming messages. */
 #define	INADDR_ANY		((in_addr_t) 0x00000000)
