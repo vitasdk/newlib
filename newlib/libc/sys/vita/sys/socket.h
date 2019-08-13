@@ -169,6 +169,19 @@ struct sockaddr {
 	char		sa_data[14];	/* actually longer; address value */
 };
 
+#define	_SS_MAXSIZE	128U
+#define	_SS_ALIGNSIZE	(sizeof(int64_t))
+#define	_SS_PAD1SIZE	(_SS_ALIGNSIZE - sizeof(uint8_t) - sizeof(sa_family_t))
+#define	_SS_PAD2SIZE	(_SS_MAXSIZE - sizeof(uint8_t) - sizeof(sa_family_t) - _SS_PAD1SIZE - _SS_ALIGNSIZE)
+
+struct sockaddr_storage {
+	uint8_t		ss_len;
+	sa_family_t	ss_family;
+	char 		__ss_pad1[_SS_PAD1SIZE];
+	int64_t		__ss_align;
+	char		__ss_pad2[_SS_PAD2SIZE];
+};
+
 /*
  * Protocol families, same as address families for now.
  */
