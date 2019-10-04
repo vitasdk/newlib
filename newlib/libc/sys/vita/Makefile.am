@@ -13,7 +13,7 @@ NET_OBJS = gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_nto
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 
 NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
+lib_a_SOURCES = syscalls.c sbrk.c threading.c mmap.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
