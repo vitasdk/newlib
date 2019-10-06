@@ -78,8 +78,9 @@ am__objects_1 = lib_a-gethostbyname.$(OBJEXT) \
 	lib_a-inet_net_ntop.$(OBJEXT) lib_a-inet_aton.$(OBJEXT) \
 	lib_a-inet_net_pton.$(OBJEXT) lib_a-inet_makeaddr.$(OBJEXT)
 am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-sbrk.$(OBJEXT) \
-	lib_a-threading.$(OBJEXT) lib_a-mlock.$(OBJEXT) \
-	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT) lib_a-dup.$(OBJEXT) \
+	lib_a-threading.$(OBJEXT) lib_a-mmap.$(OBJEXT) \
+	lib_a-mlock.$(OBJEXT) lib_a-io.$(OBJEXT) \
+	lib_a-socket.$(OBJEXT) lib_a-dup.$(OBJEXT) \
 	lib_a-select.$(OBJEXT) lib_a-error.$(OBJEXT) \
 	lib_a-dirent.$(OBJEXT) lib_a-lcltime_r.$(OBJEXT) \
 	$(am__objects_1)
@@ -210,7 +211,7 @@ SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o
 NET_OBJS = gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
+lib_a_SOURCES = syscalls.c sbrk.c threading.c mmap.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
@@ -291,6 +292,12 @@ lib_a-threading.o: threading.c
 
 lib_a-threading.obj: threading.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-threading.obj `if test -f 'threading.c'; then $(CYGPATH_W) 'threading.c'; else $(CYGPATH_W) '$(srcdir)/threading.c'; fi`
+
+lib_a-mmap.o: mmap.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-mmap.o `test -f 'mmap.c' || echo '$(srcdir)/'`mmap.c
+
+lib_a-mmap.obj: mmap.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-mmap.obj `if test -f 'mmap.c'; then $(CYGPATH_W) 'mmap.c'; else $(CYGPATH_W) '$(srcdir)/mmap.c'; fi`
 
 lib_a-mlock.o: mlock.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-mlock.o `test -f 'mlock.c' || echo '$(srcdir)/'`mlock.c
