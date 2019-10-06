@@ -125,4 +125,21 @@ struct sockaddr_in6 {
 #define ntohl __builtin_bswap32
 #define htonl __builtin_bswap32
 
+
+#define IP_HDRINCL		SCE_NET_IP_HDRINCL
+#define IP_TOS			SCE_NET_IP_TOS
+#define IP_TTL			SCE_NET_IP_TTL
+#define IP_MULTICAST_IF		SCE_NET_IP_MULTICAST_IF
+#define IP_MULTICAST_TTL	SCE_NET_IP_MULTICAST_TTL
+#define IP_MULTICAST_LOOP	SCE_NET_IP_MULTICAST_LOOP
+#define IP_ADD_MEMBERSHIP	SCE_NET_IP_ADD_MEMBERSHIP
+#define IP_DROP_MEMBERSHIP	SCE_NET_IP_DROP_MEMBERSHIP
+
+/*
+ * Argument structure for IP_ADD_MEMBERSHIP and IP_DROP_MEMBERSHIP.
+ */
+struct ip_mreq {
+	struct	in_addr imr_multiaddr;	/* IP multicast address of group */
+	struct	in_addr imr_interface;	/* local IP address of interface */
+};
 #endif
