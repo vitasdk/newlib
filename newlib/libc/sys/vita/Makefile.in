@@ -82,6 +82,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-sbrk.$(OBJEXT) \
 	lib_a-io.$(OBJEXT) lib_a-socket.$(OBJEXT) lib_a-dup.$(OBJEXT) \
 	lib_a-select.$(OBJEXT) lib_a-error.$(OBJEXT) \
 	lib_a-dirent.$(OBJEXT) lib_a-lcltime_r.$(OBJEXT) \
+	lib_a-sleep.$(OBJEXT) lib_a-usleep.$(OBJEXT) \
 	$(am__objects_1)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -210,7 +211,7 @@ SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o
 NET_OBJS = gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c ${NET_SOURCES}
+lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c sleep.c usleep.c ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
@@ -339,6 +340,18 @@ lib_a-lcltime_r.o: lcltime_r.c
 
 lib_a-lcltime_r.obj: lcltime_r.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-lcltime_r.obj `if test -f 'lcltime_r.c'; then $(CYGPATH_W) 'lcltime_r.c'; else $(CYGPATH_W) '$(srcdir)/lcltime_r.c'; fi`
+
+lib_a-sleep.o: sleep.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sleep.o `test -f 'sleep.c' || echo '$(srcdir)/'`sleep.c
+
+lib_a-sleep.obj: sleep.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sleep.obj `if test -f 'sleep.c'; then $(CYGPATH_W) 'sleep.c'; else $(CYGPATH_W) '$(srcdir)/sleep.c'; fi`
+
+lib_a-usleep.o: usleep.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-usleep.o `test -f 'usleep.c' || echo '$(srcdir)/'`usleep.c
+
+lib_a-usleep.obj: usleep.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-usleep.obj `if test -f 'usleep.c'; then $(CYGPATH_W) 'usleep.c'; else $(CYGPATH_W) '$(srcdir)/usleep.c'; fi`
 
 lib_a-gethostbyname.o: net/gethostbyname.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyname.o `test -f 'net/gethostbyname.c' || echo '$(srcdir)/'`net/gethostbyname.c
