@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -22,10 +22,9 @@
 #include <stdarg.h>
 
 int
-_DEFUN(_fiprintf_r, (ptr, fp, fmt),
-       struct _reent *ptr _AND
-       FILE * fp _AND
-       const char *fmt _DOTS)
+_fiprintf_r (struct _reent *ptr,
+       FILE * fp,
+       const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -39,9 +38,8 @@ _DEFUN(_fiprintf_r, (ptr, fp, fmt),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(fiprintf, (fp, fmt),
-       FILE * fp _AND
-       const char *fmt _DOTS)
+fiprintf (FILE * fp,
+       const char *fmt, ...)
 {
   int ret;
   va_list ap;

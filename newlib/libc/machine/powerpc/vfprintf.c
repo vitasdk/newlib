@@ -11,7 +11,7 @@ INDEX
 INDEX
 	vsnprintf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	#include <stdarg.h>
 	int vprintf(const char *<[fmt]>, va_list <[list]>);
@@ -27,53 +27,6 @@ ANSI_SYNOPSIS
                         va_list <[list]>);
 	int _vsnprintf_r(void *<[reent]>, char *<[str]>, size_t <[size]>, const char *<[fmt]>,
                         va_list <[list]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	#include <varargs.h>
-	int vprintf( <[fmt]>, <[list]>)
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int vfprintf(<[fp]>, <[fmt]>, <[list]>)
-	FILE *<[fp]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int vsprintf(<[str]>, <[fmt]>, <[list]>)
-	char *<[str]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int vsnprintf(<[str]>, <[size]>, <[fmt]>, <[list]>)
-	char *<[str]>;
-        size_t <[size]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vprintf_r(<[reent]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vfprintf_r(<[reent]>, <[fp]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	FILE *<[fp]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vsprintf_r(<[reent]>, <[str]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	char *<[str]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vsnprintf_r(<[reent]>, <[str]>, <[size]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	char *<[str]>;
-        size_t <[size]>;
-	char *<[fmt]>;
-	va_list <[list]>;
 
 DESCRIPTION
 <<vprintf>>, <<vfprintf>>, <<vsprintf>> and <<vsnprintf>> are (respectively)
@@ -112,11 +65,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -167,11 +116,7 @@ static char *rcsid = "$Id$";
 #include <altivec.h>
 #endif
 
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 
 #include "local.h"
 #include "fvwrite.h"
@@ -270,16 +215,16 @@ __sbprintf_r(rptr, fp, fmt, ap)
 #define	DEFPREC		6
 
 #ifdef _NO_LONGDBL
-static char *cvt _PARAMS((struct _reent *, double, int, int, char *, int *, int, int *));
+static char *cvt (struct _reent *, double, int, int, char *, int *, int, int *);
 #else
-static char *cvt _PARAMS((struct _reent *, _LONG_DOUBLE, int, int, char *, int *, int, int *));
-extern int  _ldcheck _PARAMS((_LONG_DOUBLE *));
+static char *cvt (struct _reent *, _LONG_DOUBLE, int, int, char *, int *, int, int *);
+extern int  _ldcheck (_LONG_DOUBLE *);
 #endif
 
-static int exponent _PARAMS((char *, int, int));
+static int exponent (char *, int, int);
 
 #ifdef __SPE__
-static char *cvt_ufix64 _PARAMS((struct _reent *, unsigned long long, int,  int *, int *));
+static char *cvt_ufix64 (struct _reent *, unsigned long long, int,  int *, int *);
 #endif /* __SPE__ */
 
 #else /* no FLOATING_POINT */
@@ -318,9 +263,8 @@ static char *cvt_ufix64 _PARAMS((struct _reent *, unsigned long long, int,  int 
 #define FIXEDPOINT	0x400		/* fixed-point */
 
 int 
-_DEFUN (VFPRINTF, (fp, fmt0, ap),
-	FILE * fp _AND
-	_CONST char *fmt0 _AND
+VFPRINTF (FILE * fp,
+	const char *fmt0,
 	va_list ap)
 {
   CHECK_INIT (_REENT, fp);
@@ -328,10 +272,9 @@ _DEFUN (VFPRINTF, (fp, fmt0, ap),
 }
 
 int 
-_DEFUN (_VFPRINTF_R, (data, fp, fmt0, ap),
-	struct _reent *data _AND
-	FILE * fp _AND
-	_CONST char *fmt0 _AND
+_VFPRINTF_R (struct _reent *data,
+	FILE * fp,
+	const char *fmt0,
 	va_list ap)
 {
 	register char *fmt;	/* format string */
@@ -397,9 +340,9 @@ _DEFUN (_VFPRINTF_R, (data, fp, fmt0, ap),
 	 * below longer.
 	 */
 #define	PADSIZE	16		/* pad chunk size */
-	static _CONST char blanks[PADSIZE] =
+	static const char blanks[PADSIZE] =
 	 {' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' '};
-	static _CONST char zeroes[PADSIZE] =
+	static const char zeroes[PADSIZE] =
 	 {'0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0'};
 
 	/*
@@ -1294,11 +1237,11 @@ error:
 #ifdef FLOATING_POINT
 
 #ifdef _NO_LONGDBL
-extern char *_dtoa_r _PARAMS((struct _reent *, double, int,
-			      int, int *, int *, char **));
+extern char *_dtoa_r (struct _reent *, double, int,
+			      int, int *, int *, char **);
 #else
-extern char *_ldtoa_r _PARAMS((struct _reent *, _LONG_DOUBLE, int,
-			      int, int *, int *, char **));
+extern char *_ldtoa_r (struct _reent *, _LONG_DOUBLE, int,
+			      int, int *, int *, char **);
 #undef word0
 #define word0(x) ldword0(x)
 #endif
@@ -1405,8 +1348,8 @@ exponent(p0, exp, fmtch)
 #endif /* FLOATING_POINT */
 
 #ifdef __SPE__
-extern char *_ufix64toa_r _PARAMS((struct _reent *, unsigned long long, int,
-			           int, int *, int *, char **));
+extern char *_ufix64toa_r (struct _reent *, unsigned long long, int,
+			           int, int *, int *, char **);
 static char *
 cvt_ufix64 (data, value, ndigits, decpt, length)
 	struct _reent *data;

@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -19,18 +19,13 @@
 #include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(vprintf, (fmt, ap),
-       _CONST char *fmt _AND
+vprintf (const char *fmt,
        va_list ap)
 {
   struct _reent *reent = _REENT;
@@ -41,15 +36,14 @@ _DEFUN(vprintf, (fmt, ap),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(viprintf, (const char *, __VALIST) _ATTRIBUTE ((__alias__("vprintf"))));
+viprintf (const char *, __VALIST) _ATTRIBUTE ((__alias__("vprintf")));
 #endif
 
 #endif /* !_REENT_ONLY */
 
 int
-_DEFUN(_vprintf_r, (ptr, fmt, ap),
-       struct _reent *ptr _AND
-       _CONST char *__restrict fmt   _AND
+_vprintf_r (struct _reent *ptr,
+       const char *__restrict fmt,
        va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (ptr);
@@ -58,6 +52,6 @@ _DEFUN(_vprintf_r, (ptr, fmt, ap),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(_viprintf_r, (struct _reent *, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("_vprintf_r"))));
+_viprintf_r (struct _reent *, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("_vprintf_r")));
 #endif

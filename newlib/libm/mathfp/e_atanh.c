@@ -21,18 +21,10 @@ INDEX
 INDEX
         atanhf
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double atanh(double <[x]>);
         float atanhf(float <[x]>);
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double atanh(<[x]>)
-        double <[x]>;
-
-        float atanhf(<[x]>)
-        float <[x]>;
 
 DESCRIPTION
         <<atanh>> calculates the inverse hyperbolic tangent of <[x]>.
@@ -62,9 +54,6 @@ RETURNS
         @end tex
         is 1, the global <<errno>> is set to <<EDOM>>; and the result is
         infinity with the same sign as <<x>>.  A <<SING error>> is reported.
-
-        You can modify the error handling for these routines using
-        <<matherr>>.
 
 PORTABILITY
         Neither <<atanh>> nor <<atanhf>> are ANSI C.

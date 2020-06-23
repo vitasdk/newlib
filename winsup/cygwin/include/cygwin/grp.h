@@ -1,6 +1,4 @@
 /* cygwin/grp.h
-
-   Copyright 2002, 2011 Red Hat Inc.
    Written by Corinna Vinschen <corinna@vinschen.de>
 
 This file is part of Cygwin.
@@ -19,7 +17,7 @@ extern "C" {
 #endif
 
 #ifdef __INSIDE_CYGWIN__
-#ifndef __x86_64__
+#ifdef __i386__
 struct __group16
 {
   char *gr_name;

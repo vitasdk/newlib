@@ -13,13 +13,13 @@
  */
 /*
 FUNCTION
-<<remquo>>, <<remquof>>--remainder and part of quotient
+<<remquo>>, <<remquof>>---remainder and part of quotient
 INDEX
 	remquo
 INDEX
 	remquof
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double remquo(double <[x]>, double <[y]>, int *<[quo]>);
 	float remquof(float <[x]>, float <[y]>, int *<[quo]>);

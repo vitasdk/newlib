@@ -1,7 +1,5 @@
 /* environ.h: Declarations for environ manipulation
 
-   Copyright 2000, 2001, 2002, 2003, 2005, 2006, 2008, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -46,5 +44,7 @@ extern "C" char __stdcall **cur_environ ();
 #endif
 char ** __reg3 build_env (const char * const *envp, PWCHAR &envblock,
 			  int &envc, bool need_envblock, HANDLE new_token);
+
+char ** __reg2 win32env_to_cygenv (PWCHAR rawenv, bool posify);
 
 #define ENV_CVT -1

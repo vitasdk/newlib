@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -28,7 +28,7 @@ INDEX
 INDEX
 	_fseeko_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int fseek(FILE *<[fp]>, long <[offset]>, int <[whence]>)
 	int fseeko(FILE *<[fp]>, off_t <[offset]>, int <[whence]>)
@@ -36,30 +36,6 @@ ANSI_SYNOPSIS
 	             long <[offset]>, int <[whence]>)
 	int _fseeko_r(struct _reent *<[ptr]>, FILE *<[fp]>,
 	             off_t <[offset]>, int <[whence]>)
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int fseek(<[fp]>, <[offset]>, <[whence]>)
-	FILE *<[fp]>;
-	long <[offset]>;
-	int <[whence]>;
-
-	int fseeko(<[fp]>, <[offset]>, <[whence]>)
-	FILE *<[fp]>;
-	off_t <[offset]>;
-	int <[whence]>;
-
-	int _fseek_r(<[ptr]>, <[fp]>, <[offset]>, <[whence]>)
-	struct _reent *<[ptr]>;
-	FILE *<[fp]>;
-	long <[offset]>;
-	int <[whence]>;
-
-	int _fseeko_r(<[ptr]>, <[fp]>, <[offset]>, <[whence]>)
-	struct _reent *<[ptr]>;
-	FILE *<[fp]>;
-	off_t <[offset]>;
-	int <[whence]>;
 
 DESCRIPTION
 Objects of type <<FILE>> can have a ``position'' that records how much
@@ -117,13 +93,12 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  */
 
 int
-_DEFUN(_fseeko_r, (ptr, fp, offset, whence),
-       struct _reent *ptr _AND
-       register FILE *fp  _AND
-       _off_t offset      _AND
+_fseeko_r (struct _reent *ptr,
+       register FILE *fp,
+       _off_t offset,
        int whence)
 {
-  _fpos_t _EXFNPTR(seekfn, (struct _reent *, _PTR, _fpos_t, int));
+  _fpos_t (*seekfn) (struct _reent *, void *, _fpos_t, int);
   _fpos_t target;
   _fpos_t curoff = 0;
   size_t n;
@@ -383,9 +358,8 @@ dumb:
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(fseeko, (fp, offset, whence),
-       register FILE *fp _AND
-       _off_t offset     _AND
+fseeko (register FILE *fp,
+       _off_t offset,
        int whence)
 {
   return _fseeko_r (_REENT, fp, offset, whence);

@@ -1,7 +1,5 @@
 /* cygwin/if.h
 
-   Copyright 1996, 2000, 2001, 2007, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -37,8 +35,8 @@ struct if_nameindex {
 };
 
 /* This is the structure expected by ioctl when the application requests
-   the friendly adapter name (>= XP SP1).  ifru_data should point to such
-   a structure when ioctl is called with SIOCGIFFRNDLYNAM. */
+   the friendly adapter name.  ifru_data should point to such a structure
+   when ioctl is called with SIOCGIFFRNDLYNAM. */
 #define IFRF_FRIENDLYNAMESIZ 260
 
 struct ifreq_frndlyname {

@@ -1,8 +1,5 @@
 /* exec.cc: exec system call support.
 
-   Copyright 1996, 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2008,
-   2009, 2011, 2012, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -35,7 +32,6 @@ execl (const char *path, const char *arg0, ...)
       argv[i] = va_arg (args, const char *);
   while (argv[i++] != NULL);
   va_end (args);
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY, path, (char * const  *) argv, cur_environ ());
 }
 
@@ -55,7 +51,6 @@ execle (const char *path, const char *arg0, ...)
   while (argv[i++] != NULL);
   envp = va_arg (args, const char * const *);
   va_end (args);
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY, path, (char * const  *) argv, envp);
 }
 
@@ -74,7 +69,6 @@ execlp (const char *file, const char *arg0, ...)
       argv[i] = va_arg (args, const char *);
   while (argv[i++] != NULL);
   va_end (args);
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY | _P_PATH_TYPE_EXEC,
 		  find_exec (file, buf, "PATH", FE_NNF) ?: "",
 		  (char * const  *) argv, cur_environ ());
@@ -83,14 +77,12 @@ execlp (const char *file, const char *arg0, ...)
 extern "C" int
 execv (const char *path, char * const *argv)
 {
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY, path, argv, cur_environ ());
 }
 
 extern "C" int
 execve (const char *path, char *const argv[], char *const envp[])
 {
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY, path, argv, envp);
 }
 EXPORT_ALIAS (execve, _execve)	/* For newlib */
@@ -100,7 +92,6 @@ execvp (const char *file, char * const *argv)
 {
   path_conv buf;
 
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY | _P_PATH_TYPE_EXEC,
 		  find_exec (file, buf, "PATH", FE_NNF) ?: "",
 		  argv, cur_environ ());
@@ -111,7 +102,6 @@ execvpe (const char *file, char * const *argv, char *const *envp)
 {
   path_conv buf;
 
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY | _P_PATH_TYPE_EXEC,
 		  find_exec (file, buf, "PATH", FE_NNF) ?: "",
 		  argv, envp);
@@ -127,7 +117,6 @@ fexecve (int fd, char * const *argv, char *const *envp)
       return -1;
     }
 
-  MALLOC_CHECK;
   return spawnve (_P_OVERLAY, cfd->pc.get_win32 (), argv, envp);
 }
 

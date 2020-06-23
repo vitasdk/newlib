@@ -10,20 +10,10 @@ INDEX
 INDEX
    atan2f
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double atan2(double <[y]>,double <[x]>);
         float atan2f(float <[y]>,float <[x]>);
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double atan2(<[y]>,<[x]>);
-        double <[y]>;
-        double <[x]>;
-
-        float atan2f(<[y]>,<[x]>);
-        float <[y]>;
-        float <[x]>;
 
 DESCRIPTION
 
@@ -51,8 +41,6 @@ $-\pi$ to $\pi$.
 
 If both <[x]> and <[y]> are 0.0, <<atan2>> causes a <<DOMAIN>> error.
 
-You can modify error handling for these functions using <<matherr>>.
-
 PORTABILITY
 <<atan2>> is ANSI C.  <<atan2f>> is an extension.
 
@@ -79,8 +67,7 @@ PORTABILITY
 #ifndef _DOUBLE_IS_32BITS
 
 double
-_DEFUN (atan2, (double, double),
-        double v _AND
+atan2 (double v,
         double u)
 {
   return (atangent (0.0, v, u, 1));

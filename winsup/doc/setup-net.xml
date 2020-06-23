@@ -35,8 +35,8 @@ for new users to understand while remaining flexible for the
 experienced. The volunteer development team is constantly working
 on <command>setup.exe</command>; before requesting a new feature,
 check the wishlist in the
-<ulink url="https://sourceware.org/git/gitweb.cgi?p=cygwin-setup.git;a=blob_plain;f=README;hb=HEAD">GIT <literal>README</literal>
-</ulink>. It may already be present in the GIT version!
+<ulink url="https://sourceware.org/git/gitweb.cgi?p=cygwin-setup.git;a=blob_plain;f=README;hb=HEAD">Git <literal>README</literal>
+</ulink>. It may already be present in the Git version!
 </para>
 
 <para>
@@ -132,14 +132,11 @@ or in case you need to reinstall a package.
 
 <sect2 id="setup-connection"><title>Connection Method</title>
 <para>
-The <literal>Direct Connection</literal> method of downloading will 
-directly download the packages, while the IE5 method will leverage your 
-IE5 cache for performance. If your organisation uses a proxy server or
-auto-configuration scripts, the IE5 method also uses these settings.
-If you have a proxy server, you can manually type it into 
-the <literal>Use Proxy</literal> section. Unfortunately, 
-<command>setup.exe</command> does not currently support password
-authorization for proxy servers.
+The <literal>Direct Connection</literal> method of downloading will
+directly connect.  If your system is configured to use a proxy server or
+auto-configuration scripts, the <literal>Use System Proxy Settings</literal>
+method uses those settings.  Alternatively, you can manually enter proxy
+settings into the <literal>Use HTTP/FTP Proxy</literal> section.
 </para>
 </sect2>
 
@@ -254,11 +251,7 @@ in <filename>/etc/passwd</filename>.
 <sect2 id="setup-postinstall"><title>Post-Install Scripts</title>
 <para>
 Last of all, <command>setup.exe</command> will run any post-install
-scripts to finish correctly setting up installed packages. Since each
-script is run separately, several windows may pop up. If you are 
-interested in what is being done, see the Cygwin Package Contributor's
-Guide at <ulink 
-url="https://cygwin.com/setup.html"/>
+scripts to finish correctly setting up installed packages.
 When the last post-install script is completed, <command>setup.exe</command> 
 will display a box announcing the completion. A few packages, such as
 the OpenSSH server, require some manual site-specific configuration. 

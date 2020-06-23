@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -27,14 +27,9 @@ FUNCTION
 INDEX
 	setlinebuf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	void setlinebuf(FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	void setlinebuf(<[fp]>)
-	FILE *<[fp]>;
 
 DESCRIPTION
 <<setlinebuf>> specifies that output to the file or stream identified by
@@ -61,8 +56,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include "local.h"
 
 int
-_DEFUN(setlinebuf, (fp),
-       FILE * fp)
+setlinebuf (FILE * fp)
 {
   return (setvbuf (fp, (char *) NULL, _IOLBF, (size_t) 0));
 }

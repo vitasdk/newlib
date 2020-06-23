@@ -4,7 +4,7 @@ dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.59)
 AC_INIT([newlib],[NEWLIB_VERSION])
 AC_CONFIG_SRCDIR([libc])
-AC_CONFIG_HEADER(newlib.h:newlib.hin)
+AC_CONFIG_HEADERS([_newlib_version.h:_newlib_version.hin newlib.h:newlib.hin])
 
 dnl Can't be done in NEWLIB_CONFIGURE because that confuses automake. 
 AC_CONFIG_AUX_DIR(..)
@@ -65,6 +65,16 @@ AC_ARG_ENABLE(newlib-mb,
   no)  newlib_mb=no ;;
   *)   AC_MSG_ERROR(bad value ${enableval} for newlib-mb option) ;;
  esac], [newlib_mb=])dnl
+
+dnl Enable verification of successful memory allocation for _REENT_CHECK family of macros
+dnl Support --disable-newlib-reent-check-verify
+AC_ARG_ENABLE(newlib-reent-check-verify,
+[  --disable-newlib-reent-check-verify        disable checking of _REENT_CHECK memory allocation],
+[case "${enableval}" in
+  yes) newlib_reent_check_verify=yes;;
+  no)  newlib_reent_check_verify=no ;;
+  *)   AC_MSG_ERROR(bad value ${enableval} for newlib-reent-check-verify option) ;;
+ esac], [newlib_reent_check_verify=])dnl
 
 dnl Support --enable-newlib-iconv-encodings
 AC_ARG_ENABLE(newlib-iconv-encodings,
@@ -136,6 +146,15 @@ AC_ARG_ENABLE(newlib-reent-small,
   no)  newlib_reent_small=no ;;
   *)   AC_MSG_ERROR(bad value ${enableval} for newlib-reent-small option) ;;
  esac], [newlib_reent_small=])dnl
+
+dnl Support --enable-newlib-global-stdio-streams
+AC_ARG_ENABLE(newlib-global-stdio-streams,
+[  --enable-newlib-global-stdio-streams   enable global stdio streams],
+[case "${enableval}" in
+  yes) newlib_global_stdio_streams=yes;;
+  no)  newlib_global_stdio_streams=no ;;
+  *)   AC_MSG_ERROR(bad value ${enableval} for newlib-global-stdio-streams option) ;;
+ esac], [newlib_global_stdio_streams=])dnl
  
 dnl Support --disable-newlib-fvwrite-in-streamio
 AC_ARG_ENABLE(newlib-fvwrite-in-streamio,
@@ -218,6 +237,28 @@ AC_ARG_ENABLE(newlib_nano_formatted_io,
    *) AC_MSG_ERROR(bad value ${enableval} for newlib-nano-formatted-io) ;;
  esac],[newlib_nano_formatted_io=no])
 
+dnl Support --enable-retargetable-locking
+dnl This option is also read in libc/configure.in.  It is repeated
+dnl here so that it shows up in the help text.
+AC_ARG_ENABLE(newlib-retargetable-locking,
+[  --enable-newlib-retargetable-locking    Allow locking routines to be retargeted at link time],
+[case "${enableval}" in
+   yes) newlib_retargetable_locking=yes ;;
+   no)  newlib_retargetable_locking=no ;;
+   *) AC_MSG_ERROR(bad value ${enableval} for newlib-retargetable-locking) ;;
+ esac],[newlib_retargetable_locking=no])
+
+dnl Support --enable-newlib-long-time_t
+AC_ARG_ENABLE(newlib-long-time_t,
+[  --enable-newlib-long-time_t   define time_t to long],
+[if test "${newlib_long_time_t+set}" != set; then
+  case "${enableval}" in
+    yes) newlib_long_time_t=yes ;;
+    no)  newlib_long_time_t=no  ;;
+    *)   AC_MSG_ERROR(bad value ${enableval} for newlib-long-time_t option) ;;
+  esac
+ fi], [newlib_long_time_t=no])dnl
+
 NEWLIB_CONFIGURE(.)
 
 dnl We have to enable libtool after NEWLIB_CONFIGURE because if we try and
@@ -261,12 +302,27 @@ AC_CONFIG_SUBDIRS(libc)
 AC_CONFIG_SUBDIRS(libm)
 
 if test -z "${with_multisubdir}"; then
+  have_multisubdir=no
   AC_CONFIG_SUBDIRS(doc)
-  have_doc=yes
 else
-  have_doc=
+  have_multisubdir=yes
 fi
-AM_CONDITIONAL(HAVE_DOC, test x$have_doc = xyes)
+AM_CONDITIONAL(HAVE_DOC, test x$have_multisubdir = xno)
+
+# Some run-time support libraries provided by GCC (e.g. libgomp) use configure
+# checks to detect certain features, e.g. availability of thread-local storage.
+# The configure script generates a test program and tries to compile and link
+# it.  It should use target libraries and startfiles of the build tree if
+# available and not random ones from the installation prefix for this
+# procedure.  The search directories specified by -B are a bit special, see
+# for_each_path() in gcc.c of the GCC sources.  First a search is performed on
+# all search paths with the multilib directory appended (if desired), then a
+# second search is performed on demand with the base directory only.  For each
+# multilib there is a "newlib" subdirectory.  This directory is specified by a
+# -B option for the support libraries.  In order to find the newlib artifacts
+# (ctr0.o, libc.a, libg.a and libm.a) they must be located in a proper multilib
+# subdirectory withing the build directory.
+AM_CONDITIONAL(HAVE_MULTISUBDIR, test x$have_multisubdir = xyes)
 
 EXTRA_DIRS=
 case $host in
@@ -283,6 +339,7 @@ if test "x${have_crt0}" = "xyes"; then
   CRT0=crt0.o
   CRT0_DIR=libc/
 fi
+AM_CONDITIONAL(HAVE_CRT0, test x$have_crt0 = xyes)
 AC_SUBST(CRT0)
 AC_SUBST(CRT0_DIR)
 
@@ -349,6 +406,10 @@ if test "${newlib_elix_level}" -gt "0"; then
 AC_DEFINE_UNQUOTED(_ELIX_LEVEL,${newlib_elix_level})
 fi
 
+if test "${newlib_reent_check_verify}" = "yes"; then
+AC_DEFINE_UNQUOTED(_REENT_CHECK_VERIFY)
+fi
+
 if test "${newlib_io_c99_formats}" = "yes"; then
 AC_DEFINE_UNQUOTED(_WANT_IO_C99_FORMATS)
 fi
@@ -373,6 +434,10 @@ if test "${newlib_reent_small}" = "yes"; then
 AC_DEFINE_UNQUOTED(_WANT_REENT_SMALL)
 fi
 
+if test "${newlib_global_stdio_streams}" = "yes"; then
+AC_DEFINE_UNQUOTED(_WANT_REENT_GLOBAL_STDIO_STREAMS)
+fi
+
 if test "${newlib_mb}" = "yes"; then
 AC_DEFINE_UNQUOTED(_MB_CAPABLE)
 AC_DEFINE_UNQUOTED(_MB_LEN_MAX,8)
@@ -384,7 +449,10 @@ if test "${newlib_iconv_external_ccs}" = "yes"; then
 AC_DEFINE_UNQUOTED(_ICONV_ENABLE_EXTERNAL_CCS)
 fi
 
-AC_DEFINE_UNQUOTED(_NEWLIB_VERSION,"NEWLIB_VERSION")
+AC_DEFINE(_NEWLIB_VERSION,"NEWLIB_VERSION","The newlib version in string format.")
+AC_DEFINE(__NEWLIB__,NEWLIB_MAJOR_VERSION,"The newlib major version number.")
+AC_DEFINE(__NEWLIB_MINOR__,NEWLIB_MINOR_VERSION,"The newlib minor version number.")
+AC_DEFINE(__NEWLIB_PATCHLEVEL__,NEWLIB_PATCHLEVEL_VERSION,"The newlib patch level.")
 
 if test "${multilib}" = "yes"; then
   multilib_arg="--enable-multilib"
@@ -437,6 +505,14 @@ fi
 
 if test "${newlib_nano_formatted_io}" = "yes"; then
 AC_DEFINE_UNQUOTED(_NANO_FORMATTED_IO)
+fi
+
+if test "${newlib_retargetable_locking}" = "yes"; then
+AC_DEFINE_UNQUOTED(_RETARGETABLE_LOCKING)
+fi
+
+if test "${newlib_long_time_t}" = "yes"; then
+AC_DEFINE_UNQUOTED(_WANT_USE_LONG_TIME_T)
 fi
 
 dnl

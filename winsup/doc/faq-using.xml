@@ -572,13 +572,15 @@ contributing it for others to use)
 Can I bundle Cygwin with my product for free?
 </para></question>
 <answer><para>
-Only if you comply with Cygwin's <ulink
-url="https://cygwin.com/licensing.html">license</ulink> very carefully.  If you
-choose to distribute cygwin1.dll, you must be willing to distribute the
-exact source code used to build that copy of cygwin1.dll as per the
-terms of the GPL.  If you ship applications that link with cygwin1.dll,
-you must either provide those applications' source code under a
-GPL-compatible license, *or* purchase a cygwin license from Red Hat.
+Starting with Cygwin version 2.5.2, which is LGPL licensed, yes, albeit
+it's not recommended for interoperability reasons.</para>
+
+<para>Cygwin versions prior to 2.5.2 were GPL licensed.
+If you choose to distribute an older cygwin1.dll, you must be willing to
+distribute the exact source code used to build that copy of cygwin1.dll
+as per the terms of the GPL.  If you ship applications that link with
+older cygwin1.dll, you must provide those applications' source code
+under a GPL-compatible license.
 </para></answer></qandaentry>
 
 <qandaentry id="faq.using.older-cygwin-conflict">
@@ -608,7 +610,7 @@ installed distribution.
 <para>Probably because there is nobody willing or able to maintain it.  It
 takes time, and the priority for the Cygwin Team is the Cygwin package.
 The rest is a volunteer effort.  Want to contribute?  See
-<ulink url="https://cygwin.com/setup.html"/>.
+<ulink url="https://cygwin.com/packaging.html"/>.
 </para>
 </answer></qandaentry>
 
@@ -722,9 +724,9 @@ the following line to your .inputrc file:
 <answer>
 
 <para>We have had good reports about Kerio Personal Firewall, ZoneLabs
-Integrity Desktop, and the built-in firewall in Windows XP. Other
-well-known products including ZoneAlarm and Norton Internet Security have
-caused problems for some users but work fine for others. At last report,
+Integrity Desktop, and the Windows built-in firewall. Other well-known
+products including ZoneAlarm and Norton Internet Security have caused
+problems for some users but work fine for others. At last report,
 Agnitum Outpost did not work with Cygwin.  If you are having strange
 connection-related problems, disabling the firewall is a good
 troubleshooting step (as is closing or disabling all other running
@@ -772,9 +774,8 @@ of this is perl's configuration script, which wants
 tell the difference between files with just different case, so the
 configuration fails.
 </para>
-<para>To help with this problem, Cygwin supports case sensitivity
-starting with Cygwin 1.7.0.  For a detailed description how to use that
-feature see the Cygwin User's Guilde at
+<para>To help with this problem, Cygwin supports case sensitivity.  For a
+detailed description how to use that feature see the Cygwin User's Guide at
 <ulink url="https://cygwin.com/cygwin-ug-net/using-specialnames.html"/>.
 </para>
 
@@ -793,8 +794,7 @@ interesting.  E.g., the perl distribution has a file called
 letters 'aux' in it will hang.
 </para>
 <para>At least that's what happens when using native Windows tools.  Cygwin
-1.7.0 and later can deal with these filenames just fine.  Again, see the
-User's Guide at
+can deal with these filenames just fine.  Again, see the User's Guide at
 <ulink url="https://cygwin.com/cygwin-ug-net/using-specialnames.html"/>
 for a detailed description of what's possible with filenames and what is not.
 </para>
@@ -853,7 +853,7 @@ because they do not always work on Samba drives.  Also, mounts are
 faster to process because no disk access is required to resolve them.
 </para>
 <para>Note that non-cygwin applications will not observe Cygwin mounts (or
-symlinks for that matter).  For example, if you use WinZip to unpack the
+most symlinks for that matter).  For example, if you use WinZip to unpack the
 tar distribution of a Cygwin package, it may not get installed to the
 correct Cygwin path.  <emphasis>So don't do this!</emphasis>
 </para>
@@ -950,14 +950,13 @@ two packages:</para>
 <question><para>Why don't some of my old symlinks work anymore?</para></question>
 <answer>
 
-<para>Beginning with Cygwin 1.7, Cygwin supports multiple character sets.
-Symlinks created with Cygwin 1.7 are using the UTF-16 character set, which is
-portable across all character sets.  Old symlinks were written using your
-current Windows codepage, which is not portable across all character sets.
-If the target of the symlink doesn't resolve anymore, it's very likely that
-the symlink points to a target filename using native, non-ASCII characters,
-and you're now using another character set than way back when you created
-the symlink.</para>
+<para>Cygwin supports multiple character sets.  Symlinks created with Cygwin
+are using the UTF-16 character set, which is portable across all character
+sets.  Old symlinks were written using your current Windows codepage, which
+is not portable across all character sets.  If the target of the symlink
+doesn't resolve anymore, it's very likely that the symlink points to a target
+filename using native, non-ASCII characters, and you're now using another
+character set than way back when you created the symlink.</para>
 
 <para>Solution: Delete the symlink and create it again under you new Cygwin.
 The new symlink will be correctly point to the target no matter what character
@@ -968,10 +967,10 @@ set you're using in future.</para>
 <question><para>Why don't symlinks work on Samba-mounted filesystems?</para></question>
 <answer>
 
-<para>Symlinks are marked with "system" file attribute.  Samba does not
-enable this attribute by default.  To enable it, consult your Samba
-documentation and then add these lines to your samba configuration
-file:
+<para>Default symlinks on Samba are marked with DOS SYSTEM file
+attribute.  Samba does not enable this attribute by default.  To enable
+it, consult your Samba documentation and then add these lines to your
+samba configuration file:
 </para>
 <screen>
 	map system = yes
@@ -981,11 +980,14 @@ file:
 <para>Note that the 0775 can be anything as long as the 0010 bit is set.
 </para>
 <para>Alternatively, use Windows shortcuts as symlinks.  See the CYGWIN
-environment variable option "winsymlinks" 
+environment variable option "winsymlinks:lnk"
 <ulink url="https://cygwin.com/cygwin-ug-net/using-cygwinenv.html"/>
+Note that Samba does not support reparse points so some methods to
+create symlinks are just not available.
 </para>
 </answer></qandaentry>
 
+<!--
 <qandaentry id="faq.using.sshd-in-domain">
 <question><para>How do I setup sshd in a domain?</para></question>
 <answer>
@@ -1052,9 +1054,10 @@ usually all set and you can start the sshd service via
 </screen>
 
 </answer></qandaentry>
+-->
 
 <qandaentry id="faq.using.ssh-pubkey-stops-working">
-<question><para>Why does public key authentication with ssh fail after updating to Cygwin 1.7.34?</para></question>
+<question><para>Why does public key authentication with ssh fail after updating to Cygwin 1.7.34 or later?</para></question>
 <answer>
 
 <para>
@@ -1161,7 +1164,7 @@ domains. For example, you might want to use the <computeroutput>Domain
 Users</computeroutput> group instead.</para>
 
 <para>For more information on <command>setfacl</command>, see
-<ulink url="https://cygwin.com/cygwin-ug-net/using-utils.html#setfacl"/></para>
+<ulink url="https://cygwin.com/cygwin-ug-net/setfacl.html"/></para>
 </answer></qandaentry>
 
 <qandaentry id="faq.using.same-with-rhosts">
@@ -1179,6 +1182,48 @@ Users</computeroutput> group instead.</para>
   $ setfacl -b .rhosts
   $ ls -l .rhosts
   -rw-------  1 user group 42 Nov 12  2010 .rhosts
+</screen>
+
+</answer></qandaentry>
+
+<qandaentry id="faq.using.same-with-permissions">
+<question><para>Why do my files have extra permissions after updating to Cygwin 1.7.34?</para></question>
+<answer>
+
+<para>The problem is exactly the same as with the key files of SSH.  See
+<xref linkend="faq.using.ssh-pubkey-stops-working"/>.</para>
+
+<para>The solution is the same:</para>
+
+<screen>
+  $ ls -l *
+  -rw-rwxr--+ 1 user group 42 Nov 12  2010 file1
+  -rw-rwxr--+ 1 user group 42 Nov 12  2010 file2
+  $ setfacl -b *
+  $ ls -l *
+  -rw-r--r--  1 user group 42 Nov 12  2010 file1
+  -rw-r--r--  1 user group 42 Nov 12  2010 file2
+</screen>
+
+<para>You may find that newly-created files also have unexpected
+permissions:</para>
+
+<screen>
+  $ touch foo
+  $ ls -l foo
+  -rw-rwxr--+ 1 user group 42 Nov 12  2010 foo
+</screen>
+
+<para>This probably means that the directory in which you're creating
+the files has unwanted default ACL entries that are inherited by
+newly-created files and subdirectories.  The solution is again the
+same:</para>
+
+<screen>
+  $ setfacl -b .
+  $ touch bar
+  $ ls -l bar
+  -rw-r--r--  1 user group 42 Nov 12  2010 bar
 </screen>
 
 </answer></qandaentry>
@@ -1207,26 +1252,6 @@ includes an X server; please see the <ulink url="https://x.cygwin.com/docs/ug/cy
 for installation and startup instructions.
 </para></answer></qandaentry>
 
-<qandaentry id="faq.using.ipv6">
-<question><para>Why do I get "Address family not supported" errors when playing with IPv6?</para></question>
-<answer>
-
-<para>IPv6 is only fully supported and available right from the start
-beginning with Windows Vista and Windows Server 2008.</para>
-
-<para>The previous generation of Windows,
-Windows XP and Windows Server 2003, only support IPv6 on an "experimental"
-basis.  On these Windows versions, the IPv6 TCP/IP stack is not installed
-automatically, rather the system administrator has to install it manually.
-Unless this has already been done on your machine, your machine is not
-IPv6-capable and that's why you see the "Address family not supported"
-error message.  Note, however, that the IPv6 stack on these systems
-don't fully support all features of IPv6.</para>
-
-<para>For more information about IPv6 on Windows and how to install the
-IPv6 stack, see the <ulink url="http://www.microsoft.com/technet/network/ipv6/ipv6faq.mspx">Microsoft TechNet IPv6 FAQ article</ulink>
-</para></answer></qandaentry>
-
 <qandaentry id="faq.using.bloda" xreflabel="BLODA">
 <question><para>What applications have been found to interfere with Cygwin?</para></question>
 <answer>
@@ -1244,37 +1269,44 @@ behaviour which affect the operation of other programs, such as Cygwin.
 </para>
 <para>Among the software that has been found to cause difficulties are:</para>
 <para><itemizedlist>
-<listitem><para>Sonic Solutions burning software containing DLA component (when DLA disabled)</para></listitem>
-<listitem><para>Norton/McAfee/Symantec antivirus or antispyware</para></listitem>
-<listitem><para>Logitech webcam software with "Logitech process monitor" service</para></listitem>
-<listitem><para>Kerio, Agnitum or ZoneAlarm Personal Firewall</para></listitem>
-<listitem><para>Iolo System Mechanic/AntiVirus/Firewall</para></listitem>
-<listitem><para>LanDesk</para></listitem>
-<listitem><para>Windows Defender </para></listitem>
-<listitem><para>Various programs by Wave Systems Corp using wxvault.dll, including Embassy Trust Suite and Embassy Security Center</para></listitem>
-<listitem><para>NOD32 Antivirus</para></listitem>
-<listitem><para>ByteMobile laptop optimization client</para></listitem>
-<listitem><para>Earthlink Total-Access</para></listitem>
-<listitem><para>Spybot S&amp;D TeaTimer</para></listitem>
 <listitem><para>AR Soft RAM Disk</para></listitem>
 <listitem><para>ATI Catalyst (some versions)</para></listitem>
-<listitem><para>NVIDIA GeForce (some versions)</para></listitem>
-<listitem><para>Windows LiveOneCare</para></listitem>
-<listitem><para>Webroot Spy Sweeper with Antivirus</para></listitem>
-<listitem><para>COMODO Firewall Pro</para></listitem>
-<listitem><para>PC Tools Spyware Doctor</para></listitem>
+<listitem><para>AVAST (disable FILESYSTEM and BEHAVIOR realtime shields)</para></listitem>
 <listitem><para>Avira AntiVir</para></listitem>
-<listitem><para>Panda Internet Security</para></listitem>
+<listitem><para>BeyondTrust PowerBroker</para></listitem>
 <listitem><para>BitDefender</para></listitem>
-<listitem><para>Google Desktop</para></listitem>
-<listitem><para>Sophos Anti-Virus 7</para></listitem>
 <listitem><para>Bufferzone from Trustware</para></listitem>
+<listitem><para>ByteMobile laptop optimization client</para></listitem>
+<listitem><para>COMODO Firewall Pro</para></listitem>
+<listitem><para>COMODO Internet Security</para></listitem>
+<listitem><para>ConEmu (try disabling "Inject ConEmuHk" or see <ulink url="https://conemu.github.io/en/ConEmuHk.html#Third_party_problems">ConEmuHk documentation</ulink>)</para></listitem>
+<listitem><para>Citrix Metaframe Presentation Server/XenApp (see <ulink url="http://support.citrix.com/article/CTX107825">Citrix Support page</ulink>)</para></listitem>
+<listitem><para>Credant Guardian Shield</para></listitem>
+<listitem><para>CylancePROTECT</para></listitem>
+<listitem><para>Earthlink Total-Access</para></listitem>
+<listitem><para>Forefront TMG</para></listitem>
+<listitem><para>Google Desktop</para></listitem>
+<listitem><para>Iolo System Mechanic/AntiVirus/Firewall</para></listitem>
+<listitem><para>Kerio, Agnitum or ZoneAlarm Personal Firewall</para></listitem>
+<listitem><para>LanDesk</para></listitem>
+<listitem><para>Lavasoft Web Companion</para></listitem>
 <listitem><para>Lenovo IPS Core Service (ipssvc)</para></listitem>
 <listitem><para>Lenovo RapidBoot Shield</para></listitem>
-<listitem><para>Credant Guardian Shield</para></listitem>
-<listitem><para>AVAST (disable FILESYSTEM and BEHAVIOR realtime shields)</para></listitem>
-<listitem><para>Citrix Metaframe Presentation Server/XenApp (see <ulink url="http://support.citrix.com/article/CTX107825">Citrix Support page</ulink>)</para></listitem>
-<listitem><para>Lavasoft Web Companion</para></listitem>
+<listitem><para>Logitech webcam software with "Logitech process monitor" service</para></listitem>
+<listitem><para>MacType</para></listitem>
+<listitem><para>NOD32 Antivirus</para></listitem>
+<listitem><para>NVIDIA GeForce (some versions)</para></listitem>
+<listitem><para>Norton/McAfee/Symantec antivirus or antispyware</para></listitem>
+<listitem><para>PC Tools Spyware Doctor</para></listitem>
+<listitem><para>Panda Internet Security</para></listitem>
+<listitem><para>Sonic Solutions burning software containing DLA component (when DLA disabled)</para></listitem>
+<listitem><para>Sophos Anti-Virus 7</para></listitem>
+<listitem><para>Spybot S&amp;D TeaTimer</para></listitem>
+<listitem><para>Various programs by Wave Systems Corp using wxvault.dll, including Embassy Trust Suite and Embassy Security Center</para></listitem>
+<listitem><para>Webroot Spy Sweeper with Antivirus</para></listitem>
+<listitem><para>Windows Defender </para></listitem>
+<listitem><para>Windows LiveOneCare</para></listitem>
+<listitem><para>IBM Security Trusteer Rapport (see <ulink url="http://www-03.ibm.com/software/products/en/trusteer-rapport">its home page</ulink>)</para></listitem>
 </itemizedlist></para>
 <para>Sometimes these problems can be worked around, by temporarily or partially
 disabling the offending software.  For instance, it may be possible to disable
@@ -1289,7 +1321,7 @@ it may be necessary to uninstall the software altogether to restore normal opera
 <para>Some of the symptoms you may experience are:</para>
 <para><itemizedlist>
 <listitem>
-<para>Random fork() failures.</para>
+<para>Random fork() failures</para>
 <para>Caused by hook DLLs that load themselves into every process in the
 system.  POSIX fork() semantics require that the memory map of the child process
 must be an exact duplicate of the parent process' layout.  If one of these DLLs
@@ -1300,7 +1332,7 @@ DLL at that same address in the child, the fork() call has to fail.
 </para>
 </listitem>
 <listitem>
-<para>File access problems.</para>
+<para>File access problems</para>
 <para>Some programs (e.g., virus scanners with on-access scanning) scan or
 otherwise operate on every file accessed by all the other software running on
 your computer.  In some cases they may retain an open handle on the file even
@@ -1350,21 +1382,97 @@ such as virtual memory paging and file caching.</para>
   <para><itemizedlist>
     <listitem>Restart whatever process is trying (and failing) to use
     <literal>fork()</literal>. Sometimes Windows sets up a process
-    environment that is even more hostile to fork() than usual.</listitem>
+    environment that is even more hostile to <literal>fork()</literal> than usual.</listitem>
     <listitem>Ensure that you have eliminated (not just disabled) all
     software on the <xref linkend="faq.using.bloda"/>.
     </listitem>
-    <listitem>Read the 'rebase' package README in
-    <literal>/usr/share/doc/rebase/</literal>, and follow the
-    instructions there to run 'rebaseall'.</listitem>
+    <listitem>Switch from 32-bit Cygwin to 64-bit Cygwin, if your OS and CPU support that.
+    With the bigger address space <literal>fork()</literal> is less likely to fail.</listitem>
+    <listitem>
+      <para>
+      Try setting the environment variable CYGWIN to "detect_bloda", which
+      enables some extra debugging, which may indicate what other software is
+      causing the problem.
+      </para>
+      <para>
+      See <ulink url="https://cygwin.com/ml/cygwin/2012-02/msg00797.html">this
+      mail</ulink> for more information.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+	Force a full rebase: Run <command>rebase-trigger fullrebase</command>,
+	exit all Cygwin programs and run Cygwin setup.
+      </para>
+      <para>
+	By default, Cygwin's setup program automatically performs an incremental
+	rebase of newly installed files.  Forcing a full rebase causes the
+	rebase map to be cleared before doing the rebase.
+      </para>
+      <para>
+	See <literal>/usr/share/doc/rebase/README</literal> and
+	<literal>/usr/share/doc/Cygwin/_autorebase.README</literal> for more
+	details.
+      </para>
+      <para>Please note that installing new packages or updating existing
+      ones undoes the effects of rebase and often causes fork() failures to
+      reappear.
+      </para>
+    </listitem>
     </itemizedlist></para>
-  <para>Please note that installing new packages or updating existing
-  ones undoes the effects of rebaseall and often causes fork() failures
-  to reappear. If so, just run rebaseall again.
-  </para>
   <para>See the <ulink url="https://cygwin.com/cygwin-ug-net/highlights.html#ov-hi-process">
   process creation</ulink> section of the User's Guide for the technical reasons it is so
   difficult to make <literal>fork()</literal> work reliably.</para>
 </answer>
+</qandaentry>
+
+<qandaentry id='faq.using.fixing-find_fast_cwd-warnings'>
+  <question><para>How do I fix <literal>find_fast_cwd</literal> warnings?</para></question>
+  <answer>
+    <para>Older Cygwin releases asked users to report problems to the mailing
+	list with the message:</para>
+    <screen>
+	find_fast_cwd: WARNING: Couldn't compute FAST_CWD pointer. Please report
+	this problem to the public mailing list <ulink url="mailto:cygwin@cygwin.com">cygwin@cygwin.com</ulink></screen>
+    <para>Recent Cygwin releases changed this to the message:</para>
+    <screen>
+	This typically occurs if you're using an older Cygwin version on a newer Windows.
+	Please update to the latest available Cygwin version from <ulink url="https://cygwin.com/">https://cygwin.com/</ulink>.
+	If the problem persists, please see <ulink url="https://cygwin.com/problems.html">https://cygwin.com/problems.html</ulink>.</screen>
+    <para>This is not serious, just a warning that Cygwin may not always be
+	able to exactly emulate all aspects of Unix current directory handling
+	under your Windows release.</para>
+    <para>Unfortunately some projects and products still distribute older
+	Cygwin releases which may not fully support newer Windows releases,
+	instead of installing the current release from the Cygwin project.
+	They also may not provide any obvious way to keep the Cygwin packages
+	their application uses up to date with fixes for security issues and
+	upgrades.</para>
+    <para>The solution is simply downloading and running Cygwin Setup,
+	following the instructions in the Internet Setup section of
+	<ulink url="https://cygwin.com/cygwin-ug-net/setup-net.html#internet-setup">
+	    Setting Up Cygwin</ulink> in the Cygwin User's Guide.</para>
+    <para>Please exit from all applications before running Cygwin Setup.
+	When running Setup, you should not change most of the values presented,
+	just select the <literal>Next</literal> button in most cases, as you
+	already have a Cygwin release installed, and only want to upgrade your
+	current installation.
+	You should make your own selection if the internet connection to your
+	system requires a proxy; and you must always pick an up to date Cygwin
+	download (mirror) site, preferably the site nearest to your system for
+	faster downloads, as shown, with more details to help you choose, on the
+	<ulink url="https://cygwin.com/mirrors.html">
+	    Mirror Sites</ulink> web page.</para>
+    <para>Cygwin Setup will download and apply upgrades to all packages
+	required for Cygwin itself and installed applications.
+	Any problems with applying updates, or the application after updates,
+	should be reported to the project or product supplier for remedial
+	action.</para>
+    <para>As Cygwin is a volunteer project, unable to provide support for older
+	releases installed by projects or products, it would be helpful to let
+	other users know what project or product you installed, in a quick
+	<ulink url="mailto:cygwin@cygwin.com?subject=Application%20with%20old%20Cygwin%20warning%20about%20FAST_CWD">
+	    email</ulink>.</para>
+  </answer>
 </qandaentry>
 </qandadiv>

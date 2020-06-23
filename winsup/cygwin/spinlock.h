@@ -1,7 +1,5 @@
 /* spinlock.h: Header file for cygwin time-sensitive synchronization primitive.
 
-   Copyright 2010 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -32,7 +30,7 @@ class spinlock
   {
     LARGE_INTEGER t;
     if (NtQuerySystemTime (&t) == STATUS_SUCCESS)
-      return get_ll (t);
+      return t.QuadPart;
     return 0LL;
   }
 public:

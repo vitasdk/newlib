@@ -1,7 +1,5 @@
 /* asm/types.h
 
-   Copyright 1998, 2000, 2001, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -10,6 +8,8 @@ details. */
 
 #ifndef _ASM_TYPES_H
 #define _ASM_TYPES_H
+
+#include <asm/bitsperlong.h>
 
 typedef __signed__ char __s8;
 typedef unsigned char __u8;

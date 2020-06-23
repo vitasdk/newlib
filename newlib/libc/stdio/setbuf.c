@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -22,15 +22,9 @@ FUNCTION
 INDEX
 	setbuf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	void setbuf(FILE *<[fp]>, char *<[buf]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	void setbuf(<[fp]>, <[buf]>)
-	FILE *<[fp]>;
-	char *<[buf]>;
 
 DESCRIPTION
 <<setbuf>> specifies that output to the file or stream identified by <[fp]>
@@ -70,10 +64,9 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <stdio.h>
 #include "local.h"
 
-_VOID
-_DEFUN(setbuf, (fp, buf),
-       FILE *__restrict fp _AND
+void
+setbuf (FILE *__restrict fp,
        char *__restrict buf)
 {
-  _CAST_VOID setvbuf (fp, buf, buf ? _IOFBF : _IONBF, BUFSIZ);
+  (void) setvbuf (fp, buf, buf ? _IOFBF : _IONBF, BUFSIZ);
 }

@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,18 +24,11 @@ INDEX
 INDEX
 	_getchar_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int getchar(void);
 
 	int _getchar_r(struct _reent *<[reent]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int getchar();
-
-	int _getchar_r(<[reent]>)
-	char * <[reent]>;
 
 DESCRIPTION
 <<getchar>> is a macro, defined in <<stdio.h>>.  You can use <<getchar>>
@@ -79,8 +72,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #undef getchar
 
 int
-_DEFUN(_getchar_r, (reent),
-       struct _reent *reent)
+_getchar_r (struct _reent *reent)
 {
   _REENT_SMALL_CHECK_INIT (reent);
   return _getc_r (reent, _stdin_r (reent));
@@ -89,7 +81,7 @@ _DEFUN(_getchar_r, (reent),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN_VOID(getchar)
+getchar (void)
 {
   struct _reent *reent = _REENT;
 

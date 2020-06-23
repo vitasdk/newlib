@@ -1,7 +1,5 @@
 /* cygwait.h
 
-   Copyright 2011, 2012, 2013, 2015 Red Hat, Inc.
-
    This file is part of Cygwin.
 
    This software is a copyrighted work licensed under the terms of the
@@ -40,8 +38,9 @@ cygwait (HANDLE object, PLARGE_INTEGER timeout, unsigned mask)
   if (object)
     wait_objects[num++] = object;
 
-  set_signal_arrived thread_waiting (is_cw_sig_handle, wait_objects[num]);
-  debug_only_printf ("object %p, thread waiting %d, signal_arrived %p", object, (int) thread_waiting, _my_tls.signal_arrived);
+  wait_signal_arrived thread_waiting (is_cw_sig_handle, wait_objects[num]);
+  debug_only_printf ("object %p, thread waiting %d, signal_arrived %p",
+		     object, (int) thread_waiting, _my_tls.signal_arrived);
   DWORD sig_n;
   if (!thread_waiting)
     sig_n = WAIT_TIMEOUT + 1;

@@ -2,7 +2,7 @@
 
 AUTOMAKE_OPTIONS = cygnus
 
-INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
+INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS) -I$(newlib_basedir)/libc/machine/arm
 
 AM_CCASFLAGS = $(INCLUDES)
 
@@ -14,7 +14,7 @@ else
 extra_objs =
 endif
 
-lib_a_SOURCES = aeabi_atexit.c
+lib_a_SOURCES = access.c aeabi_atexit.c
 lib_a_LIBADD = $(extra_objs)
 EXTRA_lib_a_SOURCES = trap.S syscalls.c libcfunc.c
 lib_a_DEPENDENCIES = $(extra_objs)

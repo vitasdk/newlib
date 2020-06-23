@@ -1,6 +1,5 @@
 /*-
  * Copyright (c) 1996, 1998 The NetBSD Foundation, Inc.
- * Copyright (c) 2011 Red Hat, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -28,6 +27,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define _XOPEN_SOURCE
 #include <error.h>
 #include <errno.h>
 #include <limits.h>
@@ -97,6 +97,10 @@ static const struct conf_variable conf_table[] =
   { "XBS5_WIDTH_RESTRICTED_ENVS",	CONFSTR,	_CS_XBS5_WIDTH_RESTRICTED_ENVS	},
   { "V7_ENV",				CONFSTR,	_CS_V7_ENV	},
   { "V6_ENV",				CONFSTR,	_CS_V6_ENV	},
+  { "LFS_CFLAGS",			CONFSTR,	_CS_LFS_CFLAGS	},
+  { "LFS_LDFLAGS",			CONFSTR,	_CS_LFS_LDFLAGS	},
+  { "LFS_LIBS",				CONFSTR,	_CS_LFS_LIBS	},
+  { "LFS_LINTFLAGS",			CONFSTR,	_CS_LFS_LINTFLAGS	},
 
   /* Symbolic constants from <limits.h> */
   { "_POSIX_AIO_LISTIO_MAX",		CONSTANT,	_POSIX_AIO_LISTIO_MAX	},
@@ -187,6 +191,7 @@ static const struct conf_variable conf_table[] =
   { "POSIX2_RE_DUP_MAX",		CONSTANT,	_POSIX2_RE_DUP_MAX	},
 
   /* Variables from fpathconf() */
+  { "CASE_INSENSITIVE",			PATHCONF,	_PC_CASE_INSENSITIVE	},
   { "FILESIZEBITS",			PATHCONF,	_PC_FILESIZEBITS	},
   { "LINK_MAX",				PATHCONF,	_PC_LINK_MAX		},
   { "MAX_CANON",			PATHCONF,	_PC_MAX_CANON		},
@@ -196,10 +201,12 @@ static const struct conf_variable conf_table[] =
   { "PIPE_BUF",				PATHCONF,	_PC_PIPE_BUF		},
   { "POSIX2_SYMLINKS",			PATHCONF,	_PC_2_SYMLINKS		},
   { "POSIX_ALLOC_SIZE_MIN",		PATHCONF,	_PC_ALLOC_SIZE_MIN	},
+  { "POSIX_PERMISSIONS",		PATHCONF,	_PC_POSIX_PERMISSIONS	},
   { "POSIX_REC_INCR_XFER_SIZE",		PATHCONF,	_PC_REC_INCR_XFER_SIZE	},
   { "POSIX_REC_MAX_XFER_SIZE",		PATHCONF,	_PC_REC_MAX_XFER_SIZE	},
   { "POSIX_REC_MIN_XFER_SIZE",		PATHCONF,	_PC_REC_MIN_XFER_SIZE	},
   { "POSIX_REC_XFER_ALIGN",		PATHCONF,	_PC_REC_XFER_ALIGN	},
+  { "POSIX_SECURITY",			PATHCONF,	_PC_POSIX_SECURITY	},
   { "SYMLINK_MAX",			PATHCONF,	_PC_SYMLINK_MAX		},
   { "_POSIX_CHOWN_RESTRICTED",		PATHCONF,	_PC_CHOWN_RESTRICTED	},
   { "_POSIX_NO_TRUNC",			PATHCONF,	_PC_NO_TRUNC		},
@@ -357,6 +364,21 @@ static const struct conf_variable conf_table[] =
   { "POSIX2_UPE",			SYSCONF,	_SC_2_UPE		},
   { "POSIX2_VERSION",			SYSCONF,	_SC_2_VERSION		},
   /* implementation-specific values */
+  { "LEVEL1_ICACHE_SIZE",		SYSCONF,	_SC_LEVEL1_ICACHE_SIZE	},
+  { "LEVEL1_ICACHE_ASSOC",		SYSCONF,	_SC_LEVEL1_ICACHE_ASSOC	},
+  { "LEVEL1_ICACHE_LINESIZE",		SYSCONF,	_SC_LEVEL1_ICACHE_LINESIZE	},
+  { "LEVEL1_DCACHE_SIZE",		SYSCONF,	_SC_LEVEL1_DCACHE_SIZE	},
+  { "LEVEL1_DCACHE_ASSOC",		SYSCONF,	_SC_LEVEL1_DCACHE_ASSOC	},
+  { "LEVEL1_DCACHE_LINESIZE",		SYSCONF,	_SC_LEVEL1_DCACHE_LINESIZE	},
+  { "LEVEL2_CACHE_SIZE",		SYSCONF,	_SC_LEVEL2_CACHE_SIZE	},
+  { "LEVEL2_CACHE_ASSOC",		SYSCONF,	_SC_LEVEL2_CACHE_ASSOC	},
+  { "LEVEL2_CACHE_LINESIZE",		SYSCONF,	_SC_LEVEL2_CACHE_LINESIZE	},
+  { "LEVEL3_CACHE_SIZE",		SYSCONF,	_SC_LEVEL3_CACHE_SIZE	},
+  { "LEVEL3_CACHE_ASSOC",		SYSCONF,	_SC_LEVEL3_CACHE_ASSOC	},
+  { "LEVEL3_CACHE_LINESIZE",		SYSCONF,	_SC_LEVEL3_CACHE_LINESIZE	},
+  { "LEVEL4_CACHE_SIZE",		SYSCONF,	_SC_LEVEL4_CACHE_SIZE	},
+  { "LEVEL4_CACHE_ASSOC",		SYSCONF,	_SC_LEVEL4_CACHE_ASSOC	},
+  { "LEVEL4_CACHE_LINESIZE",		SYSCONF,	_SC_LEVEL4_CACHE_LINESIZE	},
   { "_NPROCESSORS_CONF",		SYSCONF,	_SC_NPROCESSORS_CONF	},
   { "_NPROCESSORS_ONLN",		SYSCONF,	_SC_NPROCESSORS_ONLN	},
   { "_AVPHYS_PAGES",			SYSCONF,	_SC_AVPHYS_PAGES	},
@@ -370,21 +392,32 @@ struct spec_variable {
   int valid;
 };
 
+#if __LP64__
+#define ILP32 0
+#define LP64 1
+#else
+#define ILP32 1
+#define LP64 0
+#endif
+
 static const struct spec_variable spec_table[] = {
-  { "POSIX_V7_ILP32_OFF32",	0 },
-  { "POSIX_V7_ILP32_OFFBIG",	1 },
-  { "POSIX_V7_LP64_OFF64",	0 },
-  { "POSIX_V7_LPBIG_OFFBIG",	0 },
-  { "POSIX_V6_ILP32_OFF32",	0 },
-  { "POSIX_V6_ILP32_OFFBIG",	1 },
-  { "POSIX_V6_LP64_OFF64",	0 },
-  { "POSIX_V6_LPBIG_OFFBIG",	0 },
-  { "XBS5_ILP32_OFF32",		0 },
-  { "XBS5_ILP32_OFFBIG",	1 },
-  { "XBS5_LP64_OFF64",		0 },
-  { "XBS5_LPBIG_OFFBIG",	0 },
+  { "POSIX_V7_ILP32_OFF32",	0	},
+  { "POSIX_V7_ILP32_OFFBIG",	ILP32	},
+  { "POSIX_V7_LP64_OFF64",	LP64	},
+  { "POSIX_V7_LPBIG_OFFBIG",	LP64	},
+  { "POSIX_V6_ILP32_OFF32",	0	},
+  { "POSIX_V6_ILP32_OFFBIG",	ILP32	},
+  { "POSIX_V6_LP64_OFF64",	LP64	},
+  { "POSIX_V6_LPBIG_OFFBIG",	LP64	},
+  { "XBS5_ILP32_OFF32",		0	},
+  { "XBS5_ILP32_OFFBIG",	ILP32	},
+  { "XBS5_LP64_OFF64",		LP64	},
+  { "XBS5_LPBIG_OFFBIG",	LP64	},
   { NULL, 0 },
 };
+
+#undef ILP32
+#undef LP64
 
 static int a_flag = 0;		/* list all variables */
 static int v_flag = 0;		/* follow given specification */
@@ -494,7 +527,7 @@ print_version ()
 {
   printf ("getconf (cygwin) %d.%d.%d\n"
 	  "Get configuration values\n"
-	  "Copyright (C) 2011 - %s Red Hat, Inc.\n"
+	  "Copyright (C) 2011 - %s Cygwin Authors\n"
 	  "This is free software; see the source for copying conditions.  There is NO\n"
 	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
 	  CYGWIN_VERSION_DLL_MAJOR / 1000,

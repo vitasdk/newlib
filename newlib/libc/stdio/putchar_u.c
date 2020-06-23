@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -61,8 +61,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #undef putchar_unlocked
 
 int
-_DEFUN(_putchar_unlocked_r, (ptr, c),
-       struct _reent *ptr _AND
+_putchar_unlocked_r (struct _reent *ptr,
        int c)
 {
   return putc_unlocked (c, _stdout_r (ptr));
@@ -71,8 +70,7 @@ _DEFUN(_putchar_unlocked_r, (ptr, c),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(putchar_unlocked, (c),
-       int c)
+putchar_unlocked (int c)
 {
   /* CHECK_INIT is (eventually) called by __swbuf.  */
 

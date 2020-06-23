@@ -10,13 +10,13 @@
  */
 /*
 FUNCTION
-<<trunc>>, <<truncf>>--round to integer, towards zero
+<<trunc>>, <<truncf>>---round to integer, towards zero
 INDEX
 	trunc
 INDEX
 	truncf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double trunc(double <[x]>);
 	float truncf(float <[x]>);

@@ -1,3 +1,21 @@
+2016-06-23  Jeff Johnston  <jjohnstn@redhat.com>
+
+	* Sync toplevel with upstream GCC.
+
+2016-03-22  Corinna Vinschen  <corinna@vinschen.de>
+
+	* Sync toplevel with upstream GCC.
+
+2015-11-12  Anton Kolesov  <Anton.Kolesov@synopsys.com>
+
+	* COPYING.LIBGLOSS: Add Synopsys license.
+	* COPYING.NEWLIB: Likewise.
+
+2015-11-12  Anton Kolesov  <Anton.Kolesov@synopsys.com>
+
+	* configure.in: Add ARC support to libgloss.
+	* configure: Regenerate.
+
 2015-09-22  Mike Frysinger  <vapier@gentoo.org>
 
 	* config.guess: Update from config repo.

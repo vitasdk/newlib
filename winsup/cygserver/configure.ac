@@ -1,5 +1,4 @@
 dnl Autoconf configure script for Cygserver.
-dnl Copyright 2003, 2012, 2013, 2014 Red Hat, Inc.
 dnl
 dnl This file is part of Cygwin.
 dnl
@@ -9,9 +8,8 @@ dnl details.
 dnl
 dnl Process this file with autoconf to produce a configure script.
 
-AC_PREREQ(2.59)dnl
-AC_INIT([Cygwin Cygserver], 0,
-	cygwin@cygwin.com, cygwin, https://cygwin.com)
+AC_PREREQ([2.59])
+AC_INIT([Cygwin Cygserver],[0],[cygwin@cygwin.com],[cygwin],[https://cygwin.com])
 AC_CONFIG_SRCDIR(cygserver.cc)
 AC_CONFIG_AUX_DIR(..)
 
@@ -19,7 +17,7 @@ AC_CONFIG_AUX_DIR(..)
 
 AC_PROG_INSTALL
 AC_NO_EXECUTABLES
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_TARGET
 
 AC_PROG_CC
 AC_PROG_CXX
@@ -27,7 +25,9 @@ AC_PROG_CPP
 AC_LANG(C)
 
 AC_WINDOWS_HEADERS
-AC_WINDOWS_LIBS
+if test "x$with_cross_bootstrap" != "xyes"; then
+  AC_WINDOWS_LIBS
+fi
 
 AC_LANG(C++)
 
@@ -66,4 +66,5 @@ esac
 ])
 
 AC_CONFIGURE_ARGS
-AC_OUTPUT(Makefile)
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT

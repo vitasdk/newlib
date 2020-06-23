@@ -1,6 +1,4 @@
 # Makefile.in for Cygwin.
-# Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-# 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
 #
 # This file is part of Cygwin.
 #
@@ -29,7 +27,7 @@ export CCWRAP_HEADERS:=. ${srcdir}
 export CCWRAP_SYSTEM_HEADERS:=@cygwin_headers@ @newlib_headers@
 export CCWRAP_DIRAFTER_HEADERS:=@windows_headers@
 
-VPATH+=$(srcdir)/regex $(srcdir)/lib $(srcdir)/libc
+VPATH+=$(srcdir)/regex $(srcdir)/lib $(srcdir)/libc $(srcdir)/math $(srcdir)/tzcode
 
 target_cpu:=@target_cpu@
 target_alias:=@target_alias@
@@ -79,7 +77,7 @@ COMMON_CFLAGS=-MMD ${$(*F)_CFLAGS} -Werror -fmerge-constants -ftracer $(CCEXTRA)
 ifeq ($(target_cpu),x86_64)
 COMMON_CFLAGS+=-mcmodel=small
 endif
-COMPILE.cc+=${COMMON_CFLAGS}
+COMPILE.cc+=${COMMON_CFLAGS} # -std=gnu++14
 COMPILE.c+=${COMMON_CFLAGS}
 
 AR:=@AR@
@@ -153,13 +151,112 @@ DLL_IMPORTS:=${shell $(CC) -print-file-name=w32api/libkernel32.a} ${shell $(CC) 
 
 MT_SAFE_OBJECTS:=
 #
+MATH_OFILES:= \
+	acoshl.o \
+	acosl.o \
+	asinhl.o \
+	asinl.o \
+	atan2l.o \
+	atanhl.o \
+	atanl.o \
+	cabsl.o \
+	cacosl.o \
+	cargl.o \
+	casinl.o \
+	catanl.o \
+	cbrtl.o \
+	ccosl.o \
+	ceill.o \
+	cephes_emath.o \
+	cexpl.o \
+	cimagl.o \
+	clog10l.o \
+	clogl.o \
+	conjl.o \
+	copysignl.o \
+	coshl.o \
+	cosl.o \
+	cosl_internal.o \
+	cossin.o \
+	cpowl.o \
+	cprojl.o \
+	creall.o \
+	csinl.o \
+	csqrtl.o \
+	ctanl.o \
+	erfl.o \
+	exp10l.o \
+	exp2l.o \
+	expl.o \
+	expm1l.o \
+	fabsl.o \
+	fdiml.o \
+	finite.o \
+	floorl.o \
+	fmal.o \
+	fmaxl.o \
+	fminl.o \
+	fmodl.o \
+	frexpl.o \
+	ilogbl.o \
+	internal_logl.o \
+	isinf.o \
+	isnan.o \
+	ldexpl.o \
+	lgammal.o \
+	llrint.o \
+	llrintf.o \
+	llrintl.o \
+	llroundl.o \
+	log10l.o \
+	log1pl.o \
+	log2l.o \
+	logbl.o \
+	logl.o \
+	lrint.o \
+	lrintf.o \
+	lrintl.o \
+	lroundl.o \
+	modfl.o \
+	nearbyint.o \
+	nearbyintf.o \
+	nearbyintl.o \
+	nextafterl.o \
+	nexttoward.o \
+	nexttowardf.o \
+	pow10l.o \
+	powil.o \
+	powl.o \
+	remainder.o \
+	remainderf.o \
+	remainderl.o \
+	remquol.o \
+	rint.o \
+	rintf.o \
+	rintl.o \
+	roundl.o \
+	scalbl.o \
+	scalbnl.o \
+	sinhl.o \
+	sinl.o \
+	sinl_internal.o \
+	sqrtl.o \
+	tanhl.o \
+	tanl.o \
+	tgammal.o \
+	truncl.o
+
+TZCODE_OFILES:=localtime.o
+
 DLL_OFILES:= \
 	advapi32.o \
-	arc4random.o \
+	aio.o \
+	arc4random_stir.o \
 	assert.o \
 	autoload.o \
 	base64.o \
 	bsdlib.o \
+	clock.o \
 	ctype.o \
 	cxx.o \
 	cygheap.o \
@@ -184,16 +281,18 @@ DLL_OFILES:= \
 	fhandler.o \
 	fhandler_clipboard.o \
 	fhandler_console.o \
+	fhandler_cygdrive.o \
 	fhandler_dev.o \
 	fhandler_disk_file.o \
 	fhandler_dsp.o \
 	fhandler_fifo.o \
 	fhandler_floppy.o \
-	fhandler_mailslot.o \
 	fhandler_netdrive.o \
 	fhandler_nodevice.o \
+	fhandler_pipe.o \
 	fhandler_proc.o \
 	fhandler_process.o \
+	fhandler_process_fd.o \
 	fhandler_procnet.o \
 	fhandler_procsys.o \
 	fhandler_procsysvipc.o \
@@ -201,9 +300,14 @@ DLL_OFILES:= \
 	fhandler_raw.o \
 	fhandler_registry.o \
 	fhandler_serial.o \
+	fhandler_signalfd.o \
 	fhandler_socket.o \
+	fhandler_socket_inet.o \
+	fhandler_socket_local.o \
+	fhandler_socket_unix.o \
 	fhandler_tape.o \
 	fhandler_termios.o \
+	fhandler_timerfd.o \
 	fhandler_tty.o \
 	fhandler_virtual.o \
 	fhandler_windows.o \
@@ -211,8 +315,10 @@ DLL_OFILES:= \
 	flock.o \
 	fnmatch.o \
 	fork.o \
+	forkable.o \
 	fts.o \
 	ftw.o \
+	getentropy.o \
 	getopt.o \
 	glob.o \
 	glob_pattern_p.o \
@@ -228,7 +334,7 @@ DLL_OFILES:= \
 	kernel32.o \
 	ldap.o \
 	libstdcxx_wrapper.o \
-	localtime.o \
+	loadavg.o \
 	lsearch.o \
 	malloc_wrapper.o \
 	minires-os-if.o \
@@ -236,7 +342,9 @@ DLL_OFILES:= \
 	miscfuncs.o \
 	mktemp.o \
 	mmap.o \
+	mmap_alloc.o \
 	msg.o \
+	msgcat.o \
 	mount.o \
 	net.o \
 	netdb.o \
@@ -247,9 +355,9 @@ DLL_OFILES:= \
 	passwd.o \
 	path.o \
 	pinfo.o \
-	pipe.o \
 	poll.o \
 	posix_ipc.o \
+	posix_timer.o \
 	pseudo-reloc.o \
 	pthread.o \
 	quotactl.o \
@@ -267,6 +375,7 @@ DLL_OFILES:= \
 	sec_acl.o \
 	sec_auth.o \
 	sec_helper.o \
+	sec_posixacl.o \
 	security.o \
 	select.o \
 	sem.o \
@@ -290,7 +399,7 @@ DLL_OFILES:= \
 	syslog.o \
 	termios.o \
 	thread.o \
-	timer.o \
+	timerfd.o \
 	times.o \
 	tls_pbuf.o \
 	tty.o \
@@ -300,10 +409,11 @@ DLL_OFILES:= \
 	wincap.o \
 	window.o \
 	winf.o \
-	wow64.o \
 	xsique.o \
 	$(EXTRA_OFILES) \
 	$(MALLOC_OFILES) \
+	$(MATH_OFILES) \
+	$(TZCODE_OFILES) \
 	$(MT_SAFE_OBJECTS)
 
 EXCLUDE_STATIC_OFILES:=$(addprefix --exclude=,\
@@ -334,6 +444,7 @@ GMON_OFILES:=gmon.o mcount.o profil.o mcountFunc.o
 NEW_FUNCTIONS:=$(addprefix --replace=,\
 	atexit= \
 	timezone= \
+	uname=uname_x \
 	__xdrrec_getrec= \
 	__xdrrec_setnonblock= \
 	xdr_array= \
@@ -443,7 +554,7 @@ endif
 API_VER:=$(srcdir)/include/cygwin/version.h
 
 LIB_NAME:=libcygwin.a
-SUBLIBS:=libpthread.a libutil.a ${CURDIR}/libm.a ${CURDIR}/libc.a libdl.a libresolv.a librt.a
+SUBLIBS:=libpthread.a libutil.a ${CURDIR}/libm.a ${CURDIR}/libc.a libdl.a libresolv.a librt.a libacl.a libssp.a
 EXTRALIBS:=libautomode.a libbinmode.a libtextmode.a libtextreadmode.a
 INSTOBJS:=automode.o binmode.o textmode.o textreadmode.o
 TARGET_LIBS:=$(LIB_NAME) $(CYGWIN_START) $(GMON_START) $(LIBGMON_A) $(SUBLIBS) $(INSTOBJS) $(EXTRALIBS)
@@ -458,6 +569,8 @@ ifeq ($(target_cpu),i686)
 exceptions_CFLAGS:=-fno-omit-frame-pointer
 endif
 endif
+# required since gcc 9.x
+exec_CFLAGS:=-fno-builtin-execve
 
 fhandler_proc_CFLAGS+=-DUSERNAME="\"$(USER)\"" -DHOSTNAME="\"$(HOSTNAME)\""
 fhandler_proc_CFLAGS+=-DGCC_VERSION="\"`$(CC) -v 2>&1 | tail -n 1`\""
@@ -466,8 +579,9 @@ _cygwin_crt0_common_STDINCFLAGS:=yes
 libstdcxx_wrapper_STDINCFLAGS:=yes
 cxx_STDINCFLAGS:=yes
 
-.PHONY: all force dll_ofiles install all_target install_target all_host install_host \
-	install install-libs install-headers
+.PHONY: all force dll_ofiles install all_target install_target all_host \
+	install_host install install-libs install-headers \
+	clean distclean realclean maintainer-clean
 
 all_host=@all_host@
 install_host=@install_host@
@@ -555,14 +669,17 @@ uninstall-man:
 	    rm -f $(DESTDIR)$(mandir)/man7/`basename $$i` ; \
 	done
 
-clean:
-	-rm -f *.o *.dll *.dbg *.a *.exp junk *.base version.cc *.exe *.d *stamp* *_magic.h sigfe.s cygwin.def globals.h $(srcdir)/$(TLSOFFSETS_H) $(srcdir)/devices.cc
+clean distclean realclean:
+	-rm -f *.o *.dll *.dbg *.a *.exp junk *.base version.cc *.exe *.d \
+	       *stamp* *_magic.h sigfe.s cygwin.def cygwin.map cygwin.sc \
+	       globals.h localtime.patched.c
 	-@$(MAKE) -C ${cygserver_blddir} libclean
 
-maintainer-clean realclean: clean
+maintainer-clean: clean
 	@echo "This command is intended for maintainers to use;"
 	@echo "it deletes files that may require special tools to rebuild."
 	-rm -fr configure
+	-rm -f  $(srcdir)/$(TLSOFFSETS_H) $(srcdir)/devices.cc
 
 # Rule to build LDSCRIPT
 $(LDSCRIPT): $(LDSCRIPT).in
@@ -607,7 +724,7 @@ $(LIBGMON_A): $(GMON_OFILES) $(GMON_START)
 globals.h: mkglobals_h globals.cc
 	$^ > $@
 
-${DLL_OFILES} ${LIBCOS}: globals.h
+${DLL_OFILES} ${LIBCOS}: globals.h $(srcdir)/$(TLSOFFSETS_H)
 
 shared_info_magic.h: cygmagic shared_info.h
 	/bin/sh $(word 1,$^) $@ "${COMPILE.cc} -E -x c++" $(word 2,$^) SHARED_MAGIC 'class shared_info' USER_MAGIC 'class user_info'
@@ -619,13 +736,23 @@ dcrt0.o sigproc.o: child_info_magic.h
 
 shared.o: shared_info_magic.h
 
+localtime.patched.c: tzcode/localtime.c tzcode/localtime.c.patch
+	patch -u -o localtime.patched.c \
+		    $(srcdir)/tzcode/localtime.c \
+		    $(srcdir)/tzcode/localtime.c.patch
+
+localtime.o: tzcode/localtime_wrapper.c localtime.patched.c
+	$(CC) ${COMMON_CFLAGS} ${localtime_CFLAGS} \
+		-I$(target_builddir)/winsup/cygwin \
+		-I$(srcdir) -I$(srcdir)/tzcode -c -o $@ $<
+
 $(srcdir)/devices.cc: gendevices devices.in devices.h
 	${wordlist 1,2,$^} $@
 
 ${CURDIR}/libc.a: ${LIB_NAME} ${CURDIR}/libm.a libpthread.a libutil.a
 	${speclib} -v ${@F}
 
-${CURDIR}/libm.a: ${LIB_NAME} $(LIBM)
+${CURDIR}/libm.a: ${LIB_NAME} $(LIBM) $(MATH_OFILES)
 	${speclib} ${@F}
 
 libpthread.a: ${LIB_NAME} pthread.o thread.o
@@ -643,12 +770,26 @@ libresolv.a: ${LIB_NAME} minires.o
 librt.a: ${LIB_NAME} posix_ipc.o
 	${speclib} ${@F}
 
+libacl.a: ${LIB_NAME} sec_posixacl.o
+	${speclib} ${@F}
+
+libssp.a: ${LIB_NAME} $(newlib_build)/libc/ssp/lib.a
+	${speclib} ${@F}
+
 ${EXTRALIBS}: lib%.a: %.o
 	$(AR) cru $@ $?
 
-version.cc winver.o: mkvers.sh include/cygwin/version.h winver.rc $(DLL_OFILES)
+# Every time we touch a source file, the version info has to be rebuilt
+# to maintain a correct build date, especially in uname release output
+find_src_files = $(wildcard $(dir)/*.[chS]) $(wildcard $(dir)/*.cc)
+src_files := $(foreach dir,$(VPATH),$(find_src_files))
+
+# mkvers.sh creates version.cc in the first place, winver.o always
+# second, so version.cc is always older than winver.o
+version.cc: mkvers.sh include/cygwin/version.h winver.rc $(src_files)
 	@echo "Making version.cc and winver.o";\
 	/bin/sh ${word 1,$^} ${word 2,$^} ${word 3,$^} $(WINDRES) ${CFLAGS} $(addprefix -I,${CCWRAP_SYSTEM_HEADERS} ${CCWRAP_DIRAFTER_HEADERS})
+$(VERSION_OFILES): version.cc
 
 Makefile: ${srcdir}/Makefile.in
 	/bin/sh ./config.status
@@ -657,20 +798,24 @@ $(DEF_FILE): gendef $(srcdir)/$(TLSOFFSETS_H) $(DIN_FILE)
 	$(word 1,$^) --cpu=${target_cpu} --output-def=$@  --tlsoffsets=$(word 2,$^) $(wordlist 3,99,$^)
 
 $(srcdir)/$(TLSOFFSETS_H): gentls_offsets cygtls.h
-	$^ $@ $(target_cpu) $(COMPILE.cc) -c
+	$^ $@ $(target_cpu) $(COMPILE.cc) -c || rm $@
 
 sigfe.s: $(DEF_FILE)
 	@[ -s $@ ] || \
 	{ rm -f $(DEF_FILE); $(MAKE) -s -j1 $(DEF_FILE); }; \
 	[ -s $@ ] && touch $@
 
-sigfe.o: sigfe.s
+sigfe.o: sigfe.s $(srcdir)/$(TLSOFFSETS_H)
 	$(CC) ${CFLAGS} -c -o $@ $<
 
 ctags: CTAGS
 tags:  CTAGS
 CTAGS:
-	-cd $(srcdir) && ctags -R --regex-C++='/^([a-zA-Z0-9_]*::[a-zA-Z0-9_]*) /\1/f/' .
+	-cd $(srcdir) && \
+	ctags -R --c++-kinds=+p --fields=+iaS --extra=+q \
+	--regex-C++='/EXPORT_ALIAS *\([a-zA-Z0-9_]*, *([a-zA-Z0-9_]*)\)/\1/' \
+	--regex-C++='/__ASMNAME *\("([a-zA-Z0-9_]+)"\)/\1/' \
+	@newlib_headers@ .
 
 deps:=${wildcard *.d}
 ifneq (,$(deps))

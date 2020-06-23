@@ -3,7 +3,7 @@
  * defined in math.h (q.v.).  */
 /*
 FUNCTION
-<<isgreater>>, <<isgreaterequal>>, <<isless>>, <<islessequal>>, <<islessgreater>>, and <<isunordered>>--comparison macros
+<<isgreater>>, <<isgreaterequal>>, <<isless>>, <<islessequal>>, <<islessgreater>>, and <<isunordered>>---comparison macros
 INDEX
 	isgreater
 INDEX
@@ -17,7 +17,7 @@ INDEX
 INDEX
 	isunordered
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	int isgreater(real-floating <[x]>, real-floating <[y]>);
 	int isgreaterequal(real-floating <[x]>, real-floating <[y]>);

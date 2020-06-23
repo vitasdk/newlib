@@ -1,5 +1,6 @@
 /* Copyright (c) 2002 Red Hat Incorporated.
    All rights reserved.
+   Modified (m) 2017 Thomas Wolff to refer to generated Unicode data tables.
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions are met:
@@ -29,42 +30,43 @@
 
 /*
 FUNCTION
-	<<iswpunct>>---punctuation wide character test
+	<<iswpunct>>, <<iswpunct_l>>---punctuation wide character test
 
 INDEX
 	iswpunct
 
-ANSI_SYNOPSIS
+INDEX
+	iswpunct_l
+
+SYNOPSIS
 	#include <wctype.h>
 	int iswpunct(wint_t <[c]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	int iswpunct(<[c]>)
-	wint_t <[c]>;
+	int iswpunct_l(wint_t <[c]>, locale_t <[locale]>);
 
 DESCRIPTION
 <<iswpunct>> is a function which classifies wide-character values that
 are punctuation.
 
+<<iswpunct_l>> is like <<iswpunct>> but performs the check based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<iswpunct>> returns non-zero if <[c]> is a punctuation wide character.
+<<iswpunct>>, <<iswpunct_l>> return non-zero if <[c]> is a punctuation wide character.
 
 PORTABILITY
 <<iswpunct>> is C99.
+<<iswpunct_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
 #include <_ansi.h>
-#include <newlib.h>
 #include <wctype.h>
-#include <string.h>
-#include <ctype.h>
-#include "local.h"
 
 int
-_DEFUN(iswpunct,(c), wint_t c)
+iswpunct (wint_t c)
 {
-  return (!iswalnum (c) && iswgraph (c));
+  return iswpunct_l (c, 0);
 }
-

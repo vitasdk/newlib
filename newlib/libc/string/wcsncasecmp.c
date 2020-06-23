@@ -5,16 +5,9 @@ FUNCTION
 INDEX
 	wcsncasecmp
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <wchar.h>
 	int wcsncasecmp(const wchar_t *<[a]>, const wchar_t * <[b]>, size_t <[length]>);
-
-TRAD_SYNOPSIS
-	#include <wchar.h>
-	int wcsncasecmp(<[a]>, <[b]>, <[length]>)
-	wchar_t *<[a]>;
-	wchar_t *<[b]>;
-	size_t <[length]>
 
 DESCRIPTION
 	<<wcsncasecmp>> compares up to <[length]> wide characters
@@ -44,21 +37,17 @@ QUICKREF
 #include <wctype.h>
 
 int 
-_DEFUN (wcsncasecmp, (s1, s2, n),
-	_CONST wchar_t *s1 _AND
-	_CONST wchar_t *s2 _AND
+wcsncasecmp (const wchar_t *s1,
+	const wchar_t *s2,
 	size_t n)
 {
-  if (n == 0)
-    return 0;
-
-  while (n-- != 0 && towlower(*s1) == towlower(*s2))
+  int d = 0;
+  for ( ; n != 0; n--)
     {
-      if (n == 0 || *s1 == '\0' || *s2 == '\0')
-	break;
-      s1++;
-      s2++;
+      const int c1 = towlower (*s1++);
+      const int c2 = towlower (*s2++);
+      if (((d = c1 - c2) != 0) || (c2 == '\0'))
+        break;
     }
-
-  return towlower(*s1) - towlower(*s2);
+  return d;
 }

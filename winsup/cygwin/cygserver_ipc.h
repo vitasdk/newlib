@@ -1,7 +1,5 @@
 /* cygserver_ipc.h
 
-   Copyright 2002, 2003, 2004, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -43,10 +41,7 @@ ipc_set_proc_info (proc &blk, bool in_fork = false)
   blk.gidcnt = 0;
   blk.gidlist = NULL;
   blk.is_admin = false;
-  if (in_fork)
-    blk.signal_arrived = NULL;
-  else
-    _my_tls.set_signal_arrived (true, blk.signal_arrived);
+  blk.signal_arrived = in_fork ? NULL : _my_tls.get_signal_arrived (true);
 }
 #endif /* __INSIDE_CYGWIN__ */
 

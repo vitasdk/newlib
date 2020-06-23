@@ -1,8 +1,5 @@
 /* sigproc.h
 
-   Copyright 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2009, 2010,
-   2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -13,19 +10,19 @@ details. */
 #include <signal.h>
 #include "sync.h"
 
-#ifdef NSIG
+#ifdef _NSIG
 enum
 {
-  __SIGFLUSH	    = -(NSIG + 1),
-  __SIGSTRACE	    = -(NSIG + 2),
-  __SIGCOMMUNE	    = -(NSIG + 3),
-  __SIGPENDING	    = -(NSIG + 4),
-  __SIGDELETE	    = -(NSIG + 5),	/* Not currently used */
-  __SIGFLUSHFAST    = -(NSIG + 6),
-  __SIGHOLD	    = -(NSIG + 7),
-  __SIGNOHOLD	    = -(NSIG + 8),
-  __SIGSETPGRP	    = -(NSIG + 9),
-  __SIGTHREADEXIT   = -(NSIG + 10)
+  __SIGFLUSH	    = -(_NSIG + 1),
+  __SIGSTRACE	    = -(_NSIG + 2),
+  __SIGCOMMUNE	    = -(_NSIG + 3),
+  __SIGPENDING	    = -(_NSIG + 4),
+  __SIGDELETE	    = -(_NSIG + 5),	/* Not currently used */
+  __SIGFLUSHFAST    = -(_NSIG + 6),
+  __SIGHOLD	    = -(_NSIG + 7),
+  __SIGNOHOLD	    = -(_NSIG + 8),
+  __SIGSETPGRP	    = -(_NSIG + 9),
+  __SIGTHREADEXIT   = -(_NSIG + 10)
 };
 #endif
 
@@ -74,14 +71,15 @@ class _pinfo;
 void __stdcall proc_terminate ();
 void __stdcall sigproc_init ();
 bool __reg1 pid_exists (pid_t);
-int __reg3 sig_send (_pinfo *, siginfo_t&, class _cygtls * = NULL);
-int __reg3 sig_send (_pinfo *, int, class _cygtls * = NULL);
+sigset_t __reg3 sig_send (_pinfo *, siginfo_t&, class _cygtls * = NULL);
+sigset_t __reg3 sig_send (_pinfo *, int, class _cygtls * = NULL);
 void __stdcall signal_fixup_after_exec ();
 void __stdcall sigalloc ();
 
 int kill_pgrp (pid_t, siginfo_t&);
 void __reg1 exit_thread (DWORD) __attribute__ ((noreturn));
 void __reg1 setup_signal_exit (int);
+int sigwait_common (const sigset_t *, siginfo_t *, PLARGE_INTEGER);
 
 class no_thread_exit_protect
 {
@@ -111,7 +109,7 @@ class lock_signals
 public:
   lock_signals ()
   {
-    worked = sig_send (NULL, __SIGHOLD) == 0;
+    worked = (bool) sig_send (NULL, __SIGHOLD) == 0;
   }
   operator int () const
   {

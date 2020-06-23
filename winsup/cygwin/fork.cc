@@ -1,8 +1,5 @@
 /* fork.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -23,6 +20,7 @@ details. */
 #include "child_info.h"
 #include "cygtls.h"
 #include "tls_pbuf.h"
+#include "shared_info.h"
 #include "dll_init.h"
 #include "cygmalloc.h"
 #include "ntdll.h"
@@ -33,8 +31,13 @@ details. */
 /* FIXME: Once things stabilize, bump up to a few minutes.  */
 #define FORK_WAIT_TIMEOUT (300 * 1000)     /* 300 seconds */
 
+static int dofork (bool *with_forkables);
 class frok
 {
+  frok (bool *forkables)
+    : with_forkables (forkables)
+  {}
+  bool *with_forkables;
   bool load_dlls;
   child_info_fork ch;
   const char *errmsg;
@@ -44,7 +47,7 @@ class frok
   int __stdcall parent (volatile char * volatile here);
   int __stdcall child (volatile char * volatile here);
   bool error (const char *fmt, ...);
-  friend int fork ();
+  friend int dofork (bool *with_forkables);
 };
 
 static void
@@ -131,30 +134,48 @@ child_info::prefork (bool detached)
 int __stdcall
 frok::child (volatile char * volatile here)
 {
-  HANDLE& hParent = ch.parent;
-  extern void fixup_hooks_after_fork ();
-  extern void fixup_timers_after_fork ();
+  cygheap_fdenum cfd (false);
+  while (cfd.next () >= 0)
+    if (cfd->get_major () == DEV_PTYM_MAJOR)
+      {
+	fhandler_base *fh = cfd;
+	fhandler_pty_master *ptym = (fhandler_pty_master *) fh;
+	if (ptym->get_pseudo_console ())
+	  {
+	    debug_printf ("found a PTY master %d: helper_PID=%d",
+			  ptym->get_minor (), ptym->get_helper_process_id ());
+	    if (fhandler_console::get_console_process_id (
+				ptym->get_helper_process_id (), true))
+	      /* Already attached */
+	      break;
+	    else
+	      {
+		if (ptym->attach_pcon_in_fork ())
+		  {
+		    FreeConsole ();
+		    if (!AttachConsole (ptym->get_helper_process_id ()))
+		      /* Error */;
+		    else
+		      break;
+		  }
+	      }
+	  }
+      }
+  extern void clear_pcon_attached_to (void); /* fhandler_tty.cc */
+  clear_pcon_attached_to ();
 
-  /* NOTE: Logically this belongs in dll_list::load_after_fork, but by
-     doing it here, before the first sync_with_parent, we can exploit
-     the existing retry mechanism in hopes of getting a more favorable
-     address space layout next time. */
-  dlls.reserve_space ();
+  HANDLE& hParent = ch.parent;
 
   sync_with_parent ("after longjmp", true);
   debug_printf ("child is running.  pid %d, ppid %d, stack here %p",
 		myself->pid, myself->ppid, __builtin_frame_address (0));
   sigproc_printf ("hParent %p, load_dlls %d", hParent, load_dlls);
 
-  /* If we've played with the stack, stacksize != 0.  That means that
-     fork() was invoked from other than the main thread.  Make sure that
-     the threadinfo information is properly set up.  */
-  if (fork_info->stackaddr)
+  /* Make sure threadinfo information is properly set up. */
+  if (&_my_tls != _main_tls)
     {
       _main_tls = &_my_tls;
       _main_tls->init_thread (NULL, NULL);
-      _main_tls->local_clib = *_impure_ptr;
-      _impure_ptr = &_main_tls->local_clib;
     }
 
   set_cygwin_privileges (hProcToken);
@@ -174,8 +195,6 @@ frok::child (volatile char * volatile here)
     }
 #endif
 
-  MALLOC_CHECK;
-
   /* Incredible but true:  If we use sockets and SYSV IPC shared memory,
      there's a good chance that a duplicated socket in the child occupies
      memory which is needed to duplicate shared memory from the parent
@@ -186,29 +205,19 @@ frok::child (volatile char * volatile here)
   if (fixup_shms_after_fork ())
     api_fatal ("recreate_shm areas after fork failed");
 
-  MALLOC_CHECK;
+  /* load dynamic dlls, if any, re-track main-executable and cygwin1.dll */
+  dlls.load_after_fork (hParent);
 
-  /* If we haven't dynamically loaded any dlls, just signal
-     the parent.  Otherwise, load all the dlls, tell the parent
-      that we're done, and wait for the parent to fill in the.
-      loaded dlls' data/bss. */
-  if (!load_dlls)
-    {
-      cygheap->fdtab.fixup_after_fork (hParent);
-      sync_with_parent ("performed fork fixup", false);
-    }
-  else
-    {
-      dlls.load_after_fork (hParent);
-      cygheap->fdtab.fixup_after_fork (hParent);
-      sync_with_parent ("loaded dlls", true);
-    }
+  cygheap->fdtab.fixup_after_fork (hParent);
 
-  init_console_handler (myself->ctty > 0);
+  /* Signal that we have successfully initialized, so the parent can
+     - transfer data/bss for dynamically loaded dlls (if any), or
+     - terminate the current fork call even if the child is initialized. */
+  sync_with_parent ("performed fork fixups and dynamic dll loading", true);
+
   ForceCloseHandle1 (fork_info->forker_finished, forker_finished);
 
   pthread::atforkchild ();
-  fixup_timers_after_fork ();
   cygbench ("fork-child");
   ld_preload ();
   fixup_hooks_after_fork ();
@@ -217,38 +226,11 @@ frok::child (volatile char * volatile here)
      rd_proc_pipe that would be an invalid handle.  In the case of
      wr_proc_pipe it would be == my_wr_proc_pipe.  Both would be bad. */
   ch.rd_proc_pipe = ch.wr_proc_pipe = NULL;
+  CloseHandle (hParent);
+  hParent = NULL;
   cygwin_finished_initializing = true;
   return 0;
 }
-
-#define NO_SLOW_PID_REUSE
-#ifndef NO_SLOW_PID_REUSE
-static void
-slow_pid_reuse (HANDLE h)
-{
-  static NO_COPY HANDLE last_fork_procs[NPIDS_HELD];
-  static NO_COPY unsigned nfork_procs;
-
-  if (nfork_procs >= (sizeof (last_fork_procs) / sizeof (last_fork_procs [0])))
-    nfork_procs = 0;
-  /* Keep a list of handles to child processes sitting around to prevent
-     Windows from reusing the same pid n times in a row.  Having the same pids
-     close in succesion confuses bash.  Keeping a handle open will stop
-     windows from reusing the same pid.  */
-  if (last_fork_procs[nfork_procs])
-    ForceCloseHandle1 (last_fork_procs[nfork_procs], fork_stupidity);
-  if (DuplicateHandle (GetCurrentProcess (), h,
-		       GetCurrentProcess (), &last_fork_procs[nfork_procs],
-		       0, FALSE, DUPLICATE_SAME_ACCESS))
-    ProtectHandle1 (last_fork_procs[nfork_procs], fork_stupidity);
-  else
-    {
-      last_fork_procs[nfork_procs] = NULL;
-      system_printf ("couldn't create last_fork_proc, %E");
-    }
-  nfork_procs++;
-}
-#endif
 
 int __stdcall
 frok::parent (volatile char * volatile stack_here)
@@ -307,7 +289,7 @@ frok::parent (volatile char * volatile stack_here)
 
   ch.forker_finished = forker_finished;
 
-  ch.stackbottom = _tlsbase;
+  ch.stackbase = NtCurrentTeb ()->Tib.StackBase;
   ch.stackaddr = NtCurrentTeb ()->DeallocationStack;
   if (!ch.stackaddr)
     {
@@ -315,25 +297,25 @@ frok::parent (volatile char * volatile stack_here)
 	 stack.  If so, the entire stack is committed anyway and StackLimit
 	 points to the allocation address of the stack.  Mark in guardsize that
 	 we must not set up guard pages. */
-      ch.stackaddr = ch.stacktop = _tlstop;
+      ch.stackaddr = ch.stacklimit = NtCurrentTeb ()->Tib.StackLimit;
       ch.guardsize = (size_t) -1;
     }
   else
     {
       /* Otherwise we're running on a system-allocated stack.  Since stack_here
 	 is the address of the stack pointer we start the child with anyway, we
-	 can set ch.stacktop to this value rounded down to page size.  The
+	 can set ch.stacklimit to this value rounded down to page size.  The
 	 child will not need the rest of the stack anyway.  Guardsize depends
 	 on whether we're running on a pthread or not.  If pthread, we fetch
 	 the guardpage size from the pthread attribs, otherwise we use the
 	 system default. */
-      ch.stacktop = (void *) ((uintptr_t) stack_here & ~wincap.page_size ());
+      ch.stacklimit = (void *) ((uintptr_t) stack_here & ~(wincap.page_size () - 1));
       ch.guardsize = (&_my_tls != _main_tls && _my_tls.tid)
 		     ? _my_tls.tid->attr.guardsize
 		     : wincap.def_guard_page_size ();
     }
   debug_printf ("stack - bottom %p, top %p, addr %p, guardsize %ly",
-		ch.stackbottom, ch.stacktop, ch.stackaddr, ch.guardsize);
+		ch.stackbase, ch.stacklimit, ch.stackaddr, ch.guardsize);
 
   PROCESS_INFORMATION pi;
   STARTUPINFOW si;
@@ -344,8 +326,6 @@ frok::parent (volatile char * volatile stack_here)
   si.lpReserved2 = (LPBYTE) &ch;
   si.cbReserved2 = sizeof (ch);
 
-  syscall_printf ("CreateProcessW (%W, %W, 0, 0, 1, %y, 0, 0, %p, %p)",
-		  myself->progname, myself->progname, c_flags, &si, &pi);
   bool locked = __malloc_lock ();
 
   /* Remove impersonation */
@@ -354,21 +334,44 @@ frok::parent (volatile char * volatile stack_here)
   ch.refresh_cygheap ();
   ch.prefork ();	/* set up process tracking pipes. */
 
+  *with_forkables = dlls.setup_forkables (*with_forkables);
+
+  ch.silentfail (!*with_forkables); /* fail silently without forkables */
+
+  tmp_pathbuf tp;
+  PSECURITY_ATTRIBUTES sa = (PSECURITY_ATTRIBUTES) tp.w_get ();
+  if (!sec_user_nih (sa, cygheap->user.saved_sid (),
+		     well_known_authenticated_users_sid,
+		     PROCESS_QUERY_LIMITED_INFORMATION))
+    sa = &sec_none_nih;
+
   while (1)
     {
+      PCWCHAR forking_progname = NULL;
+      if (dlls.main_executable)
+        forking_progname = dll_list::buffered_shortname
+			   (dlls.main_executable->forkedntname ());
+      if (!forking_progname || !*forking_progname)
+	forking_progname = myself->progname;
+
+      syscall_printf ("CreateProcessW (%W, %W, 0, 0, 1, %y, 0, 0, %p, %p)",
+		      forking_progname, myself->progname, c_flags, &si, &pi);
+
       hchild = NULL;
-      rc = CreateProcessW (myself->progname,	/* image to run */
+      /* cygwin1.dll may reuse the forking_progname buffer, even
+	 in case of failure: don't reuse forking_progname later */
+      rc = CreateProcessW (forking_progname,	/* image to run */
 			   GetCommandLineW (),	/* Take same space for command
 						   line as in parent to make
 						   sure child stack is allocated
 						   in the same memory location
 						   as in parent. */
-			   &sec_none_nih,
-			   &sec_none_nih,
-			   TRUE,		/* inherit handles from parent */
+			   sa,
+			   sa,
+			   TRUE,		/* inherit handles */
 			   c_flags,
-			   NULL,		/* environment filled in later */
-			   0,	  		/* use current drive/directory */
+			   NULL,		/* environ filled in later */
+			   0,			/* use cwd */
 			   &si,
 			   &pi);
 
@@ -378,6 +381,7 @@ frok::parent (volatile char * volatile stack_here)
 	{
 	  this_errno = geterrno_from_win_error ();
 	  error ("CreateProcessW failed for '%W'", myself->progname);
+	  dlls.release_forkables ();
 	  memset (&pi, 0, sizeof (pi));
 	  goto cleanup;
 	}
@@ -390,6 +394,8 @@ frok::parent (volatile char * volatile stack_here)
 
       CloseHandle (pi.hThread);
       hchild = pi.hProcess;
+
+      dlls.release_forkables ();
 
       /* Protect the handle but name it similarly to the way it will
 	 be called in subproc handling. */
@@ -441,17 +447,12 @@ frok::parent (volatile char * volatile stack_here)
      we can't actually record the pid in the internal table. */
   if (!child.remember (false))
     {
-      TerminateProcess (hchild, 1);
       this_errno = EAGAIN;
 #ifdef DEBUGGING0
       error ("child remember failed");
 #endif
       goto cleanup;
     }
-
-#ifndef NO_SLOW_PID_REUSE
-  slow_pid_reuse (hchild);
-#endif
 
   /* CHILD IS STOPPED */
   debug_printf ("child is alive (but stopped)");
@@ -462,7 +463,6 @@ frok::parent (volatile char * volatile stack_here)
      Note: variables marked as NO_COPY will not be copied since they are
      placed in a protected segment.  */
 
-  MALLOC_CHECK;
   const void *impure_beg;
   const void *impure_end;
   const char *impure;
@@ -474,14 +474,13 @@ frok::parent (volatile char * volatile stack_here)
       impure_beg = _impure_ptr;
       impure_end = _impure_ptr + 1;
     }
-  rc = child_copy (hchild, true,
-		   "stack", stack_here, ch.stackbottom,
+  rc = child_copy (hchild, true, !*with_forkables,
+		   "stack", stack_here, ch.stackbase,
 		   impure, impure_beg, impure_end,
 		   NULL);
 
   __malloc_unlock ();
   locked = false;
-  MALLOC_CHECK;
   if (!rc)
     {
       this_errno = get_errno ();
@@ -493,7 +492,7 @@ frok::parent (volatile char * volatile stack_here)
   for (dll *d = dlls.istart (DLL_LINK); d; d = dlls.inext ())
     {
       debug_printf ("copying data/bss of a linked dll");
-      if (!child_copy (hchild, true,
+      if (!child_copy (hchild, true, !*with_forkables,
 		       "linked dll data", d->p.data_start, d->p.data_end,
 		       "linked dll bss", d->p.bss_start, d->p.bss_end,
 		       NULL))
@@ -504,7 +503,8 @@ frok::parent (volatile char * volatile stack_here)
 	}
     }
 
-  /* Start thread, and then wait for it to reload dlls.  */
+  /* Start the child up, and then wait for it to
+     perform fork fixups and dynamic dll loading (if any). */
   resume_child (forker_finished);
   if (!ch.sync (child->pid, hchild, FORK_WAIT_TIMEOUT))
     {
@@ -523,7 +523,7 @@ frok::parent (volatile char * volatile stack_here)
       for (dll *d = dlls.istart (DLL_LOAD); d; d = dlls.inext ())
 	{
 	  debug_printf ("copying data/bss for a loaded dll");
-	  if (!child_copy (hchild, true,
+	  if (!child_copy (hchild, true, !*with_forkables,
 			   "loaded dll data", d->p.data_start, d->p.data_end,
 			   "loaded dll bss", d->p.bss_start, d->p.bss_end,
 			   NULL))
@@ -535,9 +535,21 @@ frok::parent (volatile char * volatile stack_here)
 	      goto cleanup;
 	    }
 	}
-      /* Start the child up again. */
-      resume_child (forker_finished);
     }
+
+  /* Do not attach to the child before it has successfully initialized.
+     Otherwise we may wait forever, or deliver an orphan SIGCHILD. */
+  if (!child.reattach ())
+    {
+      this_errno = EAGAIN;
+#ifdef DEBUGGING0
+      error ("child reattach failed");
+#endif
+      goto cleanup;
+    }
+
+  /* Finally start the child up. */
+  resume_child (forker_finished);
 
   ForceCloseHandle (forker_finished);
   forker_finished = NULL;
@@ -546,14 +558,21 @@ frok::parent (volatile char * volatile stack_here)
 
 /* Common cleanup code for failure cases */
 cleanup:
+  /* release procinfo before hProcess in destructor */
+  child.allow_remove ();
+
   if (fix_impersonation)
     cygheap->user.reimpersonate ();
   if (locked)
     __malloc_unlock ();
 
   /* Remember to de-allocate the fd table. */
-  if (hchild && !child.hProcess)
-    ForceCloseHandle1 (hchild, childhProc);
+  if (hchild)
+    {
+      TerminateProcess (hchild, 1);
+      if (!child.hProcess) /* no child.procinfo */
+	ForceCloseHandle1 (hchild, childhProc);
+    }
   if (forker_finished)
     ForceCloseHandle (forker_finished);
   debug_printf ("returning -1");
@@ -563,7 +582,20 @@ cleanup:
 extern "C" int
 fork ()
 {
-  frok grouped;
+  bool with_forkables = false; /* do not force hardlinks on first try */
+  int res = dofork (&with_forkables);
+  if (res >= 0)
+    return res;
+  if (with_forkables)
+    return res; /* no need for second try when already enabled */
+  with_forkables = true; /* enable hardlinks for second try */
+  return dofork (&with_forkables);
+}
+
+static int
+dofork (bool *with_forkables)
+{
+  frok grouped (with_forkables);
 
   debug_printf ("entering");
   grouped.load_dlls = 0;
@@ -621,7 +653,6 @@ fork ()
       }
   }
 
-  MALLOC_CHECK;
   if (ischild)
     {
       myself->process_state |= PID_ACTIVE;
@@ -631,14 +662,12 @@ fork ()
     {
       if (!grouped.errmsg)
 	syscall_printf ("fork failed - child pid %d, errno %d", grouped.child_pid, grouped.this_errno);
+      else if (grouped.ch.silentfail ())
+	debug_printf ("child %d - %s, errno %d", grouped.child_pid,
+		       grouped.errmsg, grouped.this_errno);
       else
-	{
-	  char buf[strlen (grouped.errmsg) + sizeof ("child %d - , errno 4294967295  ")];
-	  strcpy (buf, "child %d - ");
-	  strcat (buf, grouped.errmsg);
-	  strcat (buf, ", errno %d");
-	  system_printf (buf, grouped.child_pid, grouped.this_errno);
-	}
+	system_printf ("child %d - %s, errno %d", grouped.child_pid,
+		       grouped.errmsg, grouped.this_errno);
 
       set_errno (grouped.this_errno);
     }
@@ -663,10 +692,10 @@ vfork ()
 /* Copy memory from one process to another. */
 
 bool
-child_copy (HANDLE hp, bool write, ...)
+child_copy (HANDLE hp, bool write, bool silentfail, ...)
 {
   va_list args;
-  va_start (args, write);
+  va_start (args, silentfail);
   static const char *huh[] = {"read", "write"};
 
   char *what;
@@ -682,7 +711,7 @@ child_copy (HANDLE hp, bool write, ...)
 	  SIZE_T done = 0;
 	  if (here + todo > high)
 	    todo = high - here;
-	  int res;
+	  BOOL res;
 	  if (write)
 	    res = WriteProcessMemory (hp, here, here, todo, &done);
 	  else
@@ -692,10 +721,14 @@ child_copy (HANDLE hp, bool write, ...)
 	    {
 	      if (!res)
 		__seterrno ();
-	      /* If this happens then there is a bug in our fork
-		 implementation somewhere. */
-	      system_printf ("%s %s copy failed, %p..%p, done %lu, windows pid %u, %E",
-			    what, huh[write], low, high, done, myself->dwProcessId);
+	      if (silentfail)
+		debug_printf ("%s %s copy failed, %p..%p, done %lu, windows pid %u, %E",
+			     what, huh[write], low, high, done, myself->dwProcessId);
+	      else
+		/* If this happens then there is a bug in our fork
+		   implementation somewhere. */
+		system_printf ("%s %s copy failed, %p..%p, done %lu, windows pid %u, %E",
+			      what, huh[write], low, high, done, myself->dwProcessId);
 	      goto err;
 	    }
 	}

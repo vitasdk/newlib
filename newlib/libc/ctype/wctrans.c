@@ -29,19 +29,20 @@
 
 /*
 FUNCTION
-	<<wctrans>>---get wide-character translation type
+	<<wctrans>>, <<wctrans_l>>---get wide-character translation type
 
 INDEX
 	wctrans
 
-ANSI_SYNOPSIS
+INDEX
+	wctrans_l
+
+SYNOPSIS
 	#include <wctype.h>
 	wctrans_t wctrans(const char *<[c]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	wctrans_t wctrans(<[c]>)
-	const char * <[c]>;
+	wctrans_t wctrans_l(const char *<[c]>, locale_t <[locale]>);
 
 
 DESCRIPTION
@@ -50,13 +51,18 @@ the appropriate wctrans_t type value associated with the string,
 if one exists.  The following values are guaranteed to be recognized:
 "tolower" and "toupper".
 
+<<wctrans_l>> is like <<wctrans>> but performs the function based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<wctrans>> returns 0 and sets <<errno>> to <<EINVAL>> if the
+<<wctrans>>, <<wctrans_l>> return 0 and sets <<errno>> to <<EINVAL>> if the
 given name is invalid.  Otherwise, it returns a valid non-zero wctrans_t
 value.
 
 PORTABILITY
 <<wctrans>> is C99.
+<<wctrans_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -69,8 +75,7 @@ No supporting OS subroutines are required.
 #include "local.h"
 
 wctrans_t
-_DEFUN (_wctrans_r, (r, c), 
-	struct _reent *r _AND
+_wctrans_r (struct _reent *r,
 	const char *c)
 {
   if (!strcmp (c, "tolower"))
@@ -86,8 +91,7 @@ _DEFUN (_wctrans_r, (r, c),
 
 #ifndef _REENT_ONLY
 wctrans_t
-_DEFUN (wctrans, (c),
-	const char *c)
+wctrans (const char *c)
 {
   return _wctrans_r (_REENT, c);
 }

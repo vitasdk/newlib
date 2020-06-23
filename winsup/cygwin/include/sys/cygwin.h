@@ -1,9 +1,6 @@
 
 /* sys/cygwin.h
 
-   Copyright 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -23,7 +20,7 @@ extern "C" {
 
 #define _CYGWIN_SIGNAL_STRING "cYgSiGw00f"
 
-#ifndef __x86_64__
+#ifdef __i386__
 /* DEPRECATED INTERFACES.  These are restricted to MAX_PATH length.
    Don't use in modern applications.  They don't exist on x86_64. */
 extern int cygwin_win32_to_posix_path_list (const char *, char *)
@@ -42,7 +39,7 @@ extern int cygwin_conv_to_posix_path (const char *, char *)
   __attribute__ ((__deprecated__));
 extern int cygwin_conv_to_full_posix_path (const char *, char *)
   __attribute__ ((__deprecated__));
-#endif /* !__x86_64__ */
+#endif /* __i386__ */
 
 /* Use these interfaces in favor of the above. */
 
@@ -57,8 +54,12 @@ enum
   CCP_CONVTYPE_MASK = 3,
 
   /* Or these values to the above as needed. */
-  CCP_ABSOLUTE = 0,	  /* Request absolute path (default). */
-  CCP_RELATIVE = 0x100    /* Request to keep path relative.   */
+  CCP_ABSOLUTE = 0,		/* Request absolute path (default).	*/
+  CCP_RELATIVE = 0x100,		/* Request to keep path relative.	*/
+  CCP_PROC_CYGDRIVE = 0x200,	/* Request to return /proc/cygdrive
+				   path (only with CCP_*_TO_POSIX).   */
+
+  CCP_CONVFLAGS_MASK = 0x300,
 };
 typedef unsigned int cygwin_conv_path_t;
 
@@ -156,6 +157,9 @@ typedef enum
     CW_GETNSS_PWD_SRC,
     CW_GETNSS_GRP_SRC,
     CW_EXCEPTION_RECORD_FROM_SIGINFO_T,
+    CW_CYGHEAP_PROFTHR_ALL,
+    CW_WINPID_TO_CYGWIN_PID,
+    CW_MAX_CYGWIN_PID,
   } cygwin_getinfo_types;
 
 #define CW_LOCK_PINFO CW_LOCK_PINFO
@@ -217,6 +221,9 @@ typedef enum
 #define CW_GETNSS_PWD_SRC CW_GETNSS_PWD_SRC
 #define CW_GETNSS_GRP_SRC CW_GETNSS_GRP_SRC
 #define CW_EXCEPTION_RECORD_FROM_SIGINFO_T CW_EXCEPTION_RECORD_FROM_SIGINFO_T
+#define CW_CYGHEAP_PROFTHR_ALL CW_CYGHEAP_PROFTHR_ALL
+#define CW_WINPID_TO_CYGWIN_PID CW_WINPID_TO_CYGWIN_PID
+#define CW_MAX_CYGWIN_PID CW_MAX_CYGWIN_PID
 
 /* Token type for CW_SET_EXTERNAL_TOKEN */
 enum
@@ -266,8 +273,7 @@ enum
   PID_INITIALIZING     = 0x00800, /* Set until ready to receive signals. */
   PID_NEW	       = 0x01000, /* Available. */
   PID_ALLPIDS	       = 0x02000, /* used by pinfo scanner */
-  PID_EXECED	       = 0x04000, /* redirect to original pid info block */
-  PID_NOREDIR	       = 0x08000, /* don't redirect if execed */
+  PID_PROCINFO	       = 0x08000, /* caller just asks for process info */
   PID_EXITED	       = 0x40000000, /* Free entry. */
   PID_REAPED	       = 0x80000000  /* Reaped */
 };
@@ -307,7 +313,7 @@ struct per_process
   uint32_t dll_minor;
 
   struct _reent **impure_ptr_ptr;
-#ifndef __x86_64__
+#ifdef __i386__
   char ***envptr;
 #endif
 
@@ -391,11 +397,9 @@ extern void cygwin_premain3 (int, char **, struct per_process *);
 #define EXTERNAL_PINFO_VERSION_32_LP  2
 #define EXTERNAL_PINFO_VERSION EXTERNAL_PINFO_VERSION_32_LP
 
-#ifndef __uid_t_defined
+#ifndef __INSIDE_CYGWIN__
 typedef __uint16_t __uid16_t;
 typedef __uint16_t __gid16_t;
-typedef __uint32_t uid_t;
-typedef __uint32_t gid_t;
 #endif
 
 struct external_pinfo

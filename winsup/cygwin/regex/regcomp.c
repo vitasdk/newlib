@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD: src/lib/libc/regex/regcomp.c,v 1.36 2007/06/11 03:05:54 delp
 
 #ifdef __CYGWIN__
 #include "winsup.h"
+#include "../locale/setlocale.h"
 #endif
 #include <sys/types.h>
 #include <stdio.h>
@@ -61,12 +62,6 @@ __FBSDID("$FreeBSD: src/lib/libc/regex/regcomp.c,v 1.36 2007/06/11 03:05:54 delp
 #include "regex2.h"
 
 #include "cname.h"
-
-#ifdef __CYGWIN__
-/* These are defined in nlsfuncs.cc. */
-extern LCID collate_lcid;
-extern char collate_charset[];
-#endif
 
 /*
  * parse structure, passed up and down to avoid global variables and
@@ -832,7 +827,7 @@ p_b_term(struct parse *p, cset *cs)
 			CHadd(p, cs, start);
 		else {
 #ifdef __CYGWIN__
-			if (!collate_lcid) {
+			if (!__get_current_collate_locale ()->lcid) {
 #else
 			if (__collate_load_error) {
 #endif
@@ -1137,7 +1132,7 @@ wgetnext(struct parse *p)
 	   invalid ASCII chars.  To be more Linux-compatible, we align the
 	   behaviour to glibc here.  Allow any character value if the current
 	   local's codeset is ASCII. */
-	if (*__locale_charset () == 'A') /* SCII */
+	if (*__current_locale_charset () == 'A') /* SCII */
 	  return (wint_t) (unsigned char) *p->next++;
 #endif
 	memset(&mbs, 0, sizeof(mbs));
@@ -1246,7 +1241,7 @@ freeset(struct parse *p, cset *cs)
 static wint_t
 singleton(cset *cs)
 {
-	wint_t i, s, n;
+	wint_t i, s = OUT, n;
 
 	for (i = n = 0; i < NC; i++)
 		if (CHIN(cs, i)) {
@@ -1310,7 +1305,7 @@ CHaddrange(struct parse *p, cset *cs, wint_t min, wint_t max)
 	}
 	cs->ranges = newranges;
 	cs->ranges[cs->nranges].min = min;
-	cs->ranges[cs->nranges].min = max;
+	cs->ranges[cs->nranges].max = max;
 	cs->nranges++;
 }
 
@@ -1508,7 +1503,7 @@ findmust(struct parse *p, struct re_guts *g)
 	 */
 	if (MB_CUR_MAX > 1 &&
 #ifdef __CYGWIN__
-	    strcmp(__locale_charset (), "UTF-8") != 0)
+	    strcmp(__current_locale_charset (), "UTF-8") != 0)
 #else
 	    strcmp(_CurrentRuneLocale->__encoding, "UTF-8") != 0)
 #endif
@@ -1847,7 +1842,7 @@ computematchjumps(struct parse *p, struct re_guts *g)
                         suffix++;
                 }
 		if (suffix < g->mlen)
-                	ssuffix = pmatches[ssuffix];
+			ssuffix = pmatches[ssuffix];
         }
 
 	free(pmatches);

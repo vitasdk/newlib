@@ -5,14 +5,14 @@
 
 /*
 FUNCTION
-	<<infinity>>, <<infinityf>>--representation of infinity
+	<<infinity>>, <<infinityf>>---representation of infinity
 
 INDEX
 	infinity
 INDEX
 	infinityf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double infinity(void);
 	float infinityf(void);

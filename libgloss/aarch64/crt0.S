@@ -83,7 +83,7 @@
 	FUNC_START	_start
 
 /* Start by setting up a stack */
-
+#ifdef ARM_RDI_MONITOR
 	/*  Issue Angel SVC to read memory info.
 
 	    ptr to ptr to 4 words to receive data.  */
@@ -101,29 +101,45 @@
 	   exposed here in the HeapInfo Angel call.  */
 	ldr	x0, .LC0		/* point at returned values */
 	ldr	x1, [x0, #8]		/* get heap_limit */
+
+	/* Set __heap_limit.  */
+#ifdef __ILP32__
+	/* Sanity check on the __heap_limit.  */
+	tst	x1, #0xffffffff00000000
+	bne	.Linsanepar
+#endif
+	cmp     x1, xzr
+	beq     .LC4
+	adrp	x2, __heap_limit
+	add	x2, x2, #:lo12:__heap_limit
+	str     x1, [x2]
+.LC4:
+
+	ldr	x1, [x0]		/* get heap_base */
 #ifdef __ILP32__
 	/* Sanity check on the heap base.  */
-	ldr	x0, [x0]		/* get heap_base */
-	tst	x0, #0xffffffff00000000
-	beq	1f
-	/* Exit with 1 if the heap base is not within the 32-bit address
-	   space.  */
-	mov	x0, ADP_Stopped_ApplicationExit & 0xff
-	movk	x0, ADP_Stopped_ApplicationExit >> 16, lsl #16
-	adrp	x1, HeapBase	/* Reuse to construct the parameter block.  */
-	add	x1, x1, #:lo12:HeapBase
-	str	x0, [x1]
-	mov	x0, 1
-	str	x0, [x1, #8]
-	mov	w0, #AngelSVC_Reason_ReportException
-	AngelSVCAsm AngelSVC
-1:
-	/* For the sake of safety, set the stack base to the top end of
-	   the 32-bit address space if the returned value from the
-	   Angel API call is larger than or equal to 4 GiB.  */
 	tst	x1, #0xffffffff00000000
-	csinv	w1, w1, wzr, eq
+	bne	.Linsanepar
 #endif
+	cmp     x1, xzr
+	bne     .LC5
+	/* If the heap base value [x0, #0] is 0 then the heap base is actually
+	   at the end of program data (i.e. __end__) */
+	ldr     x1, .LC3
+	str     x1, [x0, #0]
+.LC5:
+	ldr	x1, [x0, #16] /* get stack_base */
+
+#ifdef __ILP32__
+	/* Sanity check on the stack_base.  */
+	tst	x1, #0xffffffff00000000
+	bne	.Linsanepar
+#endif
+	cmp	x1, xzr
+	bne	.LC6
+#endif
+	ldr     x1, .Lstack /*  Set up the stack pointer to a fixed value */
+.LC6:
 
 	/* Ensure quad-word stack alignment.  */
 	and	x0, x1, #~15
@@ -144,8 +160,10 @@
 	sub	x2, x2, x0		/* Third arg: length of block */
 	bl	FUNCTION (memset)
 
+#ifdef ARM_RDI_MONITOR
 	/* Need to set up standard file handles */
 	bl	FUNCTION (initialise_monitor_handles)
+#endif
 
 	/* .init and .fini sections are used to create constructors
 	   and destructors.  Here we call the _init function and arrange
@@ -155,11 +173,13 @@
 
 	bl	FUNCTION (_init)
 
+#ifdef ARM_RDI_MONITOR
 	/* Fetch and parse the command line.  */
-	adr	x1, .Lcmdline		/* Command line descriptor.  */
+	ldr	x1, .Lcmdline		/* Command line descriptor.  */
 	mov	w0, #AngelSVC_Reason_GetCmdLine
 	AngelSVCAsm AngelSVC
 	ldr	x8, .Lcmdline
+	ldr	x8, [x8]
 
 	mov	x0, #0		/* argc */
 	mov	x1, sp		/* argv */
@@ -216,9 +236,30 @@
 	and	x4, x1, ~15
 	mov	sp, x4
 
+#else
+	mov	x0, #0	/* argc = 0 */
+	mov	x1, #0	/* argv = NULL */
+#endif
+
 	bl	FUNCTION (main)
 
 	b	FUNCTION (exit)		/* Cannot return.  */
+
+#if defined (ARM_RDI_MONITOR) && defined (__ILP32__)
+.Linsanepar:
+	/* Exit with 1 if the parameter is not within the 32-bit address
+	   space.  */
+	mov	x1, ADP_Stopped_ApplicationExit & 0xff
+	movk	x1, ADP_Stopped_ApplicationExit >> 16, lsl #16
+	adrp	x0, HeapBase	/* Reuse to construct the parameter block.  */
+	add	x0, x0, #:lo12:HeapBase
+	str	x1, [x0]
+	mov	x1, 1
+	str	x1, [x0, #8]
+	mov	w1, #AngelSVC_Reason_ReportException
+	AngelSVCAsm AngelSVC
+	b       .
+#endif
 
 /* Function initializing exception vector table, flatmap, etc.
    Declared as weak symbol so that user can override this definition
@@ -228,20 +269,27 @@ FUNCTION (_cpu_init_hook):
 	ret
 
 	.align 3
+#ifdef ARM_RDI_MONITOR
 .LC0:
 	GEN_DWORD HeapBase
+.LC3:
+	GEN_DWORD __end__
+#endif
+.Lstack:
+	GEN_DWORD __stack
+	.weak __stack
+
 .LC1:
 	GEN_DWORD __bss_start__
 .LC2:
 	GEN_DWORD __bss_end__
 .Lfini:
 	GEN_DWORD FUNCTION(_fini)
+#ifdef ARM_RDI_MONITOR
 .Lenvp:
 	GEN_DWORD env
 .Lcmdline:
-	GEN_DWORD CommandLine
-	.dword	255
-
+	GEN_DWORD AngelSVCArgs
 /*  Workspace for Angel calls.  */
 	.data
 	.align 3
@@ -258,3 +306,7 @@ StackBase:	.dword	0
 StackLimit:	.dword	0
 env:		.dword	0	/* Dummy environment array */
 CommandLine:	.space	256,0	/*  Maximum length of 255 chars handled.  */
+AngelSVCArgs:
+	GEN_DWORD CommandLine
+	.dword	255
+#endif

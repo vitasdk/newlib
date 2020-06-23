@@ -1,7 +1,5 @@
 /* fenv.cc
 
-   Copyright 2010, 2011, 2012 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -13,6 +11,11 @@ details. */
 #include "errno.h"
 #include "wincap.h"
 #include <string.h>
+
+/*  x87 supports subnormal numbers so we need it below. */
+#define __FE_DENORM	(1 << 1)
+/* mask (= 0x3f) to disable all exceptions at initialization */
+#define __FE_ALL_EXCEPT_X86 (FE_ALL_EXCEPT | __FE_DENORM)
 
 /*  Mask and shift amount for rounding bits.  */
 #define FE_CW_ROUND_MASK	(0x0c00)
@@ -34,11 +37,9 @@ details. */
 #define FE_SSE_EXCEPT_MASK_SHIFT (7)
 
 /* These are writable so we can initialise them at startup.  */
-static fenv_t fe_dfl_env;
 static fenv_t fe_nomask_env;
 
 /* These pointers provide the outside world with read-only access to them.  */
-const fenv_t *_fe_dfl_env = &fe_dfl_env;
 const fenv_t *_fe_nomask_env = &fe_nomask_env;
 
 /*  Although Cygwin assumes i686 or above (hence SSE available) these
@@ -143,7 +144,11 @@ fegetexcept (void)
 int
 fegetenv (fenv_t *envp)
 {
-  __asm__ volatile ("fnstenv %0" : "=m" (envp->_fpu) : );
+  /* fnstenv disables all exceptions in the x87 FPU; as this is not what is
+     desired here, reload the cfg saved from the x87 FPU, back to the FPU */
+  __asm__ volatile ("fnstenv %0\n\
+                     fldenv %0"
+		    : "=m" (envp->_fpu) : );
   if (use_sse)
     __asm__ volatile ("stmxcsr %0" : "=m" (envp->_sse_mxcsr) : );
   return 0;
@@ -295,9 +300,8 @@ fegetexceptflag (fexcept_t *flagp, int excepts)
   if (use_sse)
     __asm__ volatile ("stmxcsr %0" : "=m" (mxcsr) : );
 
-  /* Mask undesired bits out and set result struct.  */
-  flagp->_fpu_exceptions = (sw & excepts);
-  flagp->_sse_exceptions = (mxcsr & excepts);
+  /* Mask undesired bits out and set result.  */
+  *flagp = (sw | mxcsr) & excepts;
 
   return 0;
 }
@@ -317,9 +321,9 @@ fesetexceptflag (const fexcept_t *flagp, int excepts)
 
   /* Set/Clear desired exception bits.  */
   fenv._fpu._fpu_sw &= ~excepts;
-  fenv._fpu._fpu_sw |= (excepts & flagp->_fpu_exceptions);
+  fenv._fpu._fpu_sw |= excepts & *flagp;
   fenv._sse_mxcsr &= ~excepts;
-  fenv._sse_mxcsr |= (excepts & flagp->_sse_exceptions);
+  fenv._sse_mxcsr |= excepts & *flagp;
 
   /* Set back into FPU state.  */
   return fesetenv (&fenv);
@@ -385,18 +389,30 @@ fegetprec (void)
   return (cw & FE_CW_PREC_MASK) >> FE_CW_PREC_SHIFT;
 }
 
-/*  Changes the currently selected precision to prec. If prec does not
-   correspond to one of the supported rounding modes nothing is changed.
-   fesetprec returns zero if it changed the precision, or a nonzero value
-   if the mode is not supported.  */
+/* http://www.open-std.org/jtc1/sc22//WG14/www/docs/n752.htm:
+
+   The fesetprec function establishes the precision represented by its
+   argument prec.  If the argument does not match a precision macro, the
+   precision is not changed.
+
+   The fesetprec function returns a nonzero value if and only if the
+   argument matches a precision macro (that is, if and only if the requested
+   precision can be established). */
 int
 fesetprec (int prec)
 {
   unsigned short cw;
 
   /* Will succeed for any valid value of the input parameter.  */
-  if (prec < FE_SINGLEPREC || prec > FE_EXTENDEDPREC)
-    return EINVAL;
+  switch (prec)
+    {
+    case FE_FLTPREC:
+    case FE_DBLPREC:
+    case FE_LDBLPREC:
+      break;
+    default:
+      return 0;
+    }
 
   /* Get control word.  */
   __asm__ volatile ("fnstcw %0" : "=m" (cw) : );
@@ -409,14 +425,15 @@ fesetprec (int prec)
   __asm__ volatile ("fldcw %0" :: "m" (cw));
 
   /* Indicate success.  */
-  return 0;
+  return 1;
 }
 
 /*  Set up the FPU and SSE environment at the start of execution.  */
 void
 _feinitialise (void)
 {
-  unsigned int edx, eax, mxcsr;
+  unsigned int edx, eax;
+  extern fenv_t __fe_dfl_env;
 
   /* Check for presence of SSE: invoke CPUID #1, check EDX bit 25.  */
   eax = 1;
@@ -430,11 +447,13 @@ _feinitialise (void)
   /* The default cw value, 0x37f, is rounding mode zero.  The MXCSR has
      no precision control, so the only thing to do is set the exception
      mask bits.  */
-  mxcsr = FE_ALL_EXCEPT << FE_SSE_EXCEPT_MASK_SHIFT;
+
+  /* initialize the MXCSR register: mask all exceptions */
+  unsigned int mxcsr = __FE_ALL_EXCEPT_X86 << FE_SSE_EXCEPT_MASK_SHIFT;
   if (use_sse)
     __asm__ volatile ("ldmxcsr %0" :: "m" (mxcsr));
 
-  /* Setup unmasked environment.  */
+  /* Setup unmasked environment, but leave __FE_DENORM masked.  */
   feenableexcept (FE_ALL_EXCEPT);
   fegetenv (&fe_nomask_env);
 
@@ -442,6 +461,6 @@ _feinitialise (void)
   fedisableexcept (FE_ALL_EXCEPT);
 
   /* Finally cache state as default environment. */
-  fegetenv (&fe_dfl_env);
+  fegetenv (&__fe_dfl_env);
 }
 

@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -32,7 +32,7 @@ INDEX
 INDEX
 	_swscanf_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <stdio.h>
 
         int wscanf(const wchar_t *__restrict <[format]>, ...);
@@ -46,36 +46,6 @@ ANSI_SYNOPSIS
                       const wchar_t *<[format]>, ...);
         int _swscanf_r(struct _reent *<[ptr]>, const wchar_t *<[str]>,
                       const wchar_t *<[format]>, ...);
-
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-
-	int wscanf(<[format]> [, <[arg]>, ...])
-	wchar_t *__restrict <[format]>;
-
-	int fwscanf(<[fd]>, <[format]> [, <[arg]>, ...]);
-	FILE *<[fd]>;
-	wchar_t *<[format]>;
-
-	int swscanf(<[str]>, <[format]> [, <[arg]>, ...]);
-	wchar_t *__restrict <[str]>;
-	wchar_t *__restrict <[format]>;
-
-	int _wscanf_r(<[ptr]>, <[format]> [, <[arg]>, ...])
-        struct _reent *<[ptr]>;
-	wchar_t *<[format]>;
-
-	int _fwscanf_r(<[ptr]>, <[fd]>, <[format]> [, <[arg]>, ...]);
-        struct _reent *<[ptr]>;
-	FILE *<[fd]>;
-	wchar_t *<[format]>;
-
-	int _swscanf_r(<[ptr]>, <[str]>, <[format]> [, <[arg]>, ...]);
-        struct _reent *<[ptr]>;
-	wchar_t *<[str]>;
-	wchar_t *<[format]>;
-
 
 DESCRIPTION
         <<wscanf>> scans a series of input fields from standard input,
@@ -134,12 +104,14 @@ DESCRIPTION
 
         Each format specification begins with the percent character (<<%>>).
         The other fields are:
-	o+
+	O+
 		o *
+
 		an optional marker; if present, it suppresses interpretation and
         assignment of this input field.
 
         o <[width]>
+
 		an optional maximum field width: a decimal integer,
 		which controls the maximum number of characters that
 		will be read before converting the current input field.  If the
@@ -152,58 +124,121 @@ DESCRIPTION
 		to that character are read, converted, and stored.
 		Then <<wscanf>> proceeds to the next format specification.
 
-        o size
+        o <[size]>
+
 		<<h>>, <<j>>, <<l>>, <<L>>, <<t>>, and <<z>> are optional size
 		characters which override the default way that <<wscanf>>
 		interprets the data type of the corresponding argument.
 
-
-.Modifier   Type(s)
-.   hh      d, i, o, u, x, n  convert input to char,
-.                             store in char object
-.
-.   h       d, i, o, u, x, n  convert input to short,
-.                             store in short object
-.
-.   h       e, f, c, s, p     no effect
-.
-.   j       d, i, o, u, x, n  convert input to intmax_t,
-.                             store in intmax_t object
-.
-.   j       all others        no effect
-.
-.   l       d, i, o, u, x, n  convert input to long,
-.                             store in long object
-.
-.   l       e, f, g           convert input to double
-.                             store in a double object
-.
-.   l       c, s, [           the input is stored in a wchar_t object
-.
-.   l       p                 no effect
-.
-.   ll      d, i, o, u, x, n  convert to long long,
-.                             store in long long
-.
-.   L       d, i, o, u, x, n  convert to long long,
-.                             store in long long
-.
-.   L       e, f, g, E, G     convert to long double,
-.                             store in long double
-.
-.   L       all others        no effect
-.
-.   t       d, i, o, u, x, n  convert input to ptrdiff_t,
-.                             store in ptrdiff_t object
-.
-.   t       all others        no effect
-.
-.   z       d, i, o, u, x, n  convert input to size_t,
-.                             store in size_t object
-.
-.   z       all others        no effect
-.
-
+		@multitable @columnfractions 0.18 0.30 0.52
+		@headitem
+		Modifier
+		@tab
+		Type(s)
+		@tab
+		@item
+		hh
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to char, store in char object
+		@item
+		h
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to short, store in short object
+		@item
+		h
+		@tab
+		e, f, c, s, p
+		@tab
+		no effect
+		@item
+		j
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to intmax_t, store in intmax_t object
+		@item
+		j
+		@tab
+		all others
+		@tab
+		no effect
+		@item
+		l
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to long, store in long object
+		@item
+		l
+		@tab
+		e, f, g
+		@tab
+		convert input to double, store in a double object
+		@item
+		l
+		@tab
+		c, s, [
+		@tab
+		the input is stored in a wchar_t object
+		@item
+		l
+		@tab
+		p
+		@tab
+		no effect
+		@item
+		ll
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert to long long, store in long long object
+		@item
+		L
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert to long long, store in long long object
+		@item
+		L
+		@tab
+		e, f, g, E, G
+		@tab
+		convert to long double, store in long double object
+		@item
+		L
+		@tab
+		all others
+		@tab
+		no effect
+		@item
+		t
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to ptrdiff_t, store in ptrdiff_t object
+		@item
+		t
+		@tab
+		all others
+		@tab
+		no effect
+		@item
+		z
+		@tab
+		d, i, o, u, x, n
+		@tab
+		convert input to size_t, store in size_t object
+		@item
+		z
+		@tab
+		all others
+		@tab
+		no effect
+		@end multitable
 
         o <[type]>
 
@@ -212,7 +247,7 @@ DESCRIPTION
                 characters:
 
 		o+
-		o  %
+		o %
 		No conversion is done; the percent character (<<%>>) is stored.
 
 		o c
@@ -225,7 +260,7 @@ DESCRIPTION
 		Corresponding <[arg]>: <<(char arg[])>>.
 		If an <<l>> specifier is present, the corresponding <[arg]> is a <<(wchar_t *arg)>>.
 
-		o  [<[pattern]>]
+		o [<[pattern]>]
 		Reads a non-empty character string into memory
 		starting at <[arg]>.  This area must be large
 		enough to accept the sequence and a
@@ -244,7 +279,7 @@ DESCRIPTION
 		o u
 		Reads an unsigned decimal integer into the corresponding
 		<[arg]>: <<(unsigned int *arg)>>.
-			
+
 		o x,X
 		Read a hexadecimal integer into the corresponding <[arg]>:
 		<<(int *arg)>>.
@@ -257,19 +292,19 @@ DESCRIPTION
 		Read a floating-point number into the corresponding <[arg]>:
 		<<(double *arg)>>.
 
-		o  i
+		o i
 		Reads a decimal, octal or hexadecimal integer into the
 		corresponding <[arg]>: <<(int *arg)>>.
 
-		o  n
+		o n
 		Stores the number of characters read in the corresponding
 		<[arg]>: <<(int *arg)>>.
 
-		o  p
+		o p
                 Stores a scanned pointer.  ANSI C leaves the details
 		to each implementation; this implementation treats
 		<<%p>> exactly the same as <<%U>>.  Corresponding
-		<[arg]>: <<(void **arg)>>.  
+		<[arg]>: <<(void **arg)>>.
                 o-
 
 	A <[pattern]> of characters surrounded by square brackets can be used
@@ -303,7 +338,7 @@ DESCRIPTION
 
 	where objects inclosed in square brackets are optional, and <<ddd>>
 	represents decimal, octal, or hexadecimal digits.
-	o-
+	O-
 
 RETURNS
         <<wscanf>> returns the number of input fields successfully
@@ -380,7 +415,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #ifndef _REENT_ONLY 
 
 int 
-swscanf (_CONST wchar_t *__restrict str, _CONST wchar_t *__restrict fmt, ...)
+swscanf (const wchar_t *__restrict str, const wchar_t *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -402,7 +437,7 @@ swscanf (_CONST wchar_t *__restrict str, _CONST wchar_t *__restrict fmt, ...)
 #endif /* !_REENT_ONLY */
 
 int 
-_swscanf_r (struct _reent *ptr, _CONST wchar_t *str, _CONST wchar_t *fmt, ...)
+_swscanf_r (struct _reent *ptr, const wchar_t *str, const wchar_t *fmt, ...)
 {
   int ret;
   va_list ap;

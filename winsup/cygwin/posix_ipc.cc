@@ -1,7 +1,5 @@
 /* posix_ipc.cc: POSIX IPC API for Cygwin.
 
-   Copyright 2007, 2008, 2009, 2010, 2011, 2012, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -178,14 +176,12 @@ ipc_cond_timedwait (HANDLE evt, HANDLE mtx, const struct timespec *abstime)
   DWORD timer_idx = 0;
   int ret = 0;
 
-  set_signal_arrived here (w4[1]);
+  wait_signal_arrived here (w4[1]);
   if ((w4[cnt] = pthread::get_cancel_event ()) != NULL)
     ++cnt;
   if (abstime)
     {
-      if (abstime->tv_sec < 0
-	       || abstime->tv_nsec < 0
-	       || abstime->tv_nsec > 999999999)
+      if (!valid_timespec (*abstime))
 	return EINVAL;
 
       /* If a timeout is set, we create a waitable timer to wait for.

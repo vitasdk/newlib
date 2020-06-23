@@ -1,8 +1,5 @@
 /* smallprint.cc: small print routines for WIN32
 
-   Copyright 1996, 1998, 2000, 2001, 2002, 2003, 2005, 2006,
-	     2007, 2008, 2009, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -16,13 +13,46 @@ details. */
 #include <ctype.h>
 #include <wchar.h>
 
+/*
+  Meaning of format conversion specifiers.  If 'l' isn't explicitely mentioned,
+  it's ignored!
+
+   0       modifier: pad with zero instead of spaces
+   0-9     modifier: field length
+   +       modifier: always add sign
+   l       modifier to d, o, R, u, x, y: 4 byte on 32 bit, 8 byte on 64 bit
+   l       modifier to s, S, W: non-ASCII tweaking
+   _       modifier: print lower case hex chars a-f instead of A-F
+
+   c       char
+   C       WCHAR/wchar_t
+   d       signed int, 4 byte
+   D       signed long long, 8 byte
+   E       GetLastError
+   o       octal unsigned int, 4 byte
+   O       octal unsigned long long, 8 byte
+   p       address
+   P       process name
+   R       return value, 4 byte.
+   s       char *
+   S       PUNICODE_STRING
+   u       unsigned int, 4 byte
+   U       unsigned long long, 8 byte
+   W       PWCHAR/wchar_t *
+   x       hex unsigned int, 4 byte
+   X       hex unsigned long long, 8 byte
+   y       0x hex unsigned int, 4 byte
+   Y       0x hex unsigned long long, 8 byte
+*/
+
 #define LLMASK	(0xffffffffffffffffULL)
 #define LMASK	(0xffffffff)
 
 #define rnarg(dst, base, dosign, len, pad) __rn ((dst), (base), (dosign), va_arg (ap, int32_t), len, pad, LMASK)
 #define rnargLL(dst, base, dosign, len, pad) __rn ((dst), (base), (dosign), va_arg (ap, uint64_t), len, pad, LLMASK)
 
-static const char hex_str[] = "0123456789ABCDEF";
+static const char hex_str_upper[] = "0123456789ABCDEF";
+static const char hex_str_lower[] = "0123456789abcdef";
 
 class tmpbuf
 {
@@ -50,7 +80,7 @@ public:
 };
 
 WCHAR tmpbuf::buf[NT_MAX_PATH];
-muto tmpbuf::lock;
+NO_COPY muto tmpbuf::lock;
 
 static char __fastcall *
 __rn (char *dst, int base, int dosign, long long val, int len, int pad, unsigned long long mask)
@@ -59,6 +89,15 @@ __rn (char *dst, int base, int dosign, long long val, int len, int pad, unsigned
   unsigned long long uval = 0;
   char res[20];
   int l = 0;
+  const char *hex_str;
+
+  if (base < 0)
+    {
+      base = -base;
+      hex_str = hex_str_lower;
+    }
+  else
+    hex_str = hex_str_upper;
 
   if (dosign && val < 0)
     {
@@ -91,41 +130,7 @@ __rn (char *dst, int base, int dosign, long long val, int len, int pad, unsigned
   return dst;
 }
 
-/*
-  Meaning of format conversion specifiers.  If 'l' isn't explicitely mentioned,
-  it's ignored!
-
-   c       char
-   C       WCHAR/wchar_t
-   d       signed int, 4 byte
-  ld       signed long, 4 byte on 32 bit, 8 byte on 64 bit
-   D       signed long long, 8 byte
-   E       GetLastError
-   o       octal unsigned int, 4 byte
-  lo       octal unsigned long, 4 byte on 32 bit, 8 byte on 64 bit
-   O       octal unsigned long long, 8 byte
-   p       address
-   P       process name
-   R       return value, 4 byte.
-  lR       return value, 4 byte on 32 bit, 8 byte on 64 bit.
-   s       char *
-  ls       char * w/ non-ASCII tweaking
-   S       PUNICODE_STRING
-  lS       PUNICODE_STRING w/ non-ASCII tweaking
-   u       unsigned int, 4 byte
-  lu       unsigned long, 4 byte on 32 bit, 8 byte on 64 bit
-   U       unsigned long long, 8 byte
-   W       PWCHAR/wchar_t *
-  lW       PWCHAR/wchar_t * w/ non-ASCII tweaking
-   x       hex unsigned int, 4 byte
-  lx       hex unsigned long, 4 byte on 32 bit, 8 byte on 64 bit
-   X       hex unsigned long long, 8 byte
-   y       0x hex unsigned int, 4 byte
-  ly       0x hex unsigned long, 4 byte on 32 bit, 8 byte on 64 bit
-   Y       0x hex unsigned long long, 8 byte
-*/
-
-int
+extern "C" int
 __small_vsprintf (char *dst, const char *fmt, va_list ap)
 {
   tmpbuf tmp;
@@ -142,6 +147,9 @@ __small_vsprintf (char *dst, const char *fmt, va_list ap)
     {
       int i, n = 0x7fff;
       bool l_opt = false;
+      /* set to -1 on '_', indicates upper (1)/lower(-1) case */
+      int h_opt = 1;
+      const char *hex_str = hex_str_upper;
       if (*fmt != '%')
 	*dst++ = *fmt++;
       else
@@ -172,12 +180,16 @@ __small_vsprintf (char *dst, const char *fmt, va_list ap)
 		      pad = '0';
 		      continue;
 		    }
-		case '1': case '2': case '3': case '4':
-		case '5': case '6': case '7': case '8': case '9':
+		  /*FALLTHRU*/
+		case '1' ... '9':
 		  len = len * 10 + (c - '0');
 		  continue;
 		case 'l':
 		  l_opt = true;
+		  continue;
+		case '_':
+		  h_opt = -1;
+		  hex_str = hex_str_lower;
 		  continue;
 		case 'c':
 		  {
@@ -188,15 +200,15 @@ __small_vsprintf (char *dst, const char *fmt, va_list ap)
 		      {
 			*dst++ = '0';
 			*dst++ = 'x';
-			dst = __rn (dst, 16, 0, c, len, pad, LMASK);
+			dst = __rn (dst, h_opt * 16, 0, c, len, pad, LMASK);
 		      }
 		  }
 		  break;
 		case 'C':
 		  {
 		    WCHAR wc = (WCHAR) va_arg (ap, int);
-		    char buf[4], *c;
-		    sys_wcstombs (buf, 4, &wc, 1);
+		    char buf[MB_LEN_MAX+1] = "", *c;
+		    sys_wcstombs (buf, MB_LEN_MAX+1, &wc, 1);
 		    for (c = buf; *c; ++c)
 		      *dst++ = *c;
 		  }
@@ -251,7 +263,7 @@ __small_vsprintf (char *dst, const char *fmt, va_list ap)
 		    goto gen_decimalLL;
 #endif
 gen_decimal:
-		  dst = rnarg (dst, base, addsign, len, pad);
+		  dst = rnarg (dst, h_opt * base, addsign, len, pad);
 		  break;
 		case 'D':
 		  base = 10;
@@ -272,21 +284,22 @@ gen_decimal:
 		  base = 16;
 		  addsign = 0;
 gen_decimalLL:
-		  dst = rnargLL (dst, base, addsign, len, pad);
+		  dst = rnargLL (dst, h_opt * base, addsign, len, pad);
 		  break;
 		case 'p':
 		  *dst++ = '0';
 		  *dst++ = 'x';
 #ifdef __x86_64__
-		  dst = rnargLL (dst, 16, 0, len, pad);
+		  dst = rnargLL (dst, h_opt * 16, 0, len, pad);
 #else
-		  dst = rnarg (dst, 16, 0, len, pad);
+		  dst = rnarg (dst, h_opt * 16, 0, len, pad);
 #endif
 		  break;
 		case '.':
 		  n = strtol (fmt, (char **) &fmt, 10);
 		  if (*fmt++ != 's')
 		    goto endfor;
+		  /*FALLTHRU*/
 		case 's':
 		  s = va_arg (ap, char *);
 		  if (s == NULL)
@@ -360,7 +373,7 @@ gen_decimalLL:
   return dst - orig;
 }
 
-int
+extern "C" int
 __small_sprintf (char *dst, const char *fmt, ...)
 {
   int r;
@@ -392,6 +405,7 @@ small_printf (const char *fmt, ...)
   count = __small_vsprintf (buf, fmt, ap);
   va_end (ap);
 
+  set_ishybrid_and_switch_to_pcon (GetStdHandle (STD_ERROR_HANDLE));
   WriteFile (GetStdHandle (STD_ERROR_HANDLE), buf, count, &done, NULL);
   FlushFileBuffers (GetStdHandle (STD_ERROR_HANDLE));
 }
@@ -418,6 +432,7 @@ console_printf (const char *fmt, ...)
   count = __small_vsprintf (buf, fmt, ap);
   va_end (ap);
 
+  set_ishybrid_and_switch_to_pcon (console_handle);
   WriteFile (console_handle, buf, count, &done, NULL);
   FlushFileBuffers (console_handle);
 }
@@ -433,6 +448,15 @@ __wrn (PWCHAR dst, int base, int dosign, long long val, int len, int pad, unsign
   unsigned long long uval = 0;
   WCHAR res[20];
   int l = 0;
+  const char *hex_str;
+
+  if (base < 0)
+    {
+      base = -base;
+      hex_str = hex_str_lower;
+    }
+  else
+    hex_str = hex_str_upper;
 
   if (dosign && val < 0)
     {
@@ -484,6 +508,8 @@ __small_vswprintf (PWCHAR dst, const WCHAR *fmt, va_list ap)
 #ifdef __x86_64__
       bool l_opt = false;
 #endif
+      /* set to -1 on '_', indicates upper (1)/lower(-1) case */
+      int h_opt = 1;
       if (*fmt != L'%')
 	*dst++ = *fmt++;
       else
@@ -514,6 +540,7 @@ __small_vswprintf (PWCHAR dst, const WCHAR *fmt, va_list ap)
 		      pad = L'0';
 		      continue;
 		    }
+		  /*FALLTHRU*/
 		case L'1' ... L'9':
 		  len = len * 10 + (c - L'0');
 		  continue;
@@ -521,6 +548,9 @@ __small_vswprintf (PWCHAR dst, const WCHAR *fmt, va_list ap)
 #ifdef __x86_64__
 		  l_opt = true;
 #endif
+		  continue;
+		case '_':
+		  h_opt = -1;
 		  continue;
 		case L'c':
 		case L'C':
@@ -576,7 +606,7 @@ __small_vswprintf (PWCHAR dst, const WCHAR *fmt, va_list ap)
 		    goto gen_decimalLL;
 #endif
 gen_decimal:
-		  dst = wrnarg (dst, base, addsign, len, pad);
+		  dst = wrnarg (dst, h_opt * base, addsign, len, pad);
 		  break;
 		case 'D':
 		  base = 10;
@@ -597,15 +627,15 @@ gen_decimal:
 		  base = 16;
 		  addsign = 0;
 gen_decimalLL:
-		  dst = wrnargLL (dst, base, addsign, len, pad);
+		  dst = wrnargLL (dst, h_opt * base, addsign, len, pad);
 		  break;
 		case L'p':
 		  *dst++ = L'0';
 		  *dst++ = L'x';
 #ifdef __x86_64__
-		  dst = wrnargLL (dst, 16, 0, len, pad);
+		  dst = wrnargLL (dst, h_opt * 16, 0, len, pad);
 #else
-		  dst = wrnarg (dst, 16, 0, len, pad);
+		  dst = wrnarg (dst, h_opt * 16, 0, len, pad);
 #endif
 		  break;
 		case L'P':
@@ -615,6 +645,7 @@ gen_decimalLL:
 		  n = wcstoul (fmt, (wchar_t **) &fmt, 10);
 		  if (*fmt++ != L's')
 		    goto endfor;
+		  /*FALLTHRU*/
 		case L's':
 		  s = va_arg (ap, char *);
 		  if (s == NULL)
@@ -647,7 +678,7 @@ gen_decimalLL:
 	    }
 	}
     }
-  if (Rval < 0)     
+  if (Rval < 0)
     {
       dst = wcpcpy (dst, L", errno ");
       dst = __wrn (dst, 10, false, get_errno (), 0, 0, LMASK);

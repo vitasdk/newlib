@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -22,7 +22,7 @@
  * I/O descriptors for __sfvwrite_r().
  */
 struct __siov {
-	_CONST _PTR     iov_base;
+	const void *iov_base;
 	size_t	iov_len;
 };
 struct __suio {
@@ -32,5 +32,5 @@ struct __suio {
 };
 
 
-extern int _EXFUN(__sfvwrite_r,(struct _reent *, FILE *, struct __suio *));
-extern int _EXFUN(__swsetup_r,(struct _reent *, FILE *));
+extern int __sfvwrite_r (struct _reent *, FILE *, struct __suio *);
+extern int __swsetup_r (struct _reent *, FILE *);

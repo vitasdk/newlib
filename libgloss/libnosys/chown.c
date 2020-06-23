@@ -12,9 +12,8 @@ extern int errno;
 #include "warning.h"
 
 int
-_DEFUN (_chown, (path, owner, group),
-        const char *path  _AND
-        uid_t owner _AND
+_chown (const char *path,
+        uid_t owner,
         gid_t group)
 {
   errno = ENOSYS;

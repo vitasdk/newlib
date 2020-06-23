@@ -19,3 +19,10 @@ makedoc.o: makedoc.c
 
 ACLOCAL_AMFLAGS = -I .. -I ../..
 CONFIG_STATUS_DEPENDENCIES = $(newlib_basedir)/configure.host
+
+man:
+
+man-cache:
+	${srcdir}/makedocbook.py --cache
+
+.PHONY: man-cache

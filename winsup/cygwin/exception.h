@@ -1,15 +1,12 @@
 /* exception.h
 
-   Copyright 1996, 1997, 1998, 2000, 2001, 2005, 2010, 2011, 1012, 2013, 2014
-   Red Hat, Inc.
-
 This software is a copyrighted work licensed under the terms of the
 Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
 
 #pragma once
 
-#ifndef __x86_64__
+#ifdef __i386__
 /* Documentation on the innards of 32 bit Windows exception handling (i.e.
    from the perspective of a compiler implementor) apparently doesn't exist.
    However, the following came from Onno Hovers <onno@stack.urc.tue.nl>
@@ -126,7 +123,7 @@ public:
   ~exception () __attribute__ ((always_inline)) { _except_list = save; }
 };
 
-#else /* __x86_64__ */
+#else /* !__i386__ */
 
 #define exception_list void
 typedef struct _DISPATCHER_CONTEXT *PDISPATCHER_CONTEXT;
@@ -162,7 +159,7 @@ public:
 
 LONG CALLBACK myfault_altstack_handler (EXCEPTION_POINTERS *);
 
-#endif /* !__x86_64__ */
+#endif /* __i386__ */
 
 class cygwin_exception
 {

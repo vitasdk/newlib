@@ -5,18 +5,10 @@ FUNCTION
 INDEX
 	qsort
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
 	void qsort(void *<[base]>, size_t <[nmemb]>, size_t <[size]>,
 		   int (*<[compar]>)(const void *, const void *) );
-
-TRAD_SYNOPSIS
-	#include <stdlib.h>
-	qsort(<[base]>, <[nmemb]>, <[size]>, <[compar]> )
-	char *<[base]>;
-	size_t <[nmemb]>;
-	size_t <[size]>;
-	int (*<[compar]>)();
 
 DESCRIPTION
 <<qsort>> sorts an array (beginning at <[base]>) of <[nmemb]> objects.
@@ -85,8 +77,8 @@ typedef int		 cmp_t(const void *, const void *, void *);
 #else
 typedef int		 cmp_t(const void *, const void *);
 #endif
-static inline char	*med3 _PARAMS((char *, char *, char *, cmp_t *, void *));
-static inline void	 swapfunc _PARAMS((char *, char *, int, int));
+static inline char	*med3 (char *, char *, char *, cmp_t *, void *);
+static inline void	 swapfunc (char *, char *, int, int);
 
 #define min(a, b)	(a) < (b) ? a : b
 
@@ -108,10 +100,9 @@ static inline void	 swapfunc _PARAMS((char *, char *, int, int));
 	es % sizeof(long) ? 2 : es == sizeof(long)? 0 : 1;
 
 static inline void
-_DEFUN(swapfunc, (a, b, n, swaptype),
-	char *a _AND
-	char *b _AND
-	int n _AND
+swapfunc (char *a,
+	char *b,
+	int n,
 	int swaptype)
 {
 	if(swaptype <= 1)
@@ -139,11 +130,10 @@ _DEFUN(swapfunc, (a, b, n, swaptype),
 #endif
 
 static inline char *
-_DEFUN(med3, (a, b, c, cmp, thunk),
-	char *a _AND
-	char *b _AND
-	char *c _AND
-	cmp_t *cmp _AND
+med3 (char *a,
+	char *b,
+	char *c,
+	cmp_t *cmp,
 	void *thunk
 #if !defined(I_AM_QSORT_R) && !defined(I_AM_GNU_QSORT_R)
 __unused
@@ -155,29 +145,42 @@ __unused
               :(CMP(thunk, b, c) > 0 ? b : (CMP(thunk, a, c) < 0 ? a : c ));
 }
 
+/*
+ * Classical function call recursion wastes a lot of stack space. Each
+ * recursion level requires a full stack frame comprising all local variables
+ * and additional space as dictated by the processor calling convention.
+ *
+ * This implementation instead stores the variables that are unique for each
+ * recursion level in a parameter stack array, and uses iteration to emulate
+ * recursion. Function call recursion is not used until the array is full.
+ *
+ * To ensure the stack consumption isn't worsened by this design, the size of
+ * the parameter stack array is chosen to be similar to the stack frame
+ * excluding the array. Each function call recursion level can handle this
+ * number of iterative recursion levels.
+ */
+#define PARAMETER_STACK_LEVELS 8u
+
 #if defined(I_AM_QSORT_R)
 void
-_DEFUN(__bsd_qsort_r, (a, n, es, thunk, cmp),
-	void *a _AND
-	size_t n _AND
-	size_t es _AND
-	void *thunk _AND
+__bsd_qsort_r (void *a,
+	size_t n,
+	size_t es,
+	void *thunk,
 	cmp_t *cmp)
 #elif defined(I_AM_GNU_QSORT_R)
 void
-_DEFUN(qsort_r, (a, n, es, cmp, thunk),
-	void *a _AND
-	size_t n _AND
-	size_t es _AND
-	cmp_t *cmp _AND
+qsort_r (void *a,
+	size_t n,
+	size_t es,
+	cmp_t *cmp,
 	void *thunk)
 #else
 #define thunk NULL
 void
-_DEFUN(qsort, (a, n, es, cmp),
-	void *a _AND
-	size_t n _AND
-	size_t es _AND
+qsort (void *a,
+	size_t n,
+	size_t es,
 	cmp_t *cmp)
 #endif
 {
@@ -185,16 +188,21 @@ _DEFUN(qsort, (a, n, es, cmp),
 	size_t d, r;
 	int cmp_result;
 	int swaptype, swap_cnt;
+	size_t recursion_level = 0;
+	struct { void *a; size_t n; } parameter_stack[PARAMETER_STACK_LEVELS];
 
-loop:	SWAPINIT(a, es);
-	swap_cnt = 0;
+	SWAPINIT(a, es);
+loop:	swap_cnt = 0;
 	if (n < 7) {
+		/* Short arrays are insertion sorted. */
 		for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
 			for (pl = pm; pl > (char *) a && CMP(thunk, pl - es, pl) > 0;
 			     pl -= es)
 				swap(pl, pl - es);
-		return;
+		goto pop;
 	}
+
+	/* Select a pivot element, move it to the left. */
 	pm = (char *) a + (n / 2) * es;
 	if (n > 7) {
 		pl = a;
@@ -208,11 +216,17 @@ loop:	SWAPINIT(a, es);
 		pm = med3(pl, pm, pn, cmp, thunk);
 	}
 	swap(a, pm);
-	pa = pb = (char *) a + es;
 
+	/*
+	 * Sort the array relative the pivot in four ranges as follows:
+	 * { elems == pivot, elems < pivot, elems > pivot, elems == pivot }
+	 */
+	pa = pb = (char *) a + es;
 	pc = pd = (char *) a + (n - 1) * es;
 	for (;;) {
+		/* Scan left to right stopping at first element > pivot. */
 		while (pb <= pc && (cmp_result = CMP(thunk, pb, a)) <= 0) {
+			/* Move elements == pivot to the left (to pa) */
 			if (cmp_result == 0) {
 				swap_cnt = 1;
 				swap(pa, pb);
@@ -220,7 +234,9 @@ loop:	SWAPINIT(a, es);
 			}
 			pb += es;
 		}
+		/* Scan right to left stopping at first element < pivot. */
 		while (pb <= pc && (cmp_result = CMP(thunk, pc, a)) >= 0) {
+			/* Move elements == pivot to the right (to pd) */
 			if (cmp_result == 0) {
 				swap_cnt = 1;
 				swap(pc, pd);
@@ -230,6 +246,7 @@ loop:	SWAPINIT(a, es);
 		}
 		if (pb > pc)
 			break;
+		/* The scan has found two elements to swap with each other. */
 		swap(pb, pc);
 		swap_cnt = 1;
 		pb += es;
@@ -240,27 +257,89 @@ loop:	SWAPINIT(a, es);
 			for (pl = pm; pl > (char *) a && CMP(thunk, pl - es, pl) > 0;
 			     pl -= es)
 				swap(pl, pl - es);
-		return;
+		goto pop;
 	}
 
+	/*
+	 * Rearrange the array in three parts sorted like this:
+	 * { elements < pivot, elements == pivot, elements > pivot }
+	 */
 	pn = (char *) a + n * es;
 	r = min(pa - (char *)a, pb - pa);
 	vecswap(a, pb - r, r);
 	r = min(pd - pc, pn - pd - es);
 	vecswap(pb, pn - r, r);
-	if ((r = pb - pa) > es)
+	d = pb - pa; /* d = Size of left part. */
+	r = pd - pc; /* r = Size of right part. */
+	pn -= r;     /* pn = Base of right part. */
+
+	/*
+	 * Check which of the left and right parts are larger.
+	 * Set (a, n)  to (base, size) of the larger part.
+	 * Set (pa, r) to (base, size) of the smaller part.
+	 */
+	if (r > d) { /* Right part is the larger part */
+		pa = a;
+		a = pn;
+		n = r;
+		r = d;
+	}
+	else { /* Left part is the larger part, or both are equal. */
+		pa = pn;
+		n = d;
+	}
+
+	/*
+	 * The left and right parts each need further sorting if they
+	 * contain two elements or more. If both need sorting we use
+	 * recursion to sort the smaller part and save the larger part
+	 * to be sorted by iteration after the recursion.
+	 * Using recursion only for the smaller part guarantees a
+	 * recursion depth that is bounded to be less than (log2(n)).
+	 */
+	if (r > es) {  /* Smaller part > 1 element. Both parts need sorting. */
+		if (recursion_level < PARAMETER_STACK_LEVELS) {
+			/*
+			 * The smaller part needs to be recursively sorted
+			 * before the larger part is sorted. To avoid function
+			 * call recursion the parameters for the larger part
+			 * are pushed on the parameter_stack array. The smaller
+			 * part is sorted using iteration and the larger part
+			 * will be sorted when the parameter_stack is popped
+			 * after the smaller part has been sorted.
+			 */
+			parameter_stack[recursion_level].a = a;
+			parameter_stack[recursion_level].n = n / es;
+			recursion_level++;
+			a = pa;
+			n = r / es;
+			goto loop;
+		}
+		else {
+			/*
+			 * The parameter_stack array is full. The smaller part
+			 * is sorted using function call recursion. The larger
+			 * part will be sorted after the function call returns.
+			 */
 #if defined(I_AM_QSORT_R)
-		__bsd_qsort_r(a, r / es, es, thunk, cmp);
+			__bsd_qsort_r(pa, r / es, es, thunk, cmp);
 #elif defined(I_AM_GNU_QSORT_R)
-		qsort_r(a, r / es, es, cmp, thunk);
+			qsort_r(pa, r / es, es, cmp, thunk);
 #else
-		qsort(a, r / es, es, cmp);
+			qsort(pa, r / es, es, cmp);
 #endif
-	if ((r = pd - pc) > es) {
-		/* Iterate rather than recurse to save stack space */
-		a = pn - r;
-		n = r / es;
+		}
+	}
+	if (n > es) {  /* The larger part needs sorting. Iterate to sort.  */
+		n = n / es;
 		goto loop;
 	}
-/*		qsort(pn - r, r / es, es, cmp);*/
+	/* Both left and right parts are one element or less - level done. */
+pop:
+	if (recursion_level != 0) {
+		recursion_level--;
+		a = parameter_stack[recursion_level].a;
+		n = parameter_stack[recursion_level].n;
+		goto loop;
+	}
 }

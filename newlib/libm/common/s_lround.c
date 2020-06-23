@@ -10,7 +10,7 @@
  */
 /*
 FUNCTION
-<<lround>>, <<lroundf>>, <<llround>>, <<llroundf>>--round to integer, to nearest
+<<lround>>, <<lroundf>>, <<llround>>, <<llroundf>>---round to integer, to nearest
 INDEX
 	lround
 INDEX
@@ -20,7 +20,7 @@ INDEX
 INDEX
 	llroundf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	long int lround(double <[x]>);
 	long int lroundf(float <[x]>);

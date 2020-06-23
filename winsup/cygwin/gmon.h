@@ -65,6 +65,9 @@ extern void mcount(void);
 #ifdef __MINGW32__
 #include <_bsd_types.h>
 #endif /* __MINGW32__*/
+#ifdef __CYGWIN__
+#include <winsup.h>
+#endif
 
 /*
  * Structure prepended to gmon.out profiling data file.
@@ -127,10 +130,10 @@ struct gmonhdr {
 #define MAXARCS		((1 << (8 * sizeof(HISTCOUNTER))) - 2)
 
 struct tostruct {
-	size_t	selfpc;
-	long	count;
-	u_short	link;
-	u_short pad;
+	size_t		selfpc;
+	long		count;
+	u_int16_t	link;
+	u_int16_t	pad;
 };
 
 /*
@@ -153,10 +156,10 @@ struct rawarc {
  * The profiling data structures are housed in this structure.
  */
 struct gmonparam {
-	int		state;
-	u_short		*kcount;
+	volatile LONG	state;
+	u_int16_t	*kcount;
 	size_t		kcountsize;
-	u_short		*froms;
+	u_int16_t	*froms;
 	size_t		fromssize;
 	struct tostruct	*tos;
 	size_t		tossize;

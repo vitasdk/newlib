@@ -13,7 +13,7 @@
 
 /*
 FUNCTION
-<<scalbn>>, <<scalbnf>>, <<scalbln>>, <<scalblnf>>--scale by power of FLT_RADIX (=2)
+<<scalbn>>, <<scalbnf>>, <<scalbln>>, <<scalblnf>>---scale by power of FLT_RADIX (=2)
 INDEX
 	scalbn
 INDEX
@@ -23,7 +23,7 @@ INDEX
 INDEX
 	scalblnf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double scalbn(double <[x]>, int <[n]>);
 	float scalbnf(float <[x]>, int <[n]>);

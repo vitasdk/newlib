@@ -29,17 +29,36 @@
    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
    Assumes:
-   ARMv6T2, AArch32
+   ARMv6T2 or ARMv7E-M, AArch32
  */
 
-#include "arm_asm.h"
+/* Copyright (c) 2015 ARM Ltd.
+   All rights reserved.
 
-/* NOTE: This ifdef MUST match the ones in arm/strlen.c
-   We fallback to the one in arm/strlen.c for size optimised or
-   for older architectures. */
-#if (defined(_ISA_ARM_7) || defined(__ARM_ARCH_6T2__)) && \
-    !(defined (__OPTIMIZE_SIZE__) || defined (PREFER_SIZE_OVER_SPEED) || \
-      (defined (__thumb__) && !defined (__thumb2__)))
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met:
+       * Redistributions of source code must retain the above copyright
+	 notice, this list of conditions and the following disclaimer.
+       * Redistributions in binary form must reproduce the above copyright
+	 notice, this list of conditions and the following disclaimer in the
+	 documentation and/or other materials provided with the distribution.
+       * Neither the name of the Linaro nor the
+	 names of its contributors may be used to endorse or promote products
+	 derived from this software without specific prior written permission.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+   A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT
+   HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  */
+
+#include "acle-compat.h"
 
 	.macro def_fn f p2align=0
 	.text
@@ -58,6 +77,12 @@
 #endif
 
 	/* This code requires Thumb.  */
+#if __ARM_ARCH_PROFILE == 'M'
+	.arch   armv7e-m
+#else
+	.arch	armv6t2
+#endif
+	.eabi_attribute Tag_ARM_ISA_use, 0
 	.thumb
 	.syntax unified
 
@@ -153,5 +178,3 @@ def_fn	strlen p2align=6
 	mov	const_0, #0
 	b	.Lstart_realigned
 	.size	strlen, . - strlen
-
-#endif

@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,23 +24,13 @@ INDEX
 INDEX
 	fileno_unlocked
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int fileno(FILE *<[fp]>);
 
 	#define _BSD_SOURCE
 	#include <stdio.h>
 	int fileno_unlocked(FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int fileno(<[fp]>)
-	FILE *<[fp]>;
-
-	#define _BSD_SOURCE
-	#include <stdio.h>
-	int fileno_unlocked(<[fp]>)
-	FILE *<[fp]>;
 
 DESCRIPTION
 You can use <<fileno>> to return the file descriptor identified by <[fp]>.
@@ -73,8 +63,7 @@ Supporting OS subroutines required: none.
 #include "local.h"
 
 int
-_DEFUN(fileno, (f),
-       FILE * f)
+fileno (FILE * f)
 {
   int result;
   CHECK_INIT (_REENT, f);

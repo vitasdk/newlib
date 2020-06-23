@@ -9,6 +9,7 @@ GENERAL_SOURCES = \
 	db_local.h \
 	extern.h \
 	hash.h \
+	ndbm.c \
 	page.h \
 	qsort.c
 
@@ -62,23 +63,11 @@ lib_a_CFLAGS = $(AM_CFLAGS)
 noinst_DATA =
 endif # USE_LIBTOOL
 
-SUFFIXES = .def
-
 CHEWOUT_FILES = \
 	bsearch.def \
 	qsort.def \
 	qsort_r.def
 
-CHEW = ../../doc/makedoc -f $(srcdir)/../../doc/doc.str
-
-.c.def:
-	$(CHEW) < $< > $*.def 2> $*.ref
-	touch stmp-def
-
-TARGETDOC = ../tmp.texi
-
-doc: $(CHEWOUT_FILES)
-
-CLEANFILES = $(CHEWOUT_FILES) *.ref
+CHAPTERS =
 
 include $(srcdir)/../../Makefile.shared

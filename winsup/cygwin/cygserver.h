@@ -1,7 +1,5 @@
 /* cygserver.h
 
-   Copyright 2001, 2002, 2003, 2004, 2008, 2012, 2013 Red Hat Inc.
-
    Written by Egor Duda <deo@logos-m.ru>
 
 This file is part of Cygwin.
@@ -12,12 +10,6 @@ details. */
 
 #ifndef _CYGSERVER_H_
 #define _CYGSERVER_H_
-
-#ifdef __GNUC__
-#define CYGSERVER_PACKED __attribute__ ((packed))
-#else
-#define CYGSERVER_PACKED
-#endif
 
 #define CYGWIN_SERVER_VERSION_MAJOR	1
 #define CYGWIN_SERVER_VERSION_API	4
@@ -67,7 +59,7 @@ protected:
 
     header_t () {};
     header_t (request_code_t, size_t);
-  } CYGSERVER_PACKED;
+  };
 
 public:
 #ifndef __INSIDE_CYGWIN__
@@ -113,7 +105,7 @@ private:
   struct request_get_version
   {
     DWORD major, api, minor, patch;
-  } CYGSERVER_PACKED;
+  };
 
 public:
   client_request_get_version ();
@@ -158,7 +150,7 @@ private:
   {
     DWORD pid, master_pid;
     HANDLE from_master, to_master;
-  } CYGSERVER_PACKED;
+  };
 
 public:
 #ifdef __INSIDE_CYGWIN__

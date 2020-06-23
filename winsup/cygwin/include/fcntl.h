@@ -1,8 +1,5 @@
 /* fcntl.h
 
-   Copyright 1996, 1998, 2000, 2001, 2005, 2006, 2009, 2010, 2013,
-   2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -22,7 +19,7 @@ details. */
    processes interact.  If you have the requirement to interact with native
    Windows applications which use Windows mandatory file locking, your have
    to use mandatory locking as well.  The command
-   
+
    fcntl (fd, F_LCK_MANDATORY, 1)
 
    switches subsequent F_GETLK, F_SETLK, F_SETLKW calls to mandatory locking
@@ -46,8 +43,8 @@ details. */
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern int posix_fadvise _PARAMS ((int, off_t, off_t, int));
-extern int posix_fallocate _PARAMS ((int, off_t, off_t));
+extern int posix_fadvise (int, off_t, off_t, int);
+extern int posix_fallocate (int, off_t, off_t);
 #ifdef __cplusplus
 }
 #endif

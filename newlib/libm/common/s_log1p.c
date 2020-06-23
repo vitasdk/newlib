@@ -20,18 +20,10 @@ INDEX
 INDEX
 	log1pf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double log1p(double <[x]>);
 	float log1pf(float <[x]>);
-
-TRAD_SYNOPSIS
-	#include <math.h>
-	double log1p(<[x]>)
-	double <[x]>;
-
-	float log1pf(<[x]>)
-	float <[x]>;
 
 DESCRIPTION
 <<log1p>> calculates 
@@ -121,6 +113,7 @@ Interface Definition (Issue 2).
  */
 
 #include "fdlibm.h"
+#include "math_config.h"
 
 #ifndef _DOUBLE_IS_32BITS
 
@@ -162,8 +155,10 @@ static double zero = 0.0;
 	k = 1;
 	if (hx < 0x3FDA827A) {			/* x < 0.41422  */
 	    if(ax>=0x3ff00000) {		/* x <= -1.0 */
-		if(x==-1.0) return -two54/zero; /* log1p(-1)=+inf */
-		else return (x-x)/(x-x);	/* log1p(x<-1)=NaN */
+		if(x==-1.0)
+		    return __math_divzero (1);	/* log1p(-1)=-inf */
+		else
+		    return __math_invalid (x);	/* log1p(x<-1)=NaN */
 	    }
 	    if(ax<0x3e200000) {			/* |x| < 2**-29 */
 		if(two54+x>zero			/* raise inexact */

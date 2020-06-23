@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -31,9 +31,8 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(vasprintf, (strp, fmt, ap),
-       char **strp      _AND
-       const char *fmt _AND
+vasprintf (char **strp,
+       const char *fmt,
        va_list ap)
 {
   return _vasprintf_r (_REENT, strp, fmt, ap);
@@ -41,17 +40,16 @@ _DEFUN(vasprintf, (strp, fmt, ap),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(vasiprintf, (char **, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("vasprintf"))));
+vasiprintf (char **, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("vasprintf")));
 #endif
 
 #endif /* !_REENT_ONLY */
 
 int
-_DEFUN(_vasprintf_r, (ptr, strp, fmt, ap),
-       struct _reent *ptr _AND
-       char **strp        _AND
-       const char *fmt   _AND
+_vasprintf_r (struct _reent *ptr,
+       char **strp,
+       const char *fmt,
        va_list ap)
 {
   int ret;
@@ -72,6 +70,6 @@ _DEFUN(_vasprintf_r, (ptr, strp, fmt, ap),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(_vasiprintf_r, (struct _reent *, char **, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("_vasprintf_r"))));
+_vasiprintf_r (struct _reent *, char **, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("_vasprintf_r")));
 #endif

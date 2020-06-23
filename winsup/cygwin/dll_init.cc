@@ -1,8 +1,5 @@
 /* dll_init.cc
 
-   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This software is a copyrighted work licensed under the terms of the
 Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
@@ -11,6 +8,7 @@ details. */
 #include "cygerrno.h"
 #include "perprocess.h"
 #include "sync.h"
+#include "shared_info.h"
 #include "dll_init.h"
 #include "environ.h"
 #include "security.h"
@@ -33,9 +31,128 @@ extern void __stdcall check_sanity_and_sync (per_process *);
 
 dll_list dlls;
 
+WCHAR NO_COPY dll_list::nt_max_path_buffer[NT_MAX_PATH];
+
 muto dll_list::protect;
 
 static bool dll_global_dtors_recorded;
+
+/* We need the in_load_after_fork flag so dll_dllcrt0_1 can decide at fork
+   time if this is a linked DLL or a dynamically loaded DLL.  In either case,
+   both, cygwin_finished_initializing and in_forkee are true, so they are not
+   sufficient to discern the situation. */
+static bool NO_COPY in_load_after_fork;
+
+/* Into ntbuf with ntbufsize, prints name prefixed with "\\??\\"
+   or "\\??\\UNC" as necessary to form the native NT path name.
+   Returns the end of the resulting string in ntbuf.
+   Supports using (a substring of) ntbuf as name argument. */
+PWCHAR dll_list::form_ntname (PWCHAR ntbuf, size_t ntbufsize, PCWCHAR name)
+{
+  while (true)
+    {
+      /* avoid using path_conv here: cygheap might not be
+	 initialized when started from non-cygwin process,
+	 or still might be frozen in_forkee */
+      if (name[0] == L'\0' || ntbufsize < 8)
+	break;
+      if (name[1] == L':') /* short Win32 drive letter path name */
+	{
+	  int winlen = min (ntbufsize - 5, wcslen (name));
+	  if (ntbuf + 4 != name)
+	    memmove (ntbuf + 4, name, sizeof (*ntbuf) * winlen);
+	  wcsncpy (ntbuf, L"\\??\\", 4);
+	  ntbuf += 4 + winlen;
+	  break;
+	}
+      if (!wcsncmp (name, L"\\\\?\\", 4)) /* long Win32 path name */
+	{
+	  int winlen = min (ntbufsize - 1, wcslen (name));
+	  if (ntbuf != name)
+	    memmove (ntbuf, name, sizeof (*ntbuf) * winlen);
+	  ntbuf[1] = L'?';
+	  ntbuf += winlen;
+	  break;
+	}
+      if (!wcsncmp (name, L"\\\\", 2)) /* short Win32 UNC path name */
+	{
+	  name += 1; /* skip first backslash */
+	  int winlen = min (ntbufsize - 8, wcslen (name));
+	  if (ntbuf + 7 != name)
+	    memmove (ntbuf + 7, name, sizeof (*ntbuf) * winlen);
+	  wcsncpy (ntbuf, L"\\??\\UNC", 7);
+	  ntbuf += 7 + winlen;
+	  break;
+	}
+      if (!wcsncmp (name, L"\\??\\", 4)) /* already a long NT path name */
+	{
+	  int winlen = min (ntbufsize - 1, wcslen (name));
+	  if (ntbuf != name)
+	    memmove (ntbuf, name, sizeof (*ntbuf) * winlen);
+	  ntbuf += winlen;
+	  break;
+	}
+      system_printf ("WARNING: invalid path name '%W'", name);
+      break;
+    }
+  if (ntbufsize)
+    *ntbuf = L'\0';
+  return ntbuf;
+}
+
+/* Into shortbuf with shortbufsize, prints name with "\\??\\"
+   or "\\??\\UNC" prefix removed/modified as necessary to form
+   the short Win32 path name.
+   Returns the end of the resulting string in shortbuf.
+   Supports using (a substring of) shortbuf as name argument. */
+PWCHAR
+dll_list::form_shortname (PWCHAR shortbuf, size_t shortbufsize, PCWCHAR name)
+{
+  while (true)
+    {
+      /* avoid using path_conv here: cygheap might not be
+	 initialized when started from non-cygwin process,
+	 or still might be frozen in_forkee */
+      if (name[0] == L'\0' || shortbufsize < 2)
+	break;
+      if (name[0] == L'\\' &&
+	  (name[1] == L'\\' || name[1] == L'?') &&
+	  name[2] == L'?' &&
+	  name[3] == L'\\') /* long Win32 or NT path name */
+	 name += 4;
+      if (name[1] == L':') /* short Win32 drive letter path name */
+	{
+	  int ntlen = min (shortbufsize - 1, wcslen (name));
+	  if (shortbuf != name)
+	    memmove (shortbuf, name, sizeof (*shortbuf) * ntlen);
+	  shortbuf += ntlen;
+	  break;
+	}
+      if (!wcsncmp (name, L"UNC\\", 4)) /* UNC path name */
+	{
+	  name += 3; /* skip "UNC" */
+	  int winlen = min (shortbufsize - 2, wcslen (name));
+	  if (shortbuf + 1 != name)
+	    memmove (shortbuf + 1, name, sizeof (*shortbuf) * winlen);
+	  shortbuf[0] = L'\\';
+	  shortbuf += 1 + winlen;
+	  break;
+	}
+      if (!wcsncmp (name, L"\\\\", 2)) /* already a short Win32 UNC path name */
+	{
+	  int winlen = min (shortbufsize - 1, wcslen (name));
+	  if (shortbuf != name)
+	    memmove (shortbuf, name, sizeof (*shortbuf) * winlen);
+	  shortbuf += winlen;
+	  break;
+	}
+      system_printf ("WARNING: invalid path name '%W'", name);
+      break;
+    }
+  if (shortbufsize)
+    *shortbuf = L'\0';
+  return shortbuf;
+}
 
 /* Run destructors for all DLLs on exit. */
 void
@@ -87,7 +204,7 @@ dll::init ()
 {
   int ret = 1;
 
-#ifndef __x86_64__
+#ifdef __i386__
   /* This should be a no-op.  Why didn't we just import this variable? */
   if (!p.envptr)
     p.envptr = &__cygwin_environ;
@@ -151,11 +268,11 @@ dll::init ()
    of dll_list::alloc, as well as the comment preceeding the definition of
    the in_load_after_fork bool later in the file. */
 dll *
-dll_list::operator[] (const PWCHAR name)
+dll_list::operator[] (PCWCHAR ntname)
 {
   dll *d = &start;
   while ((d = d->next) != NULL)
-    if (!wcscasecmp (name, d->name))
+    if (!wcscasecmp (ntname, d->ntname))
       return d;
 
   return NULL;
@@ -163,11 +280,24 @@ dll_list::operator[] (const PWCHAR name)
 
 /* Look for a dll based on the basename. */
 dll *
-dll_list::find_by_modname (const PWCHAR modname)
+dll_list::find_by_modname (PCWCHAR modname)
 {
   dll *d = &start;
   while ((d = d->next) != NULL)
     if (!wcscasecmp (modname, d->modname))
+      return d;
+
+  return NULL;
+}
+
+/* Look for a dll based on the ntname used
+   to dynamically reload in forked child. */
+dll *
+dll_list::find_by_forkedntname (PCWCHAR ntname)
+{
+  dll *d = &start;
+  while ((d = d->next) != NULL)
+    if (!wcscasecmp (ntname, d->forkedntname ()))
       return d;
 
   return NULL;
@@ -180,75 +310,84 @@ dll *
 dll_list::alloc (HINSTANCE h, per_process *p, dll_type type)
 {
   /* Called under loader lock conditions so this function can't be called
-     multiple times in parallel.  A static buffer is safe. */
-  static WCHAR buf[NT_MAX_PATH];
-  GetModuleFileNameW (h, buf, NT_MAX_PATH);
-  PWCHAR name = buf;
-  if (!wcsncmp (name, L"\\\\?\\", 4))
-    {
-      name += 4;
-      if (!wcsncmp (name, L"UNC\\", 4))
-	{
-	  name += 2;
-	  *name = L'\\';
-	}
-    }
-  DWORD namelen = wcslen (name);
-  PWCHAR modname = wcsrchr (name, L'\\') + 1;
+     multiple times in parallel.  The static buffer is safe. */
+  PWCHAR ntname = nt_max_path_buf ();
+  GetModuleFileNameW (h, ntname, NT_MAX_PATH);
+  PWCHAR modname = form_ntname (ntname, NT_MAX_PATH, ntname);
+  DWORD ntnamelen = modname - ntname;
+  while (modname > ntname && *(modname - 1) != L'\\')
+    --modname;
 
   guard (true);
   /* Already loaded?  For linked DLLs, only compare the basenames.  Linked
      DLLs are loaded using just the basename and the default DLL search path.
-     The Windows loader picks up the first one it finds.  */
-  dll *d = (type == DLL_LINK) ? dlls.find_by_modname (modname) : dlls[name];
+     The Windows loader picks up the first one it finds.
+     This also applies to cygwin1.dll and the main-executable (DLL_SELF).
+     When in_load_after_fork, dynamically loaded dll's are reloaded
+     using their parent's forkable_ntname, if available.  */
+  dll *d = (type != DLL_LOAD) ? dlls.find_by_modname (modname) :
+	   in_load_after_fork ? dlls.find_by_forkedntname (ntname) : dlls[ntname];
   if (d)
     {
-      if (!in_forkee)
-	d->count++;	/* Yes.  Bump the usage count. */
-      else if (d->handle != h)
+      /* We only get here in the forkee. */
+      if (d->handle != h)
 	fabort ("%W: Loaded to different address: parent(%p) != child(%p)",
-		name, d->handle, h);
+		ntname, d->handle, h);
       /* If this DLL has been linked against, and the full path differs, try
 	 to sanity check if this is the same DLL, just in another path. */
-      else if (type == DLL_LINK && wcscasecmp (name, d->name)
+      else if (type == DLL_LINK && wcscasecmp (ntname, d->ntname)
 	       && (d->p.data_start != p->data_start
 		   || d->p.data_start != p->data_start
 		   || d->p.bss_start != p->bss_start
 		   || d->p.bss_end != p->bss_end
 		   || d->p.ctors != p->ctors
 		   || d->p.dtors != p->dtors))
-      	fabort ("\nLoaded different DLL with same basename in forked child,\n"
+	fabort ("\nLoaded different DLL with same basename in forked child,\n"
 		"parent loaded: %W\n"
 		" child loaded: %W\n"
 		"The DLLs differ, so it's not safe to run the forked child.\n"
 		"Make sure to remove the offending DLL before trying again.",
-		d->name, name);
+		d->ntname, ntname);
       d->p = p;
     }
   else
     {
+      size_t forkntsize = forkable_ntnamesize (type, ntname, modname);
+
       /* FIXME: Change this to new at some point. */
-      d = (dll *) cmalloc (HEAP_2_DLL, sizeof (*d) + (namelen * sizeof (*name)));
+      d = (dll *) cmalloc (HEAP_2_DLL, sizeof (*d)
+			   + ((ntnamelen + forkntsize) * sizeof (*ntname)));
 
       /* Now we've allocated a block of information.  Fill it in with the
 	 supplied info about this DLL. */
-      d->count = 1;
-      wcscpy (d->name, name);
-      d->modname = d->name + (modname - name);
+      wcscpy (d->ntname, ntname);
+      d->modname = d->ntname + (modname - ntname);
       d->handle = h;
-      d->has_dtors = true;
+      d->count = 0;	/* Reference counting performed in dlopen/dlclose. */
+      /* DLL_SELF dtors (main-executable, cygwin1.dll) are run elsewhere */
+      d->has_dtors = type != DLL_SELF;
       d->p = p;
       d->ndeps = 0;
       d->deps = NULL;
       d->image_size = ((pefile*)h)->optional_hdr ()->SizeOfImage;
       d->preferred_base = (void*) ((pefile*)h)->optional_hdr()->ImageBase;
       d->type = type;
+      d->fii.IndexNumber.QuadPart = -1LL;
+      if (!forkntsize)
+	d->forkable_ntname = NULL;
+      else
+	{
+	  d->forkable_ntname = d->ntname + ntnamelen + 1;
+	  *d->forkable_ntname = L'\0';
+	}
+      if (forkables_supported ())
+	d->stat_real_file_once ();
       append (d);
       if (type == DLL_LOAD)
 	loaded_dlls++;
     }
   guard (false);
-#ifndef __x86_64__
+#ifdef __i386__
   assert (p->envptr != NULL);
 #endif
   return d;
@@ -274,9 +413,16 @@ void dll_list::populate_deps (dll* d)
   PIMAGE_DATA_DIRECTORY dd = pef->idata_dir (IMAGE_DIRECTORY_ENTRY_IMPORT);
   /* Annoyance: calling crealloc with a NULL pointer will use the
      wrong heap and crash, so we have to replicate some code */
-  long maxdeps = 4;
-  d->deps = (dll**) cmalloc (HEAP_2_DLL, maxdeps*sizeof (dll*));
-  d->ndeps = 0;
+  long maxdeps;
+  if (!d->ndeps)
+    {
+      maxdeps = 4;
+      d->deps = (dll**) cmalloc (HEAP_2_DLL, maxdeps*sizeof (dll*));
+    }
+  else
+    {
+      maxdeps = d->ndeps;
+    }
   for (PIMAGE_IMPORT_DESCRIPTOR id=
 	(PIMAGE_IMPORT_DESCRIPTOR) pef->rva (dd->VirtualAddress);
       dd->Size && id->Name;
@@ -309,9 +455,45 @@ dll_list::topsort ()
 
   /* make sure we have all the deps available */
   dll* d = &start;
+  dll** dlopen_deps = NULL;
+  long maxdeps = 4;
+  long dlopen_ndeps = 0;
+
+  if (loaded_dlls > 0)
+    dlopen_deps = (dll**) cmalloc (HEAP_2_DLL, maxdeps*sizeof (dll*));
+
   while ((d = d->next))
-    if (!d->ndeps)
-      populate_deps (d);
+    {
+      if (!d->ndeps)
+        {
+          /* Ensure that all dlopen'd DLLs depend on previously dlopen'd DLLs.
+             This prevents topsort from reversing the order of dlopen'd DLLs on
+             calls to fork. */
+          if (d->type == DLL_LOAD)
+            {
+              /* Initialise d->deps with all previously dlopen'd DLLs. */
+              if (dlopen_ndeps)
+                {
+                  d->ndeps = dlopen_ndeps;
+                  d->deps = (dll**) cmalloc (HEAP_2_DLL,
+                                             dlopen_ndeps*sizeof (dll*));
+                  memcpy (d->deps, dlopen_deps, dlopen_ndeps*sizeof (dll*));
+                }
+              /* Add this DLL to the list of previously dlopen'd DLLs. */
+              if (dlopen_ndeps >= maxdeps)
+                {
+                  maxdeps = 2*(1+maxdeps);
+                  dlopen_deps = (dll**) crealloc (dlopen_deps,
+						  maxdeps*sizeof (dll*));
+                }
+              dlopen_deps[dlopen_ndeps++] = d;
+            }
+          populate_deps (d);
+        }
+    }
+
+  if (loaded_dlls > 0)
+    cfree (dlopen_deps);
 
   /* unlink head and tail pointers so the sort can rebuild the list */
   d = start.next;
@@ -380,7 +562,7 @@ dll_list::find (void *retaddr)
 
   dll *d = &start;
   while ((d = d->next))
-    if (d->handle == h)
+    if (d->type != DLL_SELF && d->handle == h)
       break;
   return d;
 }
@@ -398,25 +580,20 @@ dll_list::detach (void *retaddr)
   guard (true);
   if ((d = find (retaddr)))
     {
-      if (d->count <= 0)
-	system_printf ("WARNING: trying to detach an already detached dll ...");
-      if (--d->count == 0)
-	{
-	  /* Ensure our exception handler is enabled for destructors */
-	  exception protect;
-	  /* Call finalize function if we are not already exiting */
-	  if (!exit_state)
-	    __cxa_finalize (d->handle);
-	  d->run_dtors ();
-	  d->prev->next = d->next;
-	  if (d->next)
-	    d->next->prev = d->prev;
-	  if (d->type == DLL_LOAD)
-	    loaded_dlls--;
-	  if (end == d)
-	    end = d->prev;
-	  cfree (d);
-	}
+      /* Ensure our exception handler is enabled for destructors */
+      exception protect;
+      /* Call finalize function if we are not already exiting */
+      if (!exit_state)
+	__cxa_finalize (d->handle);
+      d->run_dtors ();
+      d->prev->next = d->next;
+      if (d->next)
+	d->next->prev = d->prev;
+      if (d->type == DLL_LOAD)
+	loaded_dlls--;
+      if (end == d)
+	end = d->prev;
+      cfree (d);
     }
   guard (false);
 }
@@ -425,11 +602,22 @@ dll_list::detach (void *retaddr)
 void
 dll_list::init ()
 {
+  track_self ();
+
   /* Walk the dll chain, initializing each dll */
   dll *d = &start;
   dll_global_dtors_recorded = d->next != NULL;
   while ((d = d->next))
-    d->init ();
+    if (d->type != DLL_SELF) /* linked and early loaded dlls */
+      d->init ();
+}
+
+void
+dll_list::track_self ()
+{
+  /* for cygwin1.dll and main-executable: maintain hardlinks only */
+  alloc (cygwin_hmodule, user_data, DLL_SELF);
+  main_executable = alloc (GetModuleHandle (NULL), user_data, DLL_SELF);
 }
 
 #define A64K (64 * 1024)
@@ -440,7 +628,7 @@ dll_list::init ()
    to clobber the dll's target address range because it often overlaps.
  */
 static PVOID
-reserve_at (const PWCHAR name, PVOID here, PVOID dll_base, DWORD dll_size)
+reserve_at (PCWCHAR name, PVOID here, PVOID dll_base, DWORD dll_size)
 {
   DWORD size;
   MEMORY_BASIC_INFORMATION mb;
@@ -469,7 +657,7 @@ reserve_at (const PWCHAR name, PVOID here, PVOID dll_base, DWORD dll_size)
 
 /* Release the memory previously allocated by "reserve_at" above. */
 static void
-release_at (const PWCHAR name, PVOID here)
+release_at (PCWCHAR name, PVOID here)
 {
   if (!VirtualFree (here, 0, MEM_RELEASE))
     fabort ("couldn't release memory %p for '%W' alignment, %E\n",
@@ -494,23 +682,21 @@ dll_list::reserve_space ()
 	      d->modname, d->handle);
 }
 
-/* We need the in_load_after_fork flag so dll_dllcrt0_1 can decide at fork
-   time if this is a linked DLL or a dynamically loaded DLL.  In either case,
-   both, cygwin_finished_initializing and in_forkee are true, so they are not
-   sufficient to discern the situation. */
-static bool NO_COPY in_load_after_fork;
-
 /* Reload DLLs after a fork.  Iterates over the list of dynamically loaded
    DLLs and attempts to load them in the same place as they were loaded in the
-   parent. */
+   parent.  Updates main-executable and cygwin1.dll tracking. */
 void
 dll_list::load_after_fork (HANDLE parent)
 {
+  release_forkables ();
+
   // moved to frok::child for performance reasons:
   // dll_list::reserve_space();
 
   in_load_after_fork = true;
-  load_after_fork_impl (parent, dlls.istart (DLL_LOAD), 0);
+  if (reload_on_fork)
+    load_after_fork_impl (parent, dlls.istart (DLL_LOAD), 0);
+  track_self ();
   in_load_after_fork = false;
 }
 
@@ -526,13 +712,12 @@ void dll_list::load_after_fork_impl (HANDLE parent, dll* d, int retries)
      We DONT_RESOLVE_DLL_REFERENCES at first in case the DLL lands in
      the wrong spot;
 
-     NOTE: This step skips DLLs which loaded at their preferred
-     address in the parent because they should behave (we already
-     verified that their preferred address in the child is
-     available). However, this may fail on a Vista/Win7 machine with
-     ASLR active, because the ASLR base address will usually not equal
-     the preferred base recorded in the dll. In this case, we should
-     make the LoadLibraryExW call unconditional.
+     NOTE: This step skips DLLs which loaded at their preferred address in
+     the parent because they should behave (we already verified that their
+     preferred address in the child is available). However, this may fail
+     with ASLR active, because the ASLR base address will usually not equal
+     the preferred base recorded in the dll. In this case, we should make
+     the LoadLibraryExW call unconditional.
    */
   for ( ; d; d = dlls.inext ())
     if (d->handle != d->preferred_base)
@@ -544,33 +729,36 @@ void dll_list::load_after_fork_impl (HANDLE parent, dll* d, int retries)
 	   dll's protective reservation from step 1
 	 */
 	if (!retries && !VirtualFree (d->handle, 0, MEM_RELEASE))
-	  fabort ("unable to release protective reservation for %W (%p), %E",
-		  d->modname, d->handle);
+	  fabort ("unable to release protective reservation (%p) for %W, %E",
+		  d->handle, d->ntname);
 
-	HMODULE h = LoadLibraryExW (d->name, NULL, DONT_RESOLVE_DLL_REFERENCES);
+	HMODULE h = LoadLibraryExW (buffered_shortname (d->forkedntname ()),
+				    NULL, DONT_RESOLVE_DLL_REFERENCES);
 	if (!h)
-	  fabort ("unable to create interim mapping for %W, %E", d->name);
+	  fabort ("unable to create interim mapping for %W (using %W), %E",
+		  d->ntname, buffered_shortname (d->forkedntname ()));
 	if (h != d->handle)
 	  {
-	    sigproc_printf ("%W loaded in wrong place: %p != %p",
-			    d->modname, h, d->handle);
+	    sigproc_printf ("%W (using %W) loaded in wrong place: %p != %p",
+			    d->ntname, buffered_shortname (d->forkedntname ()),
+			    h, d->handle);
 	    FreeLibrary (h);
-	    PVOID reservation = reserve_at (d->modname, h,
+	    PVOID reservation = reserve_at (d->ntname, h,
 					    d->handle, d->image_size);
 	    if (!reservation)
 	      fabort ("unable to block off %p to prevent %W from loading there",
-		      h, d->modname);
+		      h, d->ntname);
 
 	    if (retries < DLL_RETRY_MAX)
 	      load_after_fork_impl (parent, d, retries+1);
 	    else
-	       fabort ("unable to remap %W to same address as parent (%p) - try running rebaseall",
-		       d->modname, d->handle);
+	       fabort ("unable to remap %W (using %W) to same address as parent (%p) - try running rebaseall",
+		       d->ntname, buffered_shortname (d->forkedntname ()), d->handle);
 
 	    /* once the above returns all the dlls are mapped; release
 	       the reservation and continue unwinding */
 	    sigproc_printf ("releasing blocked space at %p", reservation);
-	    release_at (d->modname, reservation);
+	    release_at (d->ntname, reservation);
 	    return;
 	  }
       }
@@ -586,22 +774,28 @@ void dll_list::load_after_fork_impl (HANDLE parent, dll* d, int retries)
 	{
 	  if (!VirtualFree (d->handle, 0, MEM_RELEASE))
 	    fabort ("unable to release protective reservation for %W (%p), %E",
-		    d->modname, d->handle);
+		    d->ntname, d->handle);
 	}
       else
 	{
 	  /* Free the library using our parent's handle: it's identical
 	     to ours or we wouldn't have gotten this far */
 	  if (!FreeLibrary (d->handle))
-	    fabort ("unable to unload interim mapping of %W, %E",
-		    d->modname);
+	    fabort ("unable to unload interim mapping of %W (using %W), %E",
+		    d->ntname, buffered_shortname (d->forkedntname ()));
 	}
-      HMODULE h = LoadLibraryW (d->name);
+      /* cygwin1.dll - as linked dependency - may reuse the shortname
+	 buffer, even in case of failure: don't reuse shortname later */
+      HMODULE h = LoadLibraryW (buffered_shortname (d->forkedntname ()));
       if (!h)
-	fabort ("unable to map %W, %E", d->name);
+	fabort ("unable to map %W (using %W), %E",
+		d->ntname, buffered_shortname (d->forkedntname ()));
       if (h != d->handle)
-	fabort ("unable to map %W to same address as parent: %p != %p",
-		d->modname, d->handle, h);
+	fabort ("unable to map %W (using %W) to same address as parent: %p != %p",
+		d->ntname, buffered_shortname (d->forkedntname ()), d->handle, h);
+      /* Fix OS reference count. */
+      for (int cnt = 1; cnt < d->count; ++cnt)
+	LoadLibraryW (buffered_shortname (d->forkedntname ()));
     }
 }
 
@@ -690,7 +884,7 @@ dll_dllcrt0_1 (VOID *x)
     res = (PVOID) d;
 }
 
-#ifndef __x86_64__
+#ifdef __i386__
 /* OBSOLETE: This function is obsolete and will go away in the
    future.  Cygwin can now handle being loaded from a noncygwin app
    using the same entry point. */
@@ -699,7 +893,7 @@ dll_noncygwin_dllcrt0 (HMODULE h, per_process *p)
 {
   return (int) dll_dllcrt0 (h, p);
 }
-#endif /* !__x86_64__ */
+#endif /* __i386__ */
 
 extern "C" void
 cygwin_detach_dll (dll *)
@@ -718,7 +912,7 @@ dlfork (int val)
   dlls.reload_on_fork = val;
 }
 
-#ifndef __x86_64__
+#ifdef __i386__
 /* Called from various places to update all of the individual
    ideas of the environ block.  Explain to me again why we didn't
    just import __cygwin_environ? */

@@ -1,8 +1,5 @@
 /* autoload.cc: all dynamic load stuff.
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -222,7 +219,7 @@ dll_func_load:								\n\
 	jmp	noload		# Issue an error or return		\n\
 gotit:									\n\
 	addq	$40,%rsp	# Revert stack				\n\
-	pop 	%r10		# Pointer to 'return address'		\n\
+	pop	%r10		# Pointer to 'return address'		\n\
 	movq	%rax,12(%r10)	# Move absolute address to address slot	\n\
 	subq	$25,%r10	# Point to jmp				\n\
 	pop	%rcx		# Restore arg registers			\n\
@@ -332,21 +329,22 @@ union retchain
   two_addr_t ll;
 };
 
+/* This function handles the problem described here:
 
-/* This function is a workaround for the problem reported here:
-  http://cygwin.com/ml/cygwin/2011-02/msg00552.html
-  and discussed here:
-  http://cygwin.com/ml/cygwin-developers/2011-02/threads.html#00007
-
-  To wit: winmm.dll calls FreeLibrary in its DllMain and that can result
-  in LoadLibraryExW returning an ERROR_INVALID_ADDRESS.  */
+  http://www.microsoft.com/technet/security/advisory/2269637.mspx
+  https://msdn.microsoft.com/library/ff919712 */
 static __inline bool
-dll_load (HANDLE& handle, WCHAR *name)
+dll_load (HANDLE& handle, PWCHAR name)
 {
-  HANDLE h = LoadLibraryW (name);
-  if (!h && handle && wincap.use_dont_resolve_hack ()
-      && GetLastError () == ERROR_INVALID_ADDRESS)
-    h = LoadLibraryExW (name, NULL, DONT_RESOLVE_DLL_REFERENCES);
+  HANDLE h = NULL;
+  WCHAR dll_path[MAX_PATH];
+
+  /* Try loading with full path, which sometimes fails for no good reason. */
+  wcpcpy (wcpcpy (dll_path, windows_system_directory), name);
+  h = LoadLibraryW (dll_path);
+  /* If it failed, try loading just by name. */
+  if (!h)
+    h = LoadLibraryW (name);
   if (!h)
     return false;
   handle = h;
@@ -403,7 +401,7 @@ __attribute__ ((used, noinline)) static two_addr_t
 std_dll_init ()
 #endif
 {
-#ifndef __x86_64__
+#ifdef __i386__
   struct func_info *func = (struct func_info *) __builtin_return_address (0);
 #endif
   struct dll_info *dll = func->dll;
@@ -455,7 +453,7 @@ std_dll_init ()
 
   InterlockedDecrement (&dll->here);
 
-#ifndef __x86_64__
+#ifdef __i386__
   /* Kludge alert.  Redirects the return address to dll_chain. */
   uintptr_t *volatile frame = (uintptr_t *) __builtin_frame_address (0);
   frame[1] = (uintptr_t) dll_chain;
@@ -465,7 +463,6 @@ std_dll_init ()
 }
 
 /* Initialization function for winsock stuff. */
-WSADATA NO_COPY wsadata;
 
 #ifdef __x86_64__
 /* See above comment preceeding std_dll_init. */
@@ -478,8 +475,12 @@ __attribute__ ((used, noinline)) static two_addr_t
 wsock_init ()
 #endif
 {
+  /* CV 2016-03-09: Moved wsadata into wsock_init to workaround a problem
+     with the NO_COPY definition of wsadata and here starting with gcc-5.3.0.
+     See the git log for a description. */
+  static WSADATA NO_COPY wsadata;
   static LONG NO_COPY here = -1L;
-#ifndef __x86_64__
+#ifdef __i386__
   struct func_info *func = (struct func_info *) __builtin_return_address (0);
 #endif
   struct dll_info *dll = func->dll;
@@ -499,7 +500,7 @@ wsock_init ()
 		   GetProcAddress ((HMODULE) (dll->handle), "WSAStartup");
       if (wsastartup)
 	{
-	  int res = wsastartup ((2<<8) | 2, &wsadata);
+	  int res = wsastartup (MAKEWORD (2, 2), &wsadata);
 
 	  debug_printf ("res %d", res);
 	  debug_printf ("wVersion %d", wsadata.wVersion);
@@ -513,7 +514,7 @@ wsock_init ()
 	}
     }
 
-#ifndef __x86_64__
+#ifdef __i386__
   /* Kludge alert.  Redirects the return address to dll_chain. */
   uintptr_t *volatile frame = (uintptr_t *) __builtin_frame_address (0);
   frame[1] = (uintptr_t) dll_chain;
@@ -533,6 +534,8 @@ LoadDLLprime (ws2_32, _wsock_init, 0)
 LoadDLLfunc (CheckTokenMembership, 12, advapi32)
 LoadDLLfunc (CreateProcessAsUserW, 44, advapi32)
 LoadDLLfunc (DeregisterEventSource, 4, advapi32)
+LoadDLLfunc (DecryptFileW, 8, advapi32)
+LoadDLLfunc (EncryptFileW, 4, advapi32)
 LoadDLLfunc (LogonUserW, 24, advapi32)
 LoadDLLfunc (LookupAccountNameW, 28, advapi32)
 LoadDLLfunc (LookupAccountSidW, 28, advapi32)
@@ -558,28 +561,45 @@ LoadDLLfunc (RegisterEventSourceW, 8, advapi32)
 LoadDLLfunc (ReportEventW, 36, advapi32)
 LoadDLLfunc (SystemFunction036, 8, advapi32)	/* Aka "RtlGenRandom" */
 
+LoadDLLfunc (AuthzAccessCheck, 36, authz)
+LoadDLLfunc (AuthzFreeContext, 4, authz)
+LoadDLLfunc (AuthzInitializeContextFromSid, 32, authz)
+LoadDLLfunc (AuthzInitializeContextFromToken, 32, authz)
+LoadDLLfunc (AuthzInitializeResourceManager, 24, authz)
+
 LoadDLLfunc (DnsQuery_A, 24, dnsapi)
-LoadDLLfunc (DnsRecordListFree, 8, dnsapi)
+LoadDLLfunc (DnsFree, 8, dnsapi)
 
 LoadDLLfunc (GetAdaptersAddresses, 20, iphlpapi)
 LoadDLLfunc (GetIfEntry, 4, iphlpapi)
 LoadDLLfunc (GetIpAddrTable, 12, iphlpapi)
 LoadDLLfunc (GetIpForwardTable, 12, iphlpapi)
 LoadDLLfunc (GetNetworkParams, 8, iphlpapi)
+LoadDLLfunc (GetTcpTable, 12, iphlpapi)
+LoadDLLfunc (GetTcp6Table, 12, iphlpapi)
 LoadDLLfunc (GetUdpTable, 12, iphlpapi)
+LoadDLLfunc (if_indextoname, 8, iphlpapi)
+LoadDLLfunc (if_nametoindex, 4, iphlpapi)
 
-LoadDLLfuncEx (CancelSynchronousIo, 4, kernel32, 1)
-LoadDLLfunc (CreateSymbolicLinkW, 12, kernel32)
 LoadDLLfuncEx2 (DiscardVirtualMemory, 8, kernel32, 1, 127)
+LoadDLLfunc (GetCurrentProcessorNumberEx, 4, kernel32)
 LoadDLLfuncEx (GetLogicalProcessorInformationEx, 12, kernel32, 1)
-LoadDLLfuncEx (GetNamedPipeClientProcessId, 8, kernel32, 1)
+LoadDLLfuncEx (GetProcessGroupAffinity, 12, kernel32, 1)
 LoadDLLfunc (GetSystemTimePreciseAsFileTime, 4, kernel32)
-LoadDLLfuncEx (IdnToAscii, 20, kernel32, 1)
-LoadDLLfuncEx (IdnToUnicode, 20, kernel32, 1)
-LoadDLLfunc (LocaleNameToLCID, 8, kernel32)
+LoadDLLfuncEx (GetThreadGroupAffinity, 8, kernel32, 1)
 LoadDLLfuncEx (PrefetchVirtualMemory, 16, kernel32, 1)
 LoadDLLfunc (SetThreadGroupAffinity, 12, kernel32)
-LoadDLLfunc (SetThreadStackGuarantee, 4, kernel32)
+
+/* MSDN claims these are exported by kernel32.dll, but only
+   QueryUnbiasedInterruptTime actually is.  The others are only
+   available via KernelBase.dll. */
+LoadDLLfunc (QueryInterruptTime, 4, KernelBase)
+LoadDLLfunc (QueryInterruptTimePrecise, 4, KernelBase)
+LoadDLLfunc (QueryUnbiasedInterruptTime, 4, KernelBase)
+LoadDLLfunc (QueryUnbiasedInterruptTimePrecise, 4, KernelBase)
+LoadDLLfunc (VirtualAlloc2, 28, kernelbase)
+
+LoadDLLfunc (NtMapViewOfSectionEx, 36, ntdll)
 
 /* ldap functions are cdecl! */
 #pragma push_macro ("mangle")
@@ -625,21 +645,23 @@ LoadDLLfunc (NetUserGetGroups, 28, netapi32)
 LoadDLLfunc (NetUserGetInfo, 16, netapi32)
 LoadDLLfunc (NetUserGetLocalGroups, 32, netapi32)
 
-LoadDLLfunc (NtCommitTransaction, 8, ntdll)
-LoadDLLfunc (NtCreateTransaction, 40, ntdll)
-LoadDLLfunc (NtRollbackTransaction, 8, ntdll)
-LoadDLLfunc (RtlGetCurrentTransaction, 0, ntdll)
-LoadDLLfunc (RtlSetCurrentTransaction, 4, ntdll)
-
 LoadDLLfunc (CoTaskMemFree, 4, ole32)
 
+LoadDLLfunc (LsaConnectUntrusted, 4, secur32)
 LoadDLLfunc (LsaDeregisterLogonProcess, 4, secur32)
 LoadDLLfunc (LsaFreeReturnBuffer, 4, secur32)
 LoadDLLfunc (LsaLogonUser, 56, secur32)
 LoadDLLfunc (LsaLookupAuthenticationPackage, 12, secur32)
 LoadDLLfunc (LsaRegisterLogonProcess, 12, secur32)
+LoadDLLfunc (TranslateNameW, 20, secur32)
 
 LoadDLLfunc (SHGetDesktopFolder, 4, shell32)
+
+LoadDLLfunc (CreateFontW, 56, gdi32)
+LoadDLLfunc (DeleteObject, 4, gdi32)
+LoadDLLfunc (EnumFontFamiliesExW, 20, gdi32)
+LoadDLLfunc (GetGlyphIndicesW, 20, gdi32)
+LoadDLLfunc (SelectObject, 8, gdi32)
 
 LoadDLLfunc (CloseClipboard, 0, user32)
 LoadDLLfunc (CloseDesktop, 4, user32)
@@ -648,10 +670,12 @@ LoadDLLfunc (CreateDesktopW, 24, user32)
 LoadDLLfunc (CreateWindowExW, 48, user32)
 LoadDLLfunc (CreateWindowStationW, 16, user32)
 LoadDLLfunc (DefWindowProcW, 16, user32)
+LoadDLLfunc (DestroyWindow, 4, user32)
 LoadDLLfunc (DispatchMessageW, 4, user32)
 LoadDLLfunc (EmptyClipboard, 0, user32)
 LoadDLLfunc (EnumWindows, 8, user32)
 LoadDLLfunc (GetClipboardData, 4, user32)
+LoadDLLfunc (GetDC, 4, user32)
 LoadDLLfunc (GetForegroundWindow, 0, user32)
 LoadDLLfunc (GetKeyboardLayout, 4, user32)
 LoadDLLfunc (GetMessageW, 16, user32)
@@ -674,6 +698,7 @@ LoadDLLfunc (SetClipboardData, 8, user32)
 LoadDLLfunc (SetParent, 8, user32)
 LoadDLLfunc (SetProcessWindowStation, 4, user32)
 LoadDLLfunc (SetThreadDesktop, 4, user32)
+LoadDLLfunc (UnregisterClassW, 8, user32)
 
 LoadDLLfuncEx (CreateEnvironmentBlock, 12, userenv, 1)
 LoadDLLfuncEx2 (CreateProfile, 16, userenv, 1, 1)
@@ -734,4 +759,12 @@ LoadDLLfunc (WSASetLastError, 4, ws2_32)
 LoadDLLfunc (WSASocketW, 24, ws2_32)
 // LoadDLLfunc (WSAStartup, 8, ws2_32)
 LoadDLLfunc (WSAWaitForMultipleEvents, 20, ws2_32)
+
+LoadDLLfunc (PdhAddEnglishCounterW, 16, pdh)
+LoadDLLfunc (PdhCollectQueryData, 4, pdh)
+LoadDLLfunc (PdhGetFormattedCounterValue, 16, pdh)
+LoadDLLfunc (PdhOpenQueryW, 12, pdh)
+LoadDLLfuncEx (CreatePseudoConsole, 20, kernel32, 1)
+LoadDLLfuncEx (ResizePseudoConsole, 8, kernel32, 1)
+LoadDLLfuncEx (ClosePseudoConsole, 4, kernel32, 1)
 }

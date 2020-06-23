@@ -29,19 +29,20 @@
 
 /*
 FUNCTION
-	<<wctype>>---get wide-character classification type
+	<<wctype>>, <<wctype_l>>---get wide-character classification type
 
 INDEX
 	wctype
 
-ANSI_SYNOPSIS
+INDEX
+	wctype_l
+
+SYNOPSIS
 	#include <wctype.h>
 	wctype_t wctype(const char *<[c]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	wctype_t wctype(<[c]>)
-	const char * <[c]>;
+	wctype_t wctype_l(const char *<[c]>, locale_t <[locale]>);
 
 
 DESCRIPTION
@@ -51,13 +52,18 @@ if one exists.  The following values are guaranteed to be recognized:
 "alnum", "alpha", "blank", "cntrl", "digit", "graph", "lower", "print",
 "punct", "space", "upper", and "xdigit".
 
+<<wctype_l>> is like <<wctype>> but performs the function based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<wctype>> returns 0 and sets <<errno>> to <<EINVAL>> if the
+<<wctype>>, <<wctype_l>> return 0 and sets <<errno>> to <<EINVAL>> if the
 given name is invalid.  Otherwise, it returns a valid non-zero wctype_t
 value.
 
 PORTABILITY
 <<wctype>> is C99.
+<<wctype_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -70,8 +76,7 @@ No supporting OS subroutines are required.
 #include "local.h"
 
 wctype_t
-_DEFUN (_wctype_r, (r, c), 
-	struct _reent *r _AND
+_wctype_r (struct _reent *r,
 	const char *c)
 {
   switch (*c)
@@ -129,8 +134,7 @@ _DEFUN (_wctype_r, (r, c),
 
 #ifndef _REENT_ONLY
 wctype_t
-_DEFUN (wctype, (c),
-	const char *c)
+wctype (const char *c)
 {
   return _wctype_r (_REENT, c);
 }

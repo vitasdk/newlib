@@ -1,7 +1,5 @@
 /* strsig.cc
 
-   Copyright 2004, 2007, 2008, 2010, 2011, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -12,6 +10,7 @@ details. */
 #include <cygtls.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/uio.h>
 
 struct sigdesc
 {
@@ -26,7 +25,8 @@ struct sigdesc
   _s(SIGQUIT, "Quit"),				/*  3 */ \
   _s(SIGILL, "Illegal instruction"),		/*  4 */ \
   _s(SIGTRAP, "Trace/breakpoint trap"),		/*  5 */ \
-  _s(SIGABRT, "Aborted"),			/*  6 */ \
+  _s2(SIGABRT, "Aborted",			/*  6 */ \
+      SIGIOT, "Aborted"),				 \
   _s(SIGEMT, "EMT instruction"),		/*  7 */ \
   _s(SIGFPE, "Floating point exception"),	/*  8 */ \
   _s(SIGKILL, "Killed"),			/*  9 */ \
@@ -150,15 +150,31 @@ strtosigno (const char *name)
   return 0;
 }
 
+#define ADD(str) \
+{ \
+  v->iov_base = (void *)(str); \
+  v->iov_len = strlen ((char *)v->iov_base); \
+  v ++; \
+  iov_cnt ++; \
+}
+
 extern "C" void
 psiginfo (const siginfo_t *info, const char *s)
 {
+  struct iovec iov[5];
+  struct iovec *v = iov;
+  int iov_cnt = 0;
+  char buf[64];
+
   if (s != NULL && *s != '\0')
-    fprintf (stderr, "%s: ", s);
+    {
+      ADD (s);
+      ADD (": ");
+    }
 
-  fprintf (stderr, "%s", strsignal (info->si_signo));
+  ADD (strsignal (info->si_signo));
 
-  if (info->si_signo > 0 && info->si_signo < NSIG)
+  if (info->si_signo > 0 && info->si_signo < _NSIG)
     {
       switch (info->si_signo)
 	{
@@ -166,10 +182,12 @@ psiginfo (const siginfo_t *info, const char *s)
 	  case SIGBUS:
 	  case SIGFPE:
 	  case SIGSEGV:
-	    fprintf (stderr, " (%d [%p])", info->si_code, info->si_addr);
+	    snprintf (buf, sizeof(buf),
+		      " (%d [%p])", info->si_code, info->si_addr);
 	    break;
 	  case SIGCHLD:
-	    fprintf (stderr, " (%d %d %d %u)", info->si_code, info->si_pid,
+	    snprintf (buf, sizeof(buf),
+		      " (%d %d %d %u)", info->si_code, info->si_pid,
 		     info->si_status, info->si_uid);
 	    break;
 /* FIXME: implement si_band
@@ -178,9 +196,19 @@ psiginfo (const siginfo_t *info, const char *s)
 	    break;
 */
 	  default:
-	    fprintf (stderr, " (%d %d %u)", info->si_code, info->si_pid, info->si_uid);
+	    snprintf (buf, sizeof(buf),
+		      " (%d %d %u)", info->si_code, info->si_pid,
+		      info->si_uid);
 	}
+      ADD (buf);
     }
 
-  fprintf (stderr, "\n");
+#ifdef __SCLE
+  ADD ((stderr->_flags & __SCLE) ? "\r\n" : "\n");
+#else
+  ADD ("\n");
+#endif
+
+  fflush (stderr);
+  writev (fileno (stderr), iov, iov_cnt);
 }

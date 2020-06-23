@@ -1,8 +1,5 @@
 /* sys/socket.h
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2005, 2006, 2009, 2010,
-   2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -14,7 +11,6 @@ details. */
 
 #include <features.h>
 #include <cygwin/socket.h>
-#include <sys/time.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -44,13 +40,17 @@ extern "C"
   int shutdown (int, int);
   int socket (int __family, int __type, int __protocol);
   int sockatmark (int __fd);
-  int socketpair (int __domain, int __type, int __protocol, int *__socket_vec);
+  int socketpair (int __domain, int __type, int __protocol, int __fds[2]);
 
   struct servent *getservbyname (const char *__name, const char *__proto);
 #endif
 
 #ifdef __cplusplus
 };
+#endif
+
+#if __SSP_FORTIFY_LEVEL > 0
+#include <ssp/socket.h>
 #endif
 
 #endif /* _SYS_SOCKET_H */

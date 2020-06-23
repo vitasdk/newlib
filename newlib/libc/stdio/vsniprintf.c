@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -32,10 +32,9 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(vsniprintf, (str, size, fmt, ap),
-       char *str        _AND
-       size_t size      _AND
-       const char *fmt _AND
+vsniprintf (char *str,
+       size_t size,
+       const char *fmt,
        va_list ap)
 {
   return _vsniprintf_r (_REENT, str, size, fmt, ap);
@@ -44,11 +43,10 @@ _DEFUN(vsniprintf, (str, size, fmt, ap),
 #endif /* !_REENT_ONLY */
 
 int
-_DEFUN(_vsniprintf_r, (ptr, str, size, fmt, ap),
-       struct _reent *ptr _AND
-       char *str          _AND
-       size_t size        _AND
-       const char *fmt   _AND
+_vsniprintf_r (struct _reent *ptr,
+       char *str,
+       size_t size,
+       const char *fmt,
        va_list ap)
 {
   int ret;

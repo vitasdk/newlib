@@ -1,8 +1,5 @@
 /* sys/termios.h
 
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2010, 2011, 2012, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -71,7 +68,8 @@ POSIX commands */
 #define TIOCPKT_NOSTOP		16
 #define TIOCPKT_DOSTOP		32
 
-#define FIONBIO 0x8004667e /* To be compatible with socket version */
+/* Compatible with asm/socket.h */
+#define FIONBIO     0x8004667e		 /* set/clear non-blocking i/o */
 
 #define CTRL(ch)	((ch)&0x1F)
 
@@ -117,6 +115,7 @@ POSIX commands */
 #define IUCLC	0x04000
 #define IXANY	0x08000
 #define PARMRK	0x10000
+#define IUTF8	0x20000
 
 /* oflag bits */
 

@@ -1,7 +1,8 @@
-# aem-validation.specs
+# aprofile-validation.specs
 #
 # Spec file for AArch32 A profile baremetal newlib, libgloss on
-# VALIDATION platform with AngelAPI semi-hosting.
+# VALIDATION platform with AngelAPI semi-hosting version 2 using the SVC
+# trap instruction.
 #
 # This Spec file is also appropriate for the foundation model.
 

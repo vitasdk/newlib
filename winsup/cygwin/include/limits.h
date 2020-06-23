@@ -1,8 +1,5 @@
 /* limits.h
 
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -27,6 +24,7 @@ details. */
 #undef CHAR_BIT
 #define CHAR_BIT __CHAR_BIT__
 
+#if __XSI_VISIBLE || __POSIX_VISIBLE >= 200809
 /* Number of bits in a `long'.  */
 #undef LONG_BIT
 #define LONG_BIT (__SIZEOF_LONG__ * __CHAR_BIT__)
@@ -34,6 +32,7 @@ details. */
 /* Number of bits in a `int'.  */
 #undef WORD_BIT
 #define WORD_BIT (__SIZEOF_INT__ * __CHAR_BIT__)
+#endif /* __XSI_VISIBLE || __POSIX_VISIBLE >= 200809 */
 
 /* Maximum length of a multibyte character.  */
 #ifndef MB_LEN_MAX
@@ -110,7 +109,7 @@ details. */
 #define __LONG_LONG_MAX__ 9223372036854775807LL
 #endif
 
-#if defined (__GNU_LIBRARY__) ? defined (__USE_GNU) : !defined (__STRICT_ANSI__)
+#if __GNU_VISIBLE
 #undef LONG_LONG_MIN
 #define LONG_LONG_MIN (-LONG_LONG_MAX-1)
 #undef LONG_LONG_MAX
@@ -121,6 +120,7 @@ details. */
 #define ULONG_LONG_MAX (LONG_LONG_MAX * 2ULL + 1)
 #endif
 
+#if __ISO_C_VISIBLE >= 1999
 /* Minimum and maximum values a `signed long long int' can hold.  */
 #undef LLONG_MIN
 #define LLONG_MIN (-LLONG_MAX-1)
@@ -130,15 +130,24 @@ details. */
 /* Maximum value an `unsigned long long int' can hold.  (Minimum is 0).  */
 #undef ULLONG_MAX
 #define ULLONG_MAX (LLONG_MAX * 2ULL + 1)
+#endif /* __ISO_C_VISIBLE >= 1999 */
 
-/* Maximum size of ssize_t */
+/* Maximum size of ssize_t. Sadly, gcc doesn't give us __SSIZE_MAX__
+   the way it does for __SIZE_MAX__.  On the other hand, we happen to
+   know that for Cygwin, ssize_t is 'int' on 32-bit and 'long' on
+   64-bit, and this particular header is specific to Cygwin, so we
+   don't have to jump through hoops. */
 #undef SSIZE_MAX
+#if __WORDSIZE == 64
 #define SSIZE_MAX (__LONG_MAX__)
+#else
+#define SSIZE_MAX (__INT_MAX__)
+#endif
 
 
 /* Runtime Invariant Values */
 
-/* Please note that symbolic names shall be ommited, on specific
+/* Please note that symbolic names shall be omitted, on specific
    implementations where the corresponding value is equal to or greater
    than the stated minimum, but is unspecified.  This indetermination
    might depend on the amount of available memory space on a specific
@@ -146,19 +155,16 @@ details. */
    a specific instance shall be provided by the sysconf() function. */
 
 /* Maximum number of I/O operations in a single list I/O call supported by
-   the implementation.  Not yet implemented. */
-#undef AIO_LISTIO_MAX
-/* #define AIO_LISTIO_MAX >= _POSIX_AIO_LISTIO_MAX */
+   the implementation. */
+#define AIO_LISTIO_MAX 32
 
 /* Maximum number of outstanding asynchronous I/O operations supported by
-   the implementation.  Not yet implemented. */
-#undef AIO_MAX
-/*  #define AIO_MAX >= _POSIX_AIO_MAX */
+   the implementation. */
+#define AIO_MAX 8
 
 /* The maximum amount by which a process can decrease its asynchronous I/O
-   priority level from its own scheduling priority. */
-#undef AIO_PRIO_DELTA_MAX
-/* #define AIO_PRIO_DELTA_MAX >= 0 */
+   priority level from its own scheduling priority. Not yet implemented. */
+#define AIO_PRIO_DELTA_MAX 0
 
 /* Maximum number of bytes in arguments and environment passed in an exec
    call.  32000 is the safe value used for Windows processes when called
@@ -166,9 +172,11 @@ details. */
 #undef ARG_MAX
 #define ARG_MAX 32000
 
+#if __XSI_VISIBLE || __POSIX_VISIBLE >= 200809
 /* Maximum number of functions that may be registered with atexit(). */
 #undef ATEXIT_MAX
 #define ATEXIT_MAX 32
+#endif
 
 /* Maximum number of simultaneous processes per real user ID. */
 #undef CHILD_MAX
@@ -176,15 +184,17 @@ details. */
 
 /* Maximum number of timer expiration overruns.  Not yet implemented. */
 #undef DELAYTIMER_MAX
-/* #define DELAYTIMER_MAX >= _POSIX_DELAYTIMER_MAX */
+#define DELAYTIMER_MAX __INT_MAX__
 
 /* Maximum length of a host name. */
 #undef HOST_NAME_MAX
 #define HOST_NAME_MAX 255
 
+#if __XSI_VISIBLE
 /* Maximum number of iovcnt in a writev (an arbitrary number) */
 #undef IOV_MAX
 #define IOV_MAX 1024
+#endif
 
 /* Maximum number of characters in a login name. */
 #undef LOGIN_NAME_MAX
@@ -207,9 +217,11 @@ details. */
 
 /* Size in bytes of a page. */
 #undef PAGESIZE
-#undef PAGE_SIZE
 #define PAGESIZE 65536
+#if __XSI_VISIBLE
+#undef PAGE_SIZE
 #define PAGE_SIZE PAGESIZE
+#endif
 
 /* Maximum number of attempts made to destroy a thread's thread-specific
    data values on thread exit. */
@@ -376,6 +388,7 @@ details. */
 
 /* Runtime Increasable Values */
 
+#if __POSIX_VISIBLE >= 2
 /* Maximum obase values allowed by the bc utility. */
 #undef BC_BASE_MAX
 #define BC_BASE_MAX 99
@@ -423,6 +436,7 @@ details. */
    using the interval notation \{m,n\} */
 #undef RE_DUP_MAX
 #define RE_DUP_MAX 255
+#endif /* __POSIX_VISIBLE >= 2 */
 
 
 /* POSIX values */
@@ -430,6 +444,7 @@ details. */
 /* They represent the minimum values that POSIX systems must support.
    POSIX-conforming apps must not require larger values. */
 
+#if __POSIX_VISIBLE
 /* Maximum Values */
 
 #define _POSIX_CLOCKRES_MIN                 20000000
@@ -473,7 +488,9 @@ details. */
 #define _POSIX_TRACE_USER_EVENT_MAX               32
 #define _POSIX_TTY_NAME_MAX	                   9
 #define _POSIX_TZNAME_MAX                          6
+#endif /* __POSIX_VISIBLE */
 
+#if __POSIX_VISIBLE >= 2
 #define _POSIX2_BC_BASE_MAX	                  99
 #define _POSIX2_BC_DIM_MAX	                2048
 #define _POSIX2_BC_SCALE_MAX	                  99
@@ -482,23 +499,34 @@ details. */
 #define _POSIX2_EXPR_NEST_MAX	                  32
 #define _POSIX2_LINE_MAX	                2048
 #define _POSIX2_RE_DUP_MAX	                 255
+#endif /* __POSIX_VISIBLE >= 2 */
 
+#if __XSI_VISIBLE
 #define _XOPEN_IOV_MAX                            16
 #define _XOPEN_NAME_MAX                          255
 #define _XOPEN_PATH_MAX                         1024
+#endif
 
 /* Other Invariant Values */
 
 #define NL_ARGMAX                                  9
+#if __XSI_VISIBLE
 #define NL_LANGMAX                                14
+#endif
+#if __XSI_VISIBLE || __POSIX_VISIBLE >= 200809
 #define NL_MSGMAX                              32767
-#define NL_NMAX                              INT_MAX
 #define NL_SETMAX                                255
 #define NL_TEXTMAX                  _POSIX2_LINE_MAX
+#endif
+#if __POSIX_VISIBLE < 200809
+#define NL_NMAX                              INT_MAX
+#endif
 
+#if __XSI_VISIBLE
 /* Default process priority. */
 #undef NZERO
 #define NZERO			                  20
+#endif
 
 #endif /* _MACH_MACHLIMITS_H_ */
 #endif /* _LIMITS_H___ */

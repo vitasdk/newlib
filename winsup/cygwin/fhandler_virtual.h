@@ -1,7 +1,5 @@
 /* fhandler_virtual.h: Header for virtual fhandlers
 
-   Copyright 2009, 2010, 2011, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -26,7 +24,7 @@ virt_ftype_to_dtype (virtual_ftype_t type)
 {
   unsigned char d_type;
 
-  switch (type) 
+  switch (type)
     {
     case virt_directory:
       d_type = DT_DIR;

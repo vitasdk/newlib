@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -22,14 +22,9 @@ FUNCTION
 INDEX
 	getw
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int getw(FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int getw(<[fp]>)
-	FILE *<[fp]>;
 
 DESCRIPTION
 <<getw>> is a function, defined in <<stdio.h>>.  You can use <<getw>>
@@ -59,8 +54,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #include <stdio.h>
 
 int
-_DEFUN(getw, (fp),
-       register FILE *fp)
+getw (register FILE *fp)
 {
   int result;
   if (fread ((char*)&result, sizeof (result), 1, fp) != 1)

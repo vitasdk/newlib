@@ -1,5 +1,6 @@
 /* Copyright (c) 2002 Red Hat Incorporated.
    All rights reserved.
+   Modified (m) 2017 Thomas Wolff to refer to generated Unicode data tables.
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions are met:
@@ -29,20 +30,20 @@
 
 /*
 FUNCTION
-	<<towctrans>>---extensible wide-character translation
+	<<towctrans>>, <<towctrans_l>>---extensible wide-character translation
 
 INDEX
 	towctrans
 
-ANSI_SYNOPSIS
+INDEX
+	towctrans_l
+
+SYNOPSIS
 	#include <wctype.h>
 	wint_t towctrans(wint_t <[c]>, wctrans_t <[w]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	wint_t towctrans(<[c]>, <[w]>)
-	wint_t <[c]>;
-	wctrans_t <[w]>;
+	wint_t towctrans_l(wint_t <[c]>, wctrans_t <[w]>, locale_t <[locale]>);
 
 
 DESCRIPTION
@@ -51,46 +52,49 @@ a specified translation type <[w]>.  If the translation type is
 invalid or cannot be applied to the current character, no change
 to the character is made.
 
+<<towctrans_l>> is like <<towctrans>> but performs the function based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<towctrans>> returns the translated equivalent of <[c]> when it is a
-valid for the given translation, otherwise, it returns the input character.
-When the translation type is invalid, <<errno>> is set <<EINVAL>>.
+<<towctrans>>, <<towctrans_l>> return the translated equivalent of <[c]>
+when it is a valid for the given translation, otherwise, it returns the
+input character.  When the translation type is invalid, <<errno>> is
+set to <<EINVAL>>.
 
 PORTABILITY
 <<towctrans>> is C99.
+<<towctrans_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
 
 #include <_ansi.h>
-#include <string.h>
 #include <reent.h>
 #include <wctype.h>
-#include <errno.h>
+//#include <errno.h>
 #include "local.h"
 
 wint_t
-_DEFUN (_towctrans_r, (r, c, w), 
-	struct _reent *r _AND
-	wint_t c _AND 
+_towctrans_r (struct _reent *r,
+	wint_t c,
 	wctrans_t w)
 {
-  if (w == WCT_TOLOWER)
-    return towlower (c);
-  else if (w == WCT_TOUPPER)
-    return towupper (c);
+  if (w == WCT_TOLOWER || w == WCT_TOUPPER)
+    return towctrans_l (c, w, 0);
   else
     {
-      r->_errno = EINVAL;
+      // skipping this because it was causing trouble (cygwin crash)
+      // and there is no errno specified for towctrans
+      //r->_errno = EINVAL;
       return c;
     }
 }
 
 #ifndef _REENT_ONLY
 wint_t
-_DEFUN (towctrans, (c, w),
-	wint_t c _AND
-        wctrans_t w)
+towctrans (wint_t c,
+	wctrans_t w)
 {
   return _towctrans_r (_REENT, c, w);
 }

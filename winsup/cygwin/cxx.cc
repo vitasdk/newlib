@@ -1,7 +1,5 @@
 /* cxx.cc
 
-   Copyright 2002, 2003, 2005, 2009 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -29,6 +27,15 @@ operator delete (void *p)
 {
   free (p);
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++14-compat"
+void
+operator delete (void *p, size_t)
+{
+  ::operator delete(p);
+}
+#pragma GCC diagnostic pop
 
 void *
 operator new[] (std::size_t s)

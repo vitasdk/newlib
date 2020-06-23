@@ -53,45 +53,59 @@ For other options, search the mailing lists with terms such as
 <question><para>Does Setup accept command-line arguments?</para></question>
 <answer>
 
-<para>Yes, the full listing is written to the <literal>setup.log</literal> file 
-when you run <literal>setup-x86.exe --help</literal> or
-<literal>setup-x86_64.exe --help</literal>. The current options are:
+<para>Yes, run <literal>setup-x86.exe --help</literal> or
+<literal>setup-x86_64.exe --help</literal> for a list.
+</para>
+
 <screen>
-Command Line Options:
- -D --download                     Download from internet
- -L --local-install                Install from local directory
- -s --site                         Download site
- -O --only-site                    Ignore all sites except for -s
- -R --root                         Root installation directory
- -x --remove-packages              Specify packages to uninstall
- -c --remove-categories            Specify categories to uninstall
- -P --packages                     Specify packages to install
- -C --categories                   Specify entire categories to install
- -p --proxy                        HTTP/FTP proxy (host:port)
+    --allow-unsupported-windows    Allow old, unsupported Windows versions
  -a --arch                         architecture to install (x86_64 or x86)
- -q --quiet-mode                   Unattended setup mode
- -M --package-manager              Semi-attended chooser-only mode
- -B --no-admin                     Do not check for and enforce running as
-                                   Administrator
- -h --help                         print help
- -l --local-package-dir            Local package directory
- -r --no-replaceonreboot           Disable replacing in-use files on next
-                                   reboot.
- -X --no-verify                    Don't verify setup.ini signatures
- -n --no-shortcuts                 Disable creation of desktop and start menu
-                                   shortcuts
- -N --no-startmenu                 Disable creation of start menu shortcut
- -d --no-desktop                   Disable creation of desktop shortcut
- -K --pubkey                       URL of extra public key file (gpg format)
- -S --sexpr-pubkey                 Extra public key in s-expr format
- -u --untrusted-keys               Use untrusted keys from last-extrakeys
- -U --keep-untrusted-keys          Use untrusted keys and retain all
- -g --upgrade-also                 also upgrade installed packages
+ -C --categories                   Specify entire categories to install
  -o --delete-orphans               remove orphaned packages
  -A --disable-buggy-antivirus      Disable known or suspected buggy anti virus
                                    software packages during execution.
+ -D --download                     Download from internet
+ -f --force-current                select the current version for all packages
+ -h --help                         print help
+ -I --include-source               Automatically include source download
+ -i --ini-basename                 Use a different basename, e.g. "foo",
+                                   instead of "setup"
+ -U --keep-untrusted-keys          Use untrusted keys and retain all
+ -L --local-install                Install from local directory
+ -l --local-package-dir            Local package directory
+ -m --mirror-mode                  Skip availability check when installing from
+                                   local directory (requires local directory to
+                                   be clean mirror!)
+ -B --no-admin                     Do not check for and enforce running as
+                                   Administrator
+ -d --no-desktop                   Disable creation of desktop shortcut
+ -r --no-replaceonreboot           Disable replacing in-use files on next
+                                   reboot.
+ -n --no-shortcuts                 Disable creation of desktop and start menu
+                                   shortcuts
+ -N --no-startmenu                 Disable creation of start menu shortcut
+ -X --no-verify                    Don't verify setup.ini signatures
+ -O --only-site                    Ignore all sites except for -s
+ -M --package-manager              Semi-attended chooser-only mode
+ -P --packages                     Specify packages to install
+ -p --proxy                        HTTP/FTP proxy (host:port)
+ -Y --prune-install                prune the installation to only the requested
+                                   packages
+ -K --pubkey                       URL of extra public key file (gpg format)
+ -q --quiet-mode                   Unattended setup mode
+ -c --remove-categories            Specify categories to uninstall
+ -x --remove-packages              Specify packages to uninstall
+ -R --root                         Root installation directory
+ -S --sexpr-pubkey                 Extra public key in s-expr format
+ -s --site                         Download site
+ -u --untrusted-keys               Use untrusted keys from last-extrakeys
+ -g --upgrade-also                 also upgrade installed packages
+    --user-agent                   User agent string for HTTP requests
+ -v --verbose                      Verbose output
+ -W --wait                         When elevating, wait for elevated child
+                                   process
 </screen>
-</para>
+
 </answer></qandaentry>
 
 <qandaentry id="faq.setup.noroot">
@@ -333,7 +347,7 @@ you will have to select it explicitly.  See
 <ulink url="https://cygwin.com/packages/"/> for a searchable list of available
 packages, or use <literal>cygcheck -p </literal> as described in the Cygwin
 User's Guide at
-<ulink url="https://cygwin.com/cygwin-ug-net/using-utils.html#cygcheck"/>.
+<ulink url="https://cygwin.com/cygwin-ug-net/cygcheck.html"/>.
 </para>
 <para>If you want to build programs, of course you'll need <literal>gcc</literal>,
 <literal>binutils</literal>, <literal>make</literal> and probably other packages from the
@@ -415,7 +429,7 @@ looking names, being encoded with their URLs
 <para>Of course, you can keep them around in case you want to reinstall a
 package. If you want to clean out only the outdated packages, Michael Chase
 has written a script called <literal>clean_setup.pl</literal>, available
-at <ulink url="ftp://cygwin.com/pub/cygwin/unsupported/clean_setup.pl" />.
+at <filename>unsupported/clean_setup.pl</filename> in a Cygwin mirror.
 </para>
 </answer></qandaentry>
 
@@ -576,7 +590,7 @@ installed are <literal>sshd</literal>, <literal>cron</literal>,
 that might be running in the background.  Exit the command prompt and ensure
 that no Cygwin processes remain.  Note: If you want to save your mount points for a later 
 reinstall, first save the output of <literal>mount -m</literal> as described at 
-<ulink url="https://cygwin.com/cygwin-ug-net/using-utils.html#mount"/>.
+<ulink url="https://cygwin.com/cygwin-ug-net/mount.html"/>.
 </para>
 </listitem>
 <listitem><para>If you installed <literal>cyglsa.dll</literal> by running the
@@ -588,24 +602,28 @@ editing the registry and restoring
 back to it's original value of <literal>msv1_0</literal>, and then rebooting.
 </para>
 </listitem>
-<listitem><para>Delete the Cygwin root folder and all subfolders.  If you get an error 
-that an object is in use, then ensure that you've stopped all services and 
-closed all Cygwin programs.  If you get a 'Permission Denied' error then you 
-will need to modify the permissions and/or ownership of the files or folders 
-that are causing the error.  For example, sometimes files used by system 
-services end up owned by the SYSTEM account and not writable by regular users.  
-</para>
-<para>The quickest way to delete the entire tree if you run into this problem is to 
-change the ownership of all files and folders to your account.  To do this in 
-Windows Explorer, right click on the root Cygwin folder, choose Properties, then 
-the Security tab.  If you are using Windows XP Home or Simple File Sharing,
-you will need to boot into Safe Mode to access the Security tab.  Select 
-Advanced, then go to the Owner tab and make sure your account is listed as 
-the owner.  Select the 'Replace owner on subcontainers and objects' checkbox 
-and press Ok.  After Explorer applies the changes you should be able to 
-delete the entire tree in one operation.  Note that you can also achieve 
-this in Cygwin by typing <literal>chown -R user /</literal> or by using other 
-tools such as <literal>CACLS.EXE</literal>. 
+<listitem><para>Delete the Cygwin root folder and all subfolders.  If you get
+an error that an object is in use, then ensure that you've stopped all services
+and closed all Cygwin programs.  If you get a 'Permission Denied' error then
+you will need to modify the permissions and/or ownership of the files or
+folders that are causing the error.  For example, sometimes files used by
+system services end up owned by the SYSTEM account and not writable by regular
+users.</para>
+<para>The quickest way to delete the entire tree if you run into this problem
+is to take ownership of all files and folders to your account.  To do
+this in Windows Explorer, right click on the root Cygwin folder, choose
+Properties, then the Security tab.  If you are using Simple File Sharing, you
+will need to boot into Safe Mode to access the Security tab.  Select Advanced,
+then go to the Owner tab and make sure your account is listed as the owner.
+Select the 'Replace owner on subcontainers and objects' checkbox and press Ok.
+After Explorer applies the changes you should be able to delete the entire tree
+in one operation.  Note that you can also achieve by using other tools such as
+<literal>icacls.exe</literal> or directly from Cygwin by using
+<literal>chown</literal>.  Please note that you shouldn't use the
+recursive form of chown on directories that have other file systems
+mounted under them (specifically you must avoid
+<literal>/proc</literal>) since you'd change ownership of the files under those
+mount points as well.
 </para>
 </listitem>
 <listitem><para>Delete the Cygwin shortcuts on the Desktop and Start Menu, and
@@ -704,14 +722,14 @@ the Cygwin Setup homepage at
 <answer>
 
 <para>While some users have successfully done this, for example Indiana
-University's XLiveCD <ulink url="http://xlivecd.indiana.edu/"/>, there is no
+University's XLiveCD <ulink url="http://racinfo.indiana.edu/research/xlivecd.php"/>, there is no
 easy way to do it. Full instructions for constructing a portable Cygwin
 on CD by hand can be found on the mailing list at
 <ulink url="https://www.cygwin.com/ml/cygwin/2003-07/msg01117.html"/>
 (Thanks to fergus at bonhard dot uklinux dot net for these instructions.)
-Please note that these instructions are rather old and are referring to the
+Please note that these instructions are very old and are referring to the
 somewhat different setup of a Cygwin 1.5.x release.  As soon as somebody set
-this up for Cygwin 1.7, we might add this information here.
+this up for recent Cygwin releases, we might add this information here.
 </para>
 </answer></qandaentry>
 
@@ -719,9 +737,8 @@ this up for Cygwin 1.7, we might add this information here.
 <question><para>How do I save, restore, delete, or modify the Cygwin information stored in the registry?</para></question>
 <answer>
 
-<para>Since Cygwin 1.7, there's nothing important in the registry anymore,
-except for the installation directory information stored there for the sake
-of setup-x86{_64}.exe.  There's nothing left to manipulate anymore.
+<para>Cygwin doesn't store anything important in the registry anymore for
+quite some time.  There's no reason to save, restore or delete it.
 </para></answer></qandaentry>
 </qandadiv>
 

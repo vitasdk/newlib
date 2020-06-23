@@ -20,18 +20,10 @@ fmod
 INDEX
 fmodf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 #include <math.h>
-double fmod(double <[x]>, double <[y]>)
-float fmodf(float <[x]>, float <[y]>)
-
-TRAD_SYNOPSIS
-#include <math.h>
-double fmod(<[x]>, <[y]>)
-double (<[x]>, <[y]>);
-
-float fmodf(<[x]>, <[y]>)
-float (<[x]>, <[y]>);
+double fmod(double <[x]>, double <[y]>);
+float fmodf(float <[x]>, float <[y]>);
 
 DESCRIPTION
 The <<fmod>> and <<fmodf>> functions compute the floating-point
@@ -50,8 +42,6 @@ result has the same sign as <[x]> and magnitude less than the
 magnitude of <[y]>.
 
 <<fmod(<[x]>,0)>> returns NaN, and sets <<errno>> to <<EDOM>>.
-
-You can modify error treatment for these functions using <<matherr>>.
 
 PORTABILITY
 <<fmod>> is ANSI C. <<fmodf>> is an extension.

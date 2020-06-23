@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,23 +24,13 @@ INDEX
 INDEX
 	ferror_unlocked
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int ferror(FILE *<[fp]>);
 
 	#define _BSD_SOURCE
 	#include <stdio.h>
 	int ferror_unlocked(FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int ferror(<[fp]>)
-	FILE *<[fp]>;
-
-	#define _BSD_SOURCE
-	#include <stdio.h>
-	int ferror_unlocked(<[fp]>)
-	FILE *<[fp]>;
 
 DESCRIPTION
 The <<stdio>> functions maintain an error indicator with each file
@@ -84,8 +74,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #undef ferror
 
 int
-_DEFUN(ferror, (fp),
-       FILE * fp)
+ferror (FILE * fp)
 {
   int result;
   CHECK_INIT(_REENT, fp);

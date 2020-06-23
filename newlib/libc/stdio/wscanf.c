@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -26,7 +26,7 @@
 #ifndef _REENT_ONLY
 
 int
-wscanf(_CONST wchar_t *__restrict fmt, ...)
+wscanf(const wchar_t *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -42,7 +42,7 @@ wscanf(_CONST wchar_t *__restrict fmt, ...)
 #endif /* !_REENT_ONLY */
 
 int
-_wscanf_r(struct _reent *ptr, _CONST wchar_t *fmt, ...)
+_wscanf_r(struct _reent *ptr, const wchar_t *fmt, ...)
 {
   int ret;
   va_list ap;

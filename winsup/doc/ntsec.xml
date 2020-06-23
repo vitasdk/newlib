@@ -914,8 +914,13 @@ This is not valid:
 </screen>
 
 <para>
-Apart from this restriction, the reminder of the line can have as
+Apart from this restriction, the remainder of the line can have as
 many spaces and TABs as you like.
+</para>
+
+<para>
+When the same keyword occurs multiple times, the last one wins, as if the
+previous ones were ignored.
 </para>
 
 </sect4>
@@ -1340,8 +1345,8 @@ schemata are the following:
     <term><literal>unix</literal></term>
     <listitem>Utilizes the posixAccount schema attributes per
 	      <ulink url="https://tools.ietf.org/html/rfc2307">RFC 2307</ulink>.
-	      The posixAccount schema is available by default since Windows
-	      Server 2003 R2, but typically only utilized when installing the
+	      The posixAccount schema is available by default in Windows
+	      Server, but typically only utilized when installing the
 	      Active Directory "Server for NIS" feature (which is deprecated
 	      since Server 2012 R2).
 	      See also <xref linkend="ntsec-mapping-nsswitch-posix"></xref>.
@@ -1507,18 +1512,15 @@ of each schema when used with <literal>db_home:</literal>
 </variablelist>
 
 <para>
-As has been briefly mentioned before, the default setting for
-<literal>db_home:</literal> is
+<literal>db_home:</literal> defines no default schemata.  If this setting is not
+present in <filename>/etc/nsswitch.conf</filename>, the aforementioned fallback
+takes over, which is equivalent to a <filename>/etc/nsswitch.conf</filename>
+settting of
 </para>
 
 <screen>
   db_home: /home/%U
 </screen>
-
-<para>
-So by default, Cygwin just sets the home dir to
-<filename>/home/$USERNAME</filename>.
-</para>
 
 </sect4>
 
@@ -1590,8 +1592,10 @@ when used with <literal>db_shell:</literal>
 </variablelist>
 
 <para>
-As for <literal>db_home:</literal>, the default setting for
-<literal>db_shell:</literal> is pretty much a constant
+<literal>db_shell:</literal> defines no default schemata.  If this setting is
+not present in <filename>/etc/nsswitch.conf</filename>, the aforementioned
+fallback takes over, which is equivalent to a
+<filename>/etc/nsswitch.conf</filename> settting of
 </para>
 
 <screen>
@@ -1664,13 +1668,13 @@ The following list describes the meaning of each schema when used with
   <varlistentry>
     <term>Fallback</term>
     <listitem>If none of the schemes given for <literal>db_gecos:</literal>
-	      define a non-empty pathname, nothing is added to
+	      define a non-empty string, nothing is added to
 	      <literal>pw_gecos</literal>.</listitem>
   </varlistentry>
 </variablelist>
 
 <para>
-The default setting for <literal>db_gecos:</literal> is the empty string.
+<literal>db_gecos:</literal> defines no default schemata.
 </para>
 
 </sect4>
@@ -1759,10 +1763,10 @@ The group attributes utilized by Cygwin are:
 <para>
 The <literal>unix</literal> schema utilizes the 
 <literal>posixAccount</literal> attribute extension.  This is one of two
-schema extensions which are connected to AD accounts, available by default
-starting with Windows Server 2003 R2.  They are usually
-<emphasis role='bold'>not set</emphasis>, unless used by the Active Directory
-<literal>Server for NIS</literal> feature (deprecated since Server 2012 R2).
+schema extensions which are connected to AD accounts, available by default.
+They are usually <emphasis role='bold'>not set</emphasis>, unless used by
+the Active Directory <literal>Server for NIS</literal> feature (deprecated
+since Server 2012 R2).
 
 Two schemata are interesting for Cygwin, <literal>posixAccount</literal>,
 connected to user accounts, and <literal>posixGroup</literal>, connected
@@ -2155,11 +2159,13 @@ will correctly deal with the ACL regardless of the order of allow and
 deny ACEs.  The second rule is not modified to get the ACEs in the
 preferred order.</para>
 
-<para>Unfortunately the security tab in the file properties dialog of
-the Windows Explorer insists to rearrange the order of the ACEs to
-canonical order before you can read them. Thank God, the sort order
-remains unchanged if one presses the Cancel button.  But don't even
-<emphasis role='bold'>think</emphasis> of pressing OK...</para>
+<para>Unfortunately, the security tab in the file properties dialog of
+the Windows Explorer will pop up a warning stating "The permissions on
+... are incorrectly ordered, which may cause some entries to be
+ineffective."  Pressing the Cancel button of the properties dialog
+fortunately leaves the sort order unchanged, but pressing OK will cause
+Explorer to canonicalize the order of the ACEs, thereby invalidating
+POSIX compatibility.</para>
 
 <para>Canonical ACLs are unable to reflect each possible combination
 of POSIX permissions. Example:</para>
@@ -2216,20 +2222,18 @@ GroupAllow:  001
 OthersAllow: 110
 </screen>
 
-<para>Again: This works on all existing versions of Windows NT, at the
-time of writing from at least Windows XP up to Server 2012 R2.  Only
-the GUIs aren't able (or willing) to deal with that order.</para>
+<para>Again: This works on all supported versions of Windows.  Only the GUIs
+aren't able (or willing) to deal with that order.</para>
 
 </sect2>
 
 <sect2 id="ntsec-setuid-overview"><title id="ntsec-setuid-overview.title">Switching the user context</title>
 
-<para>Since Windows XP, Windows users have been accustomed to the
-"Switch User" feature, which switches the entire desktop to another user
-while leaving the original user's desktop "suspended".  Another Windows
-feature is the "Run as..." context menu entry, which allows you to start
-an application using another user account when right-clicking on applications
-and shortcuts.</para>
+<para>Windows users have been accustomed to the "Switch User" feature, which
+switches the entire desktop to another user while leaving the original user's
+desktop "suspended".  Another Windows feature is the "Run as..." context menu
+entry, which allows you to start an application using another user account
+when right-clicking on applications and shortcuts.</para>
 
 <para>On POSIX systems, this operation can be performed by processes
 running under the privileged user accounts (usually the "root" user
@@ -2328,77 +2332,38 @@ example:</para>
 
 </sect3>
 
-<sect3 id="ntsec-nopasswd1"><title id="ntsec-nopasswd1.title">Switching the user context without password, Method 1: Create a token from scratch</title>
+<sect3 id="ntsec-nopasswd1"><title id="ntsec-nopasswd1.title">Switching the user context without password, Method 1: Kerberos/MsV1_0 S4U authentication</title>
 
 <para>An unfortunate aspect of the implementation of
 <command>set(e)uid</command> is the fact that the calling process
-requires the password of the user to which to switch.  Applications such as
+requires the password of the user to switch to.  Applications such as
 <command>sshd</command> wishing to switch the user context after a
 successful public key authentication, or the <command>cron</command>
 application which, again, wants to switch the user without any authentication
 are stuck here.  But there are other ways to get new user tokens.</para>
 
-<para>One way is just to create a user token from scratch.  This is
-accomplished by using an (officially undocumented) function on the NT
-function level.  The NT function level is used to implement the Win32
-level, and, as such is closer to the kernel than the Win32 level.  The
-function of interest, <command>NtCreateToken</command>, allows you to
-specify user, groups, permissions and almost everything you need to
-create a user token, without the need to specify the user password.  The
-only restriction for using this function is that the calling process
-needs the "Create a token object" user right, which only the SYSTEM user
-account has by default, and which is considered the most dangerous right
-a user can have on Windows systems.</para>
+<para>Starting with Cygwin 3.0, Cygwin tries to create a token by using
+<literal>Windows S4U authentication</literal> by default.  For a quick
+description, see
+<ulink url="https://blogs.msdn.microsoft.com/winsdk/2015/08/28/logon-as-a-user-without-a-password/">this blog posting</ulink>.  Cygwin versions prior
+to 3.0 tried to creat a user token from scratch using an officially
+undocumented function <command>NtCreateToken</command> which
+is now disabled.</para>
 
-<para>That sounds good.  We just start the servers which have to switch
-the user context (<command>sshd</command>, <command>inetd</command>,
-<command>cron</command>, ...) as Windows services under the SYSTEM
-(or LocalSystem in the GUI) account and everything just works.
-Unfortunately that's too simple.  Using <command>NtCreateToken</command>
-has a few drawbacks.</para>
+<para>So we just start the servers which have to switch the user context
+(<command>sshd</command>, <command>inetd</command>, <command>cron</command>,
+...) as Windows services under the SYSTEM (or LocalSystem in the GUI)
+account and everything just works.  Unfortunately that's too simple.
+Using <literal>S4U</literal> has a drawback.</para>
 
-<para>First of all, beginning with Windows Server 2003,
-the permission "Create a token object" gets explicitly removed from
-the SYSTEM user's access token, when starting services under that
-account.  That requires us to create a new account with this specific
-permission just to run this kind of services.  But that's a minor
-problem.</para>
-
-<para>A more important problem is that using <command>NtCreateToken</command>
-is not sufficient to create a new logon session for the new user.  What
-does that mean?  Every logon usually creates a new logon session.
-A logon session has a couple of attributes which are unique to the
-session.  One of these attributes is the fact, that Windows functions
-identify the user domain and user name not by the SID of the access
-token owner, but only by the logon session the process is running under.</para>
-
-<para>This has the following unfortunate consequence.  Consider a
-service started under the SYSTEM account (up to Windows XP) switches the
-user context to DOMAIN\my_user using a token created directly by calling
-the <command>NtCreateToken</command> function.  A process running under
-this new access token might want to know under which user account it's
-running.  The corresponding SID is returned correctly, for instance
-S-1-5-21-1234-5678-9012-77777.  However, if the same process asks the OS
-for the user name of this SID something wierd happens.  For instance,
-the <command>LookupAccountSid</command> function will not return
-"DOMAIN\my_user", but "NT AUTHORITY\SYSTEM" as the user name.</para>
-
-<para>You might ask "So what?"  After all, this only <emphasis
-role='bold'>looks</emphasis> bad, but functionality and permission-wise
-everything should be ok.  And Cygwin knows about this shortcoming so it
-will return the correct Cygwin username when asked.  Unfortunately this
-is more complicated.  Some native, non-Cygwin Windows applications will
-misbehave badly in this situation.  A well-known example are certain versions
-of Visual-C++.</para>
-
-<para>Last but not least, you don't have the usual comfortable access
+<para>Annoyingly, you don't have the usual comfortable access
 to network shares.  The reason is that the token has been created
 without knowing the password.  The password are your credentials
 necessary for network access.  Thus, if you logon with a password, the
 password is stored hidden as "token credentials" within the access token
 and used as default logon to access network resources.  Since these
-credentials are missing from the token created with
-<command>NtCreateToken</command>, you only can access network shares
+credentials are missing from the token created with <literal>S4U</literal>
+or <command>NtCreateToken</command>, you only can access network shares
 from the new user's process tree by using explicit authentication, on
 the command line for instance:</para>
 
@@ -2415,6 +2380,40 @@ path as in</para>
 <screen>
 bash$ grep foo //server/share/foofile
 </screen>
+
+<!--
+<para>First of all, the permission "Create a token object" gets explicitly
+removed from the SYSTEM user's access token, when starting services under that
+account.  That requires us to create a new account with this specific
+permission just to run this kind of services.  But that's a minor
+problem.</para>
+
+<para>A more important problem is that using <command>NtCreateToken</command>
+is not sufficient to create a new logon session for the new user.  What
+does that mean?  Every logon usually creates a new logon session.
+A logon session has a couple of attributes which are unique to the
+session.  One of these attributes is the fact, that Windows functions
+identify the user domain and user name not by the SID of the access
+token owner, but only by the logon session the process is running under.</para>
+
+<para>This has the following unfortunate consequence.  Consider a
+service started under the SYSTEM account switches the user context to
+DOMAIN\my_user using a token created directly by calling the
+<command>NtCreateToken</command> function.  A process running under
+this new access token might want to know under which user account it's
+running.  The corresponding SID is returned correctly, for instance
+S-1-5-21-1234-5678-9012-77777.  However, if the same process asks the OS
+for the user name of this SID something wierd happens.  For instance,
+the <command>LookupAccountSid</command> function will not return
+"DOMAIN\my_user", but "NT AUTHORITY\SYSTEM" as the user name.</para>
+
+<para>You might ask "So what?"  After all, this only <emphasis
+role='bold'>looks</emphasis> bad, but functionality and permission-wise
+everything should be ok.  And Cygwin knows about this shortcoming so it
+will return the correct Cygwin username when asked.  Unfortunately this
+is more complicated.  Some native, non-Cygwin Windows applications will
+misbehave badly in this situation.  A well-known example are certain versions
+of Visual-C++.</para>
 
 </sect3>
 
@@ -2442,9 +2441,6 @@ rebooting the system, the LSA authentication package is used by Cygwin
 when <command>set(e)uid</command> is called by an application.  The
 created access token using this method has its own logon session.</para>
 
-<para>This method has two advantages over the <command>NtCreateToken</command>
-method.</para>
-
 <para>The very special and very dangerous "Create a token object" user
 right is not required by a user using this method.  Other privileged
 user rights are still necessary, especially the "Act as part of the
@@ -2462,16 +2458,15 @@ inconvenience compared to that...</para>
 
 <para>Nevertheless, this is already a lot better than what we get by
 using <command>NtCreateToken</command>, isn't it?</para>
+-->
 
 </sect3>
 
-<sect3 id="ntsec-nopasswd3"><title id="ntsec-nopasswd3.title">Switching the user context without password, Method 3: With password</title>
+<sect3 id="ntsec-nopasswd3"><title id="ntsec-nopasswd3.title">Switching the user context without password, Method 2: With password</title>
 
-<para>Ok, so we have solved almost any problem, except for the network
-access problem.  Not being able to access network shares without
-having to specify a cleartext password on the command line or in a 
-script is a harsh problem for automated logons for testing purposes
-and similar stuff.</para>
+<para>Not being able to access network shares without having to specify
+a cleartext password on the command line or in a script is a harsh problem
+for automated logons for testing purposes and similar stuff.</para>
 
 <para>Fortunately there is a solution, but it has its own drawbacks.
 But, first things first, how does it work?  The title of this section
@@ -2515,13 +2510,7 @@ as normal, non-privileged user as well.</para>
 hidden, obfuscated registry area.  Only SYSTEM has access to this area
 for listing purposes, so, even as an administrator, you can't examine
 this area with regedit.  Right?  No.  Every administrator can start
-regedit as SYSTEM user:</para>
-
-<screen>
-bash$ date
-Tue Dec  2 16:28:03 CET 2008
-bash$ at 16:29 /interactive regedit.exe
-</screen>
+regedit as SYSTEM user, the Internet is your friend here.</para>
 
 <para>Additionally, if an administrator knows under which name
 the private key is stored (which is well-known since the algorithms
@@ -2542,12 +2531,12 @@ safely use this method.</para>
 
 <sect3 id="ntsec-setuid-impl"><title id="ntsec-setuid-impl.title">Switching the user context, how does it all fit together?</title>
 
-<para>Now we learned about four different ways to switch the user
+<para>Now we learned about three different ways to switch the user
 context using the <command>set(e)uid</command> system call, but
 how does <command>set(e)uid</command> really work?  Which method does it
 use now?</para>
 
-<para>The answer is, all four of them.  So here's a brief overview
+<para>The answer is, all three of them.  So here's a brief overview
 what <command>set(e)uid</command> does under the hood:</para>
 
 <itemizedlist>
@@ -2578,17 +2567,27 @@ private registry area, either under a Cygwin key, or under a SFU key.
 If so, use this to call <command>LogonUser</command>.  If this
 succeeds, we use the resulting token for the user context switch.</para>
 </listitem>
-
+<!--
 <listitem>
 <para>Otherwise, check if the Cygwin-specifc LSA authentication package
 has been installed and is functional.  If so, use the appropriate LSA
 calls to communicate with the Cygwin LSA authentication package and
 use the returned token.</para>
 </listitem>
+-->
+<listitem>
+<para>Otherwise, use the default <literal>S4U</literal> authentication
+to create a token.</para>
+</listitem>
 
 <listitem>
-<para>Last chance, try to use the <command>NtCreateToken</command> call
-to create a token.  If that works, use this token.</para>
+<para>Older systems, like WOW64 under Windows 7 64 bit, don't support
+<literal>S4U</literal> authentication for local machine accounts.  On
+these systems Cygwin falls back to an old and otherwise deprecated
+method to create a user token from scratch.  The underlying system call
+is undocumented and has an unfortunate requirement: We have to create a
+special account with dangerous permissions to perform this action.
+Therefore this is only enabled on affected systems.</para>
 </listitem>
 
 <listitem>

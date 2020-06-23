@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,17 +24,10 @@ INDEX
 INDEX
 	_fcloseall_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int fcloseall(void);
 	int _fcloseall_r (struct _reent *<[ptr]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int fcloseall()
-
-	int _fcloseall_r (<[ptr]>)
-	struct _reent *<[ptr]>;
 
 DESCRIPTION
 <<fcloseall>> closes all files in the current reentrancy struct's domain.
@@ -64,8 +57,7 @@ Required OS subroutines: <<close>>, <<fstat>>, <<isatty>>, <<lseek>>,
 #include "local.h"
 
 int
-_DEFUN(_fcloseall_r, (ptr),
-       struct _reent *ptr)
+_fcloseall_r (struct _reent *ptr)
 {
   return _fwalk_reent (ptr, _fclose_r);
 }
@@ -73,7 +65,7 @@ _DEFUN(_fcloseall_r, (ptr),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN_VOID(fcloseall)
+fcloseall (void)
 {
   return _fcloseall_r (_GLOBAL_REENT);
 }

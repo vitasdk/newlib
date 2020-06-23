@@ -1,9 +1,6 @@
 /* fhandler_floppy.cc.  See fhandler.h for a description of the
    fhandler classes.
 
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -50,9 +47,9 @@ fhandler_dev_floppy::get_drive_info (struct hd_geometry *geo)
   PARTITION_INFORMATION *pi = NULL;
   DWORD bytes_read = 0;
 
-  /* Always try using the new EX ioctls first (>= XP).  If not available,
-     fall back to trying the old non-EX ioctls.
-     Unfortunately the EX ioctls are not implemented in the floppy driver. */
+  /* Always try using the new EX ioctls first.  If not available, fall back
+     to trying the non-EX ioctls which are unfortunately not implemented in
+     the floppy driver. */
   if (get_major () != DEV_FLOPPY_MAJOR)
     {
       if (!DeviceIoControl (get_handle (),
@@ -77,7 +74,7 @@ fhandler_dev_floppy::get_drive_info (struct hd_geometry *geo)
       di = (DISK_GEOMETRY *) dbuf;
     }
   if (dix) /* Don't try IOCTL_DISK_GET_PARTITION_INFO_EX if
-	      IOCTL_DISK_GET_DRIVE_GEOMETRY_EX didn't work. 
+	      IOCTL_DISK_GET_DRIVE_GEOMETRY_EX didn't work.
 	      Probably a floppy.*/
     {
       if (!DeviceIoControl (get_handle (),
@@ -162,8 +159,10 @@ fhandler_dev_floppy::lock_partition (DWORD to_write)
   /* The simple case.  We have only a single partition open anyway.
      Try to lock the partition so that a subsequent write succeeds.
      If there's some file handle open on one of the affected partitions,
-     this fails, but that's how it works on Vista and later... */
-  if (get_minor () % 16 != 0)
+     this fails, but that's how it works...
+     The high partition major numbers don't have a partition 0. */
+  if (get_major () == DEV_FLOPPY_MAJOR
+      || get_major () >= DEV_SD_HIGHPART_START || get_minor () % 16 != 0)
     {
       if (!DeviceIoControl (get_handle (), FSCTL_LOCK_VOLUME,
 			   NULL, 0, NULL, 0, &bytes_read, NULL))
@@ -299,16 +298,11 @@ fhandler_dev_floppy::write_file (const void *buf, DWORD to_write,
   *err = 0;
   if (!(ret = WriteFile (get_handle (), buf, to_write, written, 0)))
     *err = GetLastError ();
-  /* When writing to a disk or partition on Vista, an "Access denied" error
-     is potentially a result of the raw disk write restriction.  See
-     http://support.microsoft.com/kb/942448 for details.  What we have to
-     do here is to lock the partition and retry.  The previous solution
-     locked one or all partitions immediately in open.  Which is overly
-     wasteful, given that the user might only want to change, say, the boot
-     sector. */
+  /* When writing to a disk or partition an "Access denied" error may
+     occur due to the raw disk write restriction.
+     See http://support.microsoft.com/kb/942448 for details.
+     What we do here is to lock the affected partition(s) and retry. */
   if (*err == ERROR_ACCESS_DENIED
-      && wincap.has_restricted_raw_disk_access ()
-      && get_major () != DEV_FLOPPY_MAJOR
       && get_major () != DEV_CDROM_MAJOR
       && (get_flags () & O_ACCMODE) != O_RDONLY
       && lock_partition (to_write))
@@ -390,9 +384,12 @@ fhandler_dev_floppy::dup (fhandler_base *child, int flags)
 inline off_t
 fhandler_dev_floppy::get_current_position ()
 {
-  LARGE_INTEGER off = { QuadPart: 0LL };
-  off.LowPart = SetFilePointer (get_handle (), 0, &off.HighPart, FILE_CURRENT);
-  return off.QuadPart;
+  IO_STATUS_BLOCK io;
+  FILE_POSITION_INFORMATION fpi = { { QuadPart : 0LL } };
+
+  NtQueryInformationFile (get_handle (), &io, &fpi, sizeof fpi,
+			  FilePositionInformation);
+  return fpi.CurrentByteOffset.QuadPart;
 }
 
 void __reg3
@@ -549,11 +546,11 @@ fhandler_dev_floppy::raw_write (const void *ptr, size_t len)
       DWORD cplen, written;
 
       /* First check if we have an active read buffer.  If so, try to fit in
-      	 the start of the input buffer and write out the entire result.
+	 the start of the input buffer and write out the entire result.
 	 This also covers the situation after lseek since lseek fills the read
 	 buffer in case we seek to an address which is not sector aligned. */
       if (devbufend && devbufstart < devbufend)
-      	{
+	{
 	  off_t current_pos = get_current_position ();
 	  cplen = MIN (len, devbufend - devbufstart);
 	  memcpy (devbuf + devbufstart, p, cplen);
@@ -572,11 +569,11 @@ fhandler_dev_floppy::raw_write (const void *ptr, size_t len)
 	  /* Align pointers, lengths, etc. */
 	  cplen = MIN (cplen, written);
 	  devbufstart += cplen;
+	  if (devbufstart >= devbufend)
+	    devbufstart = devbufend = 0;
 	  p += cplen;
 	  len -= cplen;
 	  bytes_written += cplen;
-	  if (len)
-	    devbufstart = devbufend = 0;
 	}
       /* As long as there's still something left in the input buffer ... */
       while (len)
@@ -613,13 +610,21 @@ fhandler_dev_floppy::raw_write (const void *ptr, size_t len)
 	  p += cplen;
 	  len -= cplen;
 	  bytes_written += cplen;
+	  /* If we overwrote, revalidate devbuf.  It still contains the
+	     content from the above read/modify/write.  Revalidating makes
+	     sure lseek reports the correct position. */
+	  if (cplen < bytes_per_sector)
+	    {
+	      devbufstart = cplen;
+	      devbufend = bytes_per_sector;
+	    }
 	}
-      return bytes_written;
+      return (ssize_t) bytes_written;
     }
-  
+
   /* In O_DIRECT case, just write. */
   if (write_file (p, len, &bytes_written, &ret))
-    return bytes_written;
+    return (ssize_t) bytes_written;
 
 err:
   if (IS_EOM (ret))
@@ -630,7 +635,8 @@ err:
     }
   else if (!bytes_written)
     __seterrno ();
-  return bytes_written ?: -1;
+  /* Cast is required, otherwise the error return value is (DWORD)-1. */
+  return (ssize_t) bytes_written ?: -1;
 }
 
 off_t
@@ -652,7 +658,7 @@ fhandler_dev_floppy::lseek (off_t offset, int whence)
       off_t exact_pos = current_pos - (devbufend - devbufstart);
       /* Shortcut when used to get current position. */
       if (offset == 0)
-      	return exact_pos;
+	return exact_pos;
       offset += exact_pos;
       whence = SEEK_SET;
     }

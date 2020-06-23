@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,23 +24,13 @@ INDEX
 INDEX
 	feof_unlocked
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int feof(FILE *<[fp]>);
 
 	#define _BSD_SOURCE
 	#include <stdio.h>
 	int feof_unlocked(FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int feof(<[fp]>)
-	FILE *<[fp]>;
-
-	#define _BSD_SOURCE
-	#include <stdio.h>
-	int feof_unlocked(<[fp]>)
-	FILE *<[fp]>;
 
 DESCRIPTION
 <<feof>> tests whether or not the end of the file identified by <[fp]>
@@ -75,8 +65,7 @@ No supporting OS subroutines are required.
 #undef feof
 
 int 
-_DEFUN(feof, (fp),
-       FILE * fp)
+feof (FILE * fp)
 {
   int result;
   CHECK_INIT(_REENT, fp);

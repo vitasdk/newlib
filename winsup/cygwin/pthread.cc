@@ -1,8 +1,5 @@
 /* pthread.cc: posix pthread interface for Cygwin
 
-   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2007, 2008, 2010, 2011,
-   2013 Red Hat, Inc.
-
    Originally written by Marco Fuykschot <marco@ddi.nl>
 
    This file is part of Cygwin.
@@ -42,12 +39,6 @@ pthread_exit (void *value_ptr)
 {
   pthread::self ()->exit (value_ptr);
   __builtin_unreachable ();	/* FIXME: don't know why this is necessary */
-}
-
-int
-pthread_join (pthread_t thread, void **return_val)
-{
-  return pthread::join (&thread, (void **) return_val);
 }
 
 int

@@ -1,8 +1,5 @@
 /* grp.cc
 
-   Copyright 1996, 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
    Original stubs by Jason Molenda of Cygnus Support, crash@cygnus.com
    First implementation by Gunther Ebert, gunther.ebert@ixos-leipzig.de
 
@@ -48,8 +45,8 @@ pwdgrp::parse_group ()
   /* Don't generate gr_mem entries. */
   grp.g.gr_mem = &null_ptr;
   cygsid csid;
-  csid.getfromgr_passwd (&grp.g);
-  RtlCopySid (SECURITY_MAX_SID_SIZE, grp.sid, csid);
+  if (csid.getfromgr_passwd (&grp.g))
+    RtlCopySid (SECURITY_MAX_SID_SIZE, grp.sid, csid);
   return true;
 }
 
@@ -156,13 +153,13 @@ internal_getgrfull (fetch_acc_t &full_acc, cyg_ldap *pldap)
      internal_getgrsid_cachedonly. */
   if (cygheap->pg.nss_cygserver_caching ()
       && (ret = cygheap->pg.grp_cache.cygserver.add_group_from_cygserver
-      							(full_acc.sid)))
+							(full_acc.sid)))
     return ret;
   if (cygheap->pg.nss_grp_files ())
     {
       cygheap->pg.grp_cache.file.check_file ();
       if ((ret = cygheap->pg.grp_cache.file.add_group_from_file
-      							(full_acc.sid)))
+							(full_acc.sid)))
 	return ret;
     }
   if (cygheap->pg.nss_grp_db ())
@@ -240,7 +237,7 @@ internal_getgrgid (gid_t gid, cyg_ldap *pldap)
   return NULL;
 }
 
-#ifndef __x86_64__
+#ifdef __i386__
 static struct __group16 *
 grp32togrp16 (struct __group16 *gp16, struct group *gp32)
 {
@@ -615,7 +612,7 @@ internal_getgroups (int gidsetsize, gid_t *grouplist, cyg_ldap *pldap)
 	      goto out;
 	    }
 	}
-      else 
+      else
 	sidp_buf[scnt++] = sid;
     }
   /* If there are non-cached groups left, try to fetch them. */
@@ -741,7 +738,7 @@ get_groups (const char *user, gid_t gid, cygsidlist &gsids)
   struct group *grp = internal_getgrgid (gid, &cldap);
   cygsid usersid, grpsid;
   if (usersid.getfrompw (pw))
-    get_server_groups (gsids, usersid);
+    get_server_groups (gsids, usersid, NO_CHK_DISABLED);
   if (gid != ILLEGAL_GID && grpsid.getfromgr (grp))
     gsids += grpsid;
   cygheap->user.reimpersonate ();
@@ -840,9 +837,7 @@ setgroups32 (int ngroups, const gid_t *grouplist)
   return 0;
 }
 
-#ifdef __x86_64__
-EXPORT_ALIAS (setgroups32, setgroups)
-#else
+#ifdef __i386__
 extern "C" int
 setgroups (int ngroups, const __gid16_t *grouplist)
 {
@@ -858,4 +853,6 @@ setgroups (int ngroups, const __gid16_t *grouplist)
     }
   return setgroups32 (ngroups, grouplist32);
 }
+#else
+EXPORT_ALIAS (setgroups32, setgroups)
 #endif

@@ -1,6 +1,4 @@
 dnl Autoconf configure script for Cygwin.
-dnl Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2003, 2004, 2005,
-dnl 2006, 2008, 2009, 2011, 2012, 2013, 2014 Red Hat, Inc.
 dnl
 dnl This file is part of Cygwin.
 dnl
@@ -10,9 +8,8 @@ dnl details.
 dnl
 dnl Process this file with autoconf to produce a configure script.
 
-AC_PREREQ(2.59)dnl
-AC_INIT([Cygwin DLL], 0,
-	cygwin@cygwin.com, cygwin, https://cygwin.com)
+AC_PREREQ([2.59])
+AC_INIT([Cygwin DLL],[0],[cygwin@cygwin.com],[cygwin],[https://cygwin.com])
 AC_CONFIG_SRCDIR(Makefile.in)
 AC_CONFIG_HEADER(config.h)
 AC_CONFIG_AUX_DIR(..)
@@ -21,7 +18,7 @@ AC_CONFIG_AUX_DIR(..)
 
 AC_PROG_INSTALL
 AC_NO_EXECUTABLES
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_TARGET
 
 AC_PROG_CC
 AC_PROG_CXX
@@ -29,7 +26,9 @@ AC_PROG_CPP
 AC_LANG(C)
 
 AC_WINDOWS_HEADERS
-AC_WINDOWS_LIBS
+if test "x$with_cross_bootstrap" != "xyes"; then
+  AC_WINDOWS_LIBS
+fi
 
 AC_LANG(C++)
 
@@ -65,7 +64,7 @@ AC_PROG_MAKE_SET
 AC_ARG_ENABLE(debugging,
 [ --enable-debugging		Build a cygwin DLL which has more consistency checking for debugging],
 [case "${enableval}" in
-yes)	 AC_DEFINE(DEBUGGING) ;;
+yes)	 AC_DEFINE([DEBUGGING],[1],[Define if DEBUGGING support is requested.]) ;;
 no)	 ;;
 esac
 ])
@@ -100,7 +99,7 @@ case "$target_cpu" in
 		DIN_FILE="x86_64.din"
 		TLSOFFSETS_H="tlsoffsets64.h"
 		;;
-   *)		AC_MSG_ERROR(Invalid target processor \"$target_cpu\") ;;
+   *)		AC_MSG_ERROR([Invalid target processor "$target_cpu"]) ;;
 esac
 
 AC_CONFIGURE_ARGS
@@ -110,4 +109,5 @@ AC_SUBST(DLL_ENTRY)
 AC_SUBST(DEF_DLL_ENTRY)
 AC_SUBST(DIN_FILE)
 AC_SUBST(TLSOFFSETS_H)
-AC_OUTPUT(Makefile)
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT

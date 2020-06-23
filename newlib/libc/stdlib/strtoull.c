@@ -1,32 +1,26 @@
 /*
 FUNCTION
-	<<strtoull>>---string to unsigned long long
+	<<strtoull>>, <<strtoull_l>>---string to unsigned long long
 
 INDEX
 	strtoull
+
 INDEX
-	_strtoull_r
+	strtoull_l
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
-        unsigned long long strtoull(const char *restrict <[s]>, char **restrict <[ptr]>,
-                              int <[base]>);
+        unsigned long long strtoull(const char *restrict <[s]>,
+				    char **restrict <[ptr]>, int <[base]>);
 
-        unsigned long long _strtoull_r(void *<[reent]>, const char *restrict <[s]>,
-                              char **restrict <[ptr]>, int <[base]>);
-
-TRAD_SYNOPSIS
 	#include <stdlib.h>
-        unsigned long long strtoull(<[s]>, <[ptr]>, <[base]>)
-        char *<[s]>;
-        char **<[ptr]>;
-        int <[base]>;
+        unsigned long long strtoull_l(const char *restrict <[s]>,
+				      char **restrict <[ptr]>, int <[base]>,
+				      locale_t <[locale]>);
 
-        unsigned long long _strtoull_r(<[reent]>, <[s]>, <[ptr]>, <[base]>)
-	char *<[reent]>;
-        char *<[s]>;
-        char **<[ptr]>;
-        int <[base]>;
+        unsigned long long _strtoull_r(void *<[reent]>,
+				       const char *restrict <[s]>,
+				       char **restrict <[ptr]>, int <[base]>);
 
 DESCRIPTION
 The function <<strtoull>> converts the string <<*<[s]>>> to
@@ -68,19 +62,23 @@ with a substring in acceptable form), no conversion
 is performed and the value of <[s]> is stored in <[ptr]> (if <[ptr]> is
 not <<NULL>>).
 
+<<strtoull_l>> is like <<strtoull>> but performs the conversion based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 The alternate function <<_strtoull_r>> is a reentrant version.  The
 extra argument <[reent]> is a pointer to a reentrancy structure.
 
-
 RETURNS
-<<strtoull>> returns the converted value, if any. If no conversion was
-made, <<0>> is returned.
+<<strtoull>>, <<strtoull_l>> return the converted value, if any. If no
+conversion was made, <<0>> is returned.
 
-<<strtoull>> returns <<ULONG_LONG_MAX>> if the magnitude of the converted
-value is too large, and sets <<errno>> to <<ERANGE>>.
+<<strtoull>>, <<strtoull_l>> return <<ULONG_LONG_MAX>> if the magnitude
+of the converted value is too large, and sets <<errno>> to <<ERANGE>>.
 
 PORTABILITY
 <<strtoull>> is ANSI.
+<<strtoull_l>> is a GNU extension.
 
 <<strtoull>> requires no supporting OS subroutines.
 */
@@ -97,11 +95,7 @@ PORTABILITY
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -118,22 +112,102 @@ PORTABILITY
  * SUCH DAMAGE.
  */
 
+#define _GNU_SOURCE
 #include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <reent.h>
+#include "../locale/setlocale.h"
+
+/*
+ * Convert a string to an unsigned long long integer.
+ */
+static unsigned long long
+_strtoull_l (struct _reent *rptr, const char *__restrict nptr,
+	     char **__restrict endptr, int base, locale_t loc)
+{
+	register const unsigned char *s = (const unsigned char *)nptr;
+	register unsigned long long acc;
+	register int c;
+	register unsigned long long cutoff;
+	register int neg = 0, any, cutlim;
+
+	/*
+	 * See strtol for comments as to the logic used.
+	 */
+	do {
+		c = *s++;
+	} while (isspace_l(c, loc));
+	if (c == '-') {
+		neg = 1;
+		c = *s++;
+	} else if (c == '+')
+		c = *s++;
+	if ((base == 0 || base == 16) &&
+	    c == '0' && (*s == 'x' || *s == 'X')) {
+		c = s[1];
+		s += 2;
+		base = 16;
+	}
+	if (base == 0)
+		base = c == '0' ? 8 : 10;
+	cutoff = (unsigned long long)ULONG_LONG_MAX / (unsigned long long)base;
+	cutlim = (unsigned long long)ULONG_LONG_MAX % (unsigned long long)base;
+	for (acc = 0, any = 0;; c = *s++) {
+		if (c >= '0' && c <= '9')
+			c -= '0';
+		else if (c >= 'A' && c <= 'Z')
+			c -= 'A' - 10;
+		else if (c >= 'a' && c <= 'z')
+			c -= 'a' - 10;
+		else
+			break;
+		if (c >= base)
+			break;
+               if (any < 0 || acc > cutoff || (acc == cutoff && c > cutlim))
+			any = -1;
+		else {
+			any = 1;
+			acc *= base;
+			acc += c;
+		}
+	}
+	if (any < 0) {
+		acc = ULONG_LONG_MAX;
+		rptr->_errno = ERANGE;
+	} else if (neg)
+		acc = -acc;
+	if (endptr != 0)
+		*endptr = (char *) (any ? (char *)s - 1 : nptr);
+	return (acc);
+}
+
+unsigned long long
+_strtoull_r (struct _reent *rptr,
+	const char *__restrict nptr,
+	char **__restrict endptr,
+	int base)
+{
+	return _strtoull_l (rptr, nptr, endptr, base, __get_current_locale ());
+}
 
 #ifndef _REENT_ONLY
 
 unsigned long long
-_DEFUN (strtoull, (s, ptr, base),
-	_CONST char *__restrict s _AND
-	char **__restrict ptr _AND
+strtoull_l (const char *__restrict s, char **__restrict ptr, int base,
+	    locale_t loc)
+{
+	return _strtoull_l (_REENT, s, ptr, base, loc);
+}
+
+unsigned long long
+strtoull (const char *__restrict s,
+	char **__restrict ptr,
 	int base)
 {
-	return _strtoull_r (_REENT, s, ptr, base);
+	return _strtoull_l (_REENT, s, ptr, base, __get_current_locale ());
 }
 
 #endif

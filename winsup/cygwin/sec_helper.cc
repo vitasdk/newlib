@@ -1,8 +1,5 @@
 /* sec_helper.cc: NT security helper functions
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
    Written by Corinna Vinschen <corinna@vinschen.de>
 
 This file is part of Cygwin.
@@ -13,7 +10,10 @@ details. */
 
 #include "winsup.h"
 #include <stdlib.h>
-#include <sys/acl.h>
+#include <stdarg.h>
+#include <cygwin/acl.h>
+#include <sys/queue.h>
+#include <authz.h>
 #include <wchar.h>
 #include "cygerrno.h"
 #include "security.h"
@@ -114,21 +114,28 @@ cygpsid::get_id (BOOL search_grp, int *type, cyg_ldap *pldap)
 	id = myself->gid;
       else if (sid_id_auth (psid) == 22 && cygheap->pg.nss_grp_db ())
 	{
-	  /* Samba UNIX group.  Try to map to Cygwin gid.  If there's no
+	  /* Samba UNIX group?  Try to map to Cygwin gid.  If there's no
 	     mapping in the cache, try to fetch it from the configured
 	     RFC 2307 domain (see last comment in cygheap_domain_info::init()
-	     for more information) and add it to the mapping cache. */
-	  gid_t gid = sid_sub_auth_rid (psid);
-	  gid_t map_gid = cygheap->ugid_cache.get_gid (gid);
-	  if (map_gid == ILLEGAL_GID)
+	     for more information) and add it to the mapping cache.
+	     If this is a user, not a group, make sure to skip the subsequent
+	     internal_getgrsid call, otherwise we end up with a fake group
+	     entry for a UNIX user account. */
+	  if (sid_sub_auth (psid, 0) == 2)
 	    {
-	      if (pldap->open (cygheap->dom.get_rfc2307_domain ()) == NO_ERROR)
-		map_gid = pldap->remap_gid (gid);
-	      if (map_gid == ILLEGAL_GID) 
-		map_gid = MAP_UNIX_TO_CYGWIN_ID (gid);
-	      cygheap->ugid_cache.add_gid (gid, map_gid);
+	      gid_t gid = sid_sub_auth_rid (psid);
+	      gid_t map_gid = cygheap->ugid_cache.get_gid (gid);
+	      if (map_gid == ILLEGAL_GID)
+		{
+		  if (pldap->open (cygheap->dom.get_rfc2307_domain ())
+		      == NO_ERROR)
+		    map_gid = pldap->remap_gid (gid);
+		  if (map_gid == ILLEGAL_GID)
+		    map_gid = MAP_UNIX_TO_CYGWIN_ID (gid);
+		  cygheap->ugid_cache.add_gid (gid, map_gid);
+		}
+	      id = (uid_t) map_gid;
 	    }
-	  id = (uid_t) map_gid;
 	}
       else if ((gr = internal_getgrsid (*this, pldap)))
 	id = gr->gr_gid;
@@ -144,7 +151,8 @@ cygpsid::get_id (BOOL search_grp, int *type, cyg_ldap *pldap)
       struct passwd *pw;
       if (*this == cygheap->user.sid ())
 	id = myself->uid;
-      else if (sid_id_auth (psid) == 22 && cygheap->pg.nss_pwd_db ())
+      else if (sid_id_auth (psid) == 22 && sid_sub_auth (psid, 0) == 1
+	       && cygheap->pg.nss_pwd_db ())
 	{
 	  /* Samba UNIX user.  See comment above. */
 	  uid_t uid = sid_sub_auth_rid (psid);
@@ -161,10 +169,16 @@ cygpsid::get_id (BOOL search_grp, int *type, cyg_ldap *pldap)
 	}
       else if ((pw = internal_getpwsid (*this, pldap)))
 	id = pw->pw_uid;
-      if (id != ILLEGAL_UID && type)
-	*type = USER;
+      if (id != ILLEGAL_UID)
+	{
+	  if (type)
+	    *type = USER;
+	  return id;
+	}
     }
-  return id;
+  if (type)
+    *type = 0; /* undefined type */
+  return ILLEGAL_UID;
 }
 
 PWCHAR
@@ -218,7 +232,10 @@ cygsid::get_sid (DWORD s, DWORD cnt, DWORD *r, bool well_known)
   SID_IDENTIFIER_AUTHORITY sid_auth = { SECURITY_NULL_SID_AUTHORITY };
 # define SECURITY_NT_AUTH 5
 
-  if (s > 255 || cnt < 1 || cnt > SID_MAX_SUB_AUTHORITIES)
+  /* 2015-10-22: Note that we let slip SIDs with a subauthority count of 0.
+     There are systems, which generate the SID S-1-0 as group ownership SID,
+     see https://cygwin.com/ml/cygwin/2015-10/msg00141.html. */
+  if (s > 255 || cnt > SID_MAX_SUB_AUTHORITIES)
     {
       psid = NO_SID;
       return NULL;
@@ -279,6 +296,37 @@ cygsid::getfromstr (const char *nsidstr, bool well_known)
   return psid = NO_SID;
 }
 
+const PSID
+cygsid::create (DWORD auth, DWORD subauth_cnt, ...)
+{
+  va_list ap;
+  PSID sid;
+
+  if (subauth_cnt > SID_MAX_SUB_AUTHORITIES)
+    return NULL;
+
+  DWORD subauth[subauth_cnt];
+
+  va_start (ap, subauth_cnt);
+  for (DWORD i = 0; i < subauth_cnt; ++i)
+    subauth[i] = va_arg (ap, DWORD);
+  sid = get_sid (auth, subauth_cnt, subauth, false);
+  va_end (ap);
+  return sid;
+}
+
+bool
+cygsid::append (DWORD rid)
+{
+  if (psid == NO_SID)
+    return false;
+  PISID dsid = (PISID) psid;
+  if (dsid->SubAuthorityCount >= SID_MAX_SUB_AUTHORITIES)
+    return false;
+  dsid->SubAuthority[dsid->SubAuthorityCount++] = rid;
+  return true;
+}
+
 cygsid *
 cygsidlist::alloc_sids (int n)
 {
@@ -319,29 +367,6 @@ cygsidlist::add (const PSID nsi, bool well_known)
   else
     sids[cnt++] = nsi;
   return TRUE;
-}
-
-bool
-get_sids_info (cygpsid owner_sid, cygpsid group_sid, uid_t * uidret, gid_t * gidret)
-{
-  BOOL ret = false;
-  cyg_ldap cldap;
-
-  owner_sid.debug_print ("get_sids_info: owner SID =");
-  group_sid.debug_print ("get_sids_info: group SID =");
-
-  *uidret = owner_sid.get_uid (&cldap);
-  *gidret = group_sid.get_gid (&cldap);
-  if (*uidret == myself->uid)
-    {
-      if (*gidret == myself->gid)
-	ret = TRUE;
-      else
-	CheckTokenMembership (cygheap->user.issetuid ()
-			      ? cygheap->user.imp_token () : NULL,
-			      group_sid, &ret);
-    }
-  return (bool) ret;
 }
 
 PSECURITY_DESCRIPTOR
@@ -609,29 +634,23 @@ _recycler_sd (void *buf, bool users, bool dir)
     return NULL;
   RtlCreateSecurityDescriptor (psd, SECURITY_DESCRIPTOR_REVISION);
   PACL dacl = (PACL) (psd + 1);
-  /* Pre-Vista, the per-user recycler dir has a rather too complicated
-     ACL by default, which has distinct ACEs for inheritable and non-inheritable
-     permissions.  However, this ACL is practically equivalent to the ACL
-     created since Vista.  Therefore we simplify our job here and create the
-     pre-Vista permissions the same way as on Vista and later. */
   RtlCreateAcl (dacl, MAX_DACL_LEN (3), ACL_REVISION);
   RtlAddAccessAllowedAceEx (dacl, ACL_REVISION,
-			    dir ? CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE
+			    dir ? SUB_CONTAINERS_AND_OBJECTS_INHERIT
 				: NO_INHERITANCE,
 			    FILE_ALL_ACCESS, well_known_admins_sid);
   RtlAddAccessAllowedAceEx (dacl, ACL_REVISION,
-			    dir ? CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE
+			    dir ? SUB_CONTAINERS_AND_OBJECTS_INHERIT
 				: NO_INHERITANCE,
 			    FILE_ALL_ACCESS, well_known_system_sid);
   if (users)
-    RtlAddAccessAllowedAceEx (dacl, ACL_REVISION, NO_PROPAGATE_INHERIT_ACE,
+    RtlAddAccessAllowedAceEx (dacl, ACL_REVISION, INHERIT_NO_PROPAGATE,
 			      FILE_GENERIC_READ | FILE_GENERIC_EXECUTE
 			      | FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES,
 			      well_known_users_sid);
   else
     RtlAddAccessAllowedAceEx (dacl, ACL_REVISION,
-			      dir ? CONTAINER_INHERIT_ACE
-				    | OBJECT_INHERIT_ACE
+			      dir ? SUB_CONTAINERS_AND_OBJECTS_INHERIT
 				  : NO_INHERITANCE,
 			      FILE_ALL_ACCESS, cygheap->user.sid ());
   LPVOID ace;
@@ -688,3 +707,177 @@ _everyone_sd (void *buf, ACCESS_MASK access)
   return psd;
 }
 
+static NO_COPY muto authz_guard;
+static LUID authz_dummy_luid = { 0 };
+
+class authz_ctx_cache_entry
+{
+  SLIST_ENTRY (authz_ctx_cache_entry)	ctx_next;
+  cygsid				sid;
+  AUTHZ_CLIENT_CONTEXT_HANDLE		ctx_hdl;
+
+  authz_ctx_cache_entry ()
+  : sid (NO_SID), ctx_hdl (NULL)
+  {
+    ctx_next.sle_next = NULL;
+  }
+  authz_ctx_cache_entry (bool)
+  : sid (NO_SID), ctx_hdl (NULL)
+  {
+    ctx_next.sle_next = NULL;
+  }
+  void set (PSID psid, AUTHZ_CLIENT_CONTEXT_HANDLE hdl)
+  {
+    sid = psid;
+    ctx_hdl = hdl;
+  }
+  bool is (PSID psid) const { return RtlEqualSid (sid, psid); }
+  AUTHZ_CLIENT_CONTEXT_HANDLE context () const { return ctx_hdl; }
+
+  friend class authz_ctx_cache;
+};
+
+class authz_ctx_cache
+{
+  SLIST_HEAD (, authz_ctx_cache_entry) ctx_list;
+
+  AUTHZ_CLIENT_CONTEXT_HANDLE context (PSID);
+
+  friend class authz_ctx;
+};
+
+class authz_ctx
+{
+  AUTHZ_RESOURCE_MANAGER_HANDLE authz_hdl;
+  AUTHZ_CLIENT_CONTEXT_HANDLE user_ctx_hdl;
+  authz_ctx_cache ctx_cache;
+  operator AUTHZ_RESOURCE_MANAGER_HANDLE ();
+
+  friend class authz_ctx_cache;
+public:
+  bool get_user_attribute (mode_t *, PSECURITY_DESCRIPTOR, PSID);
+};
+
+/* Authz handles are not inheritable. */
+static NO_COPY authz_ctx authz;
+
+authz_ctx::operator AUTHZ_RESOURCE_MANAGER_HANDLE ()
+{
+  if (!authz_hdl)
+    {
+      /* Create handle to Authz resource manager */
+      authz_guard.init ("authz_guard")->acquire ();
+      if (!authz_hdl
+	  && !AuthzInitializeResourceManager (AUTHZ_RM_FLAG_NO_AUDIT,
+					      NULL, NULL, NULL, NULL,
+					      &authz_hdl))
+	debug_printf ("AuthzInitializeResourceManager, %E");
+      authz_guard.release ();
+    }
+  return authz_hdl;
+}
+
+AUTHZ_CLIENT_CONTEXT_HANDLE
+authz_ctx_cache::context (PSID user_sid)
+{
+  authz_ctx_cache_entry *entry;
+  AUTHZ_CLIENT_CONTEXT_HANDLE ctx_hdl = NULL;
+
+  SLIST_FOREACH (entry, &ctx_list, ctx_next)
+    {
+      if (entry->is (user_sid))
+	return entry->context ();
+    }
+  entry = new authz_ctx_cache_entry (true);
+  /* If the user is the current user, prefer to create the context from the
+     token, as outlined in MSDN. */
+  if (RtlEqualSid (user_sid, cygheap->user.sid ())
+      && !AuthzInitializeContextFromToken (0, cygheap->user.issetuid ()
+					   ?  cygheap->user.primary_token ()
+					   : hProcToken,
+					   authz, NULL, authz_dummy_luid,
+					   NULL, &ctx_hdl))
+    debug_printf ("AuthzInitializeContextFromToken, %E");
+  /* In any other case, create the context from the user SID. */
+  else if (!AuthzInitializeContextFromSid (0, user_sid, authz, NULL,
+					   authz_dummy_luid, NULL, &ctx_hdl))
+    debug_printf ("AuthzInitializeContextFromSid, %E");
+  else
+    {
+      entry->set (user_sid, ctx_hdl);
+      authz_guard.acquire ();
+      SLIST_INSERT_HEAD (&ctx_list, entry, ctx_next);
+      authz_guard.release ();
+      return entry->context ();
+    }
+  delete entry;
+  return NULL;
+}
+
+/* Ask Authz for the effective user permissions of the user with SID user_sid
+   on the object with security descriptor psd.  We're caching the handles for
+   the Authz resource manager and the user contexts. */
+bool
+authz_ctx::get_user_attribute (mode_t *attribute, PSECURITY_DESCRIPTOR psd,
+			       PSID user_sid)
+{
+  /* If the owner is the main user of the process token (not some impersonated
+     user), cache the user context in the global user_ctx_hdl variable. */
+  AUTHZ_CLIENT_CONTEXT_HANDLE ctx_hdl = NULL;
+  if (RtlEqualSid (user_sid, cygheap->user.sid ())
+      && !cygheap->user.issetuid ())
+    {
+      /* Avoid lock in default case. */
+      if (!user_ctx_hdl)
+	{
+	  authz_guard.acquire ();
+	  /* Check user_ctx_hdl again under lock to avoid overwriting
+	     user_ctx_hdl if it has already been initialized. */
+	  if (!user_ctx_hdl
+	      && !AuthzInitializeContextFromToken (0, hProcToken, authz, NULL,
+						   authz_dummy_luid, NULL,
+						   &user_ctx_hdl))
+	    debug_printf ("AuthzInitializeContextFromToken, %E");
+	  authz_guard.release ();
+	}
+      if (user_ctx_hdl)
+	ctx_hdl = user_ctx_hdl;
+    }
+  if (!ctx_hdl && !(ctx_hdl = ctx_cache.context (user_sid)))
+    return false;
+  /* All set, check access. */
+  ACCESS_MASK access = 0;
+  DWORD error = 0;
+  AUTHZ_ACCESS_REQUEST req = {
+    .DesiredAccess		= MAXIMUM_ALLOWED,
+    .PrincipalSelfSid		= NULL,
+    .ObjectTypeList		= NULL,
+    .ObjectTypeListLength	= 0,
+    .OptionalArguments		= NULL
+  };
+  AUTHZ_ACCESS_REPLY repl = {
+    .ResultListLength		= 1,
+    .GrantedAccessMask		= &access,
+    .SaclEvaluationResults	= NULL,
+    .Error			= &error
+  };
+  if (AuthzAccessCheck (0, ctx_hdl, &req, NULL, psd, NULL, 0, &repl, NULL))
+    {
+      if (access & FILE_READ_BITS)
+	*attribute |= S_IROTH;
+      if (access & FILE_WRITE_BITS)
+	*attribute |= S_IWOTH;
+      if (access & FILE_EXEC_BITS)
+	*attribute |= S_IXOTH;
+      return true;
+    }
+  return false;
+}
+
+bool
+authz_get_user_attribute (mode_t *attribute, PSECURITY_DESCRIPTOR psd,
+			  PSID user_sid)
+{
+  *attribute = 0;
+  return authz.get_user_attribute (attribute, psd, user_sid);
+}

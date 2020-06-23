@@ -38,6 +38,9 @@ case "${target}" in
 	AC_CONFIG_SUBDIRS(aarch64)
 	config_testsuite=true
 	;;
+  arc*-*-*)
+	AC_CONFIG_SUBDIRS(arc)
+	;;
   epiphany-*-*)
 	AC_CONFIG_SUBDIRS(epiphany)
 	config_testsuite=true
@@ -74,6 +77,9 @@ case "${target}" in
 	;;
   mips*-*-*)
 	AC_CONFIG_SUBDIRS([mips])
+	;;
+  riscv*-*-*)
+	AC_CONFIG_SUBDIRS([riscv])
 	;;
   powerpc-*-*|powerpcle-*-*)
 	AC_CONFIG_SUBDIRS([rs6000])
@@ -142,8 +148,9 @@ case "${target}" in
   m32c-*-*)
 	AC_CONFIG_SUBDIRS([m32c])
 	;;
-  msp430*-*-elf)
+  msp430-*-elf*)
 	AC_CONFIG_SUBDIRS([msp430])
+	config_libnosys=false
 	;;
   rl78*-*-elf)
 	AC_CONFIG_SUBDIRS([rl78])
@@ -168,6 +175,12 @@ case "${target}" in
 	;;
   or1k-*-* | or1knd-*-* )
 	AC_CONFIG_SUBDIRS([or1k])
+	;;
+  pru-*-*)
+	AC_CONFIG_SUBDIRS([pru])
+	;;
+  nios2-*-*)
+	AC_CONFIG_SUBDIRS([nios2])
 	;;
 esac
 
@@ -216,6 +229,7 @@ AC_CONFIG_FILES([Makefile],
 fi],
 srcdir=${srcdir}
 target=${target}
+host=${host}
 with_multisubdir=${with_multisubdir}
 ac_configure_args="--enable-multilib ${ac_configure_args}"
 CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}

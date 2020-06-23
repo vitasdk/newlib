@@ -20,20 +20,10 @@ INDEX
 INDEX
 	modff
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double modf(double <[val]>, double *<[ipart]>);
         float modff(float <[val]>, float *<[ipart]>);
-
-TRAD_SYNOPSIS
-	#include <math.h>
-	double modf(<[val]>, <[ipart]>)
-        double <[val]>;
-        double *<[ipart]>;
-
-	float modff(<[val]>, <[ipart]>)
-	float <[val]>;
-        float *<[ipart]>;
 
 DESCRIPTION
 	<<modf>> splits the double <[val]> apart into an integer part
@@ -74,12 +64,6 @@ QUICKREF
 #ifndef _DOUBLE_IS_32BITS
 
 #ifdef __STDC__
-static const double one = 1.0;
-#else
-static double one = 1.0;
-#endif
-
-#ifdef __STDC__
 	double modf(double x, double *iptr)
 #else
 	double modf(x, iptr)
@@ -97,10 +81,8 @@ static double one = 1.0;
 	    } else {
 		i = (0x000fffff)>>j0;
 		if(((i0&i)|i1)==0) {		/* x is integral */
-		    __uint32_t high;
 		    *iptr = x;
-		    GET_HIGH_WORD(high,x);
-		    INSERT_WORDS(x,high&0x80000000,0);	/* return +-0 */
+		    INSERT_WORDS(x,i0&0x80000000,0);	/* return +-0 */
 		    return x;
 		} else {
 		    INSERT_WORDS(*iptr,i0&(~i),0);
@@ -108,18 +90,15 @@ static double one = 1.0;
 		}
 	    }
 	} else if (j0>51) {		/* no fraction part */
-	    __uint32_t high;
-	    *iptr = x*one;
-	    GET_HIGH_WORD(high,x);
-	    INSERT_WORDS(x,high&0x80000000,0);	/* return +-0 */
+	    *iptr = x;
+	    if (__fpclassifyd(x) == FP_NAN) return *iptr = x+x; /* x is NaN, return NaN */
+	    INSERT_WORDS(x,i0&0x80000000,0);	/* return +-0 */
 	    return x;
 	} else {			/* fraction part in low x */
 	    i = ((__uint32_t)(0xffffffff))>>(j0-20);
 	    if((i1&i)==0) { 		/* x is integral */
-	        __uint32_t high;
 		*iptr = x;
-		GET_HIGH_WORD(high,x);
-		INSERT_WORDS(x,high&0x80000000,0);	/* return +-0 */
+		INSERT_WORDS(x,i0&0x80000000,0);	/* return +-0 */
 		return x;
 	    } else {
 	        INSERT_WORDS(*iptr,i0,i1&(~i));

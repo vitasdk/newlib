@@ -72,7 +72,8 @@ LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_LIBADD =
-am__objects_1 = lib_a-bsearch.$(OBJEXT) lib_a-qsort.$(OBJEXT)
+am__objects_1 = lib_a-bsearch.$(OBJEXT) lib_a-ndbm.$(OBJEXT) \
+	lib_a-qsort.$(OBJEXT)
 @ELIX_LEVEL_1_FALSE@am__objects_2 = lib_a-hash.$(OBJEXT) \
 @ELIX_LEVEL_1_FALSE@	lib_a-hash_bigkey.$(OBJEXT) \
 @ELIX_LEVEL_1_FALSE@	lib_a-hash_buf.$(OBJEXT) \
@@ -93,7 +94,7 @@ am__objects_1 = lib_a-bsearch.$(OBJEXT) lib_a-qsort.$(OBJEXT)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libsearch_la_LIBADD =
-am__objects_4 = bsearch.lo qsort.lo
+am__objects_4 = bsearch.lo ndbm.lo qsort.lo
 @ELIX_LEVEL_1_FALSE@am__objects_5 = hash.lo hash_bigkey.lo hash_buf.lo \
 @ELIX_LEVEL_1_FALSE@	hash_func.lo hash_log2.lo hash_page.lo \
 @ELIX_LEVEL_1_FALSE@	hcreate.lo hcreate_r.lo tdelete.lo \
@@ -279,6 +280,7 @@ GENERAL_SOURCES = \
 	db_local.h \
 	extern.h \
 	hash.h \
+	ndbm.c \
 	page.h \
 	qsort.c
 
@@ -313,19 +315,26 @@ libsearch_la_LDFLAGS = -Xcompiler -nostdlib
 @USE_LIBTOOL_FALSE@noinst_LIBRARIES = lib.a
 @USE_LIBTOOL_FALSE@lib_a_SOURCES = $(GENERAL_SOURCES) $(ELIX_2_SOURCES) $(ELIX_4_SOURCES)
 @USE_LIBTOOL_FALSE@lib_a_CFLAGS = $(AM_CFLAGS)
-SUFFIXES = .def
 CHEWOUT_FILES = \
 	bsearch.def \
 	qsort.def \
 	qsort_r.def
 
-CHEW = ../../doc/makedoc -f $(srcdir)/../../doc/doc.str
-TARGETDOC = ../tmp.texi
-CLEANFILES = $(CHEWOUT_FILES) *.ref
+CHAPTERS = 
+
+#
+# documentation rules
+#
+SUFFIXES = .def .xml
+CHEW = ${top_builddir}/../doc/makedoc -f $(top_srcdir)/../doc/doc.str
+DOCBOOK_CHEW = ${top_srcdir}/../doc/makedocbook.py
+DOCBOOK_OUT_FILES = $(CHEWOUT_FILES:.def=.xml)
+DOCBOOK_CHAPTERS = $(CHAPTERS:.tex=.xml)
+CLEANFILES = $(CHEWOUT_FILES) $(DOCBOOK_OUT_FILES)
 all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .def .c .lo .o .obj
+.SUFFIXES: .def .xml .c .lo .o .obj
 $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am $(srcdir)/../../Makefile.shared $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -396,6 +405,12 @@ lib_a-bsearch.o: bsearch.c
 
 lib_a-bsearch.obj: bsearch.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-bsearch.obj `if test -f 'bsearch.c'; then $(CYGPATH_W) 'bsearch.c'; else $(CYGPATH_W) '$(srcdir)/bsearch.c'; fi`
+
+lib_a-ndbm.o: ndbm.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-ndbm.o `test -f 'ndbm.c' || echo '$(srcdir)/'`ndbm.c
+
+lib_a-ndbm.obj: ndbm.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-ndbm.obj `if test -f 'ndbm.c'; then $(CYGPATH_W) 'ndbm.c'; else $(CYGPATH_W) '$(srcdir)/ndbm.c'; fi`
 
 lib_a-qsort.o: qsort.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-qsort.o `test -f 'qsort.c' || echo '$(srcdir)/'`qsort.c
@@ -670,17 +685,33 @@ uninstall-am:
 	mostlyclean-libtool pdf pdf-am ps ps-am tags uninstall \
 	uninstall-am
 
-
-.c.def:
-	$(CHEW) < $< > $*.def 2> $*.ref
-	touch stmp-def
-
-doc: $(CHEWOUT_FILES)
 objectlist.awk.in: $(noinst_LTLIBRARIES)
 	-rm -f objectlist.awk.in
 	for i in `ls *.lo` ; \
 	do \
 	  echo $$i `pwd`/$$i >> objectlist.awk.in ; \
+	done
+
+.c.def:
+	$(CHEW) < $< > $*.def || ( rm $*.def && false )
+	@touch stmp-def
+
+TARGETDOC ?= ../tmp.texi
+
+doc: $(CHEWOUT_FILES)
+	for chapter in $(CHAPTERS) ; \
+	do \
+	  cat $(srcdir)/$$chapter >> $(TARGETDOC) ; \
+	done
+
+.c.xml:
+	$(DOCBOOK_CHEW) < $< > $*.xml || ( rm $*.xml && false )
+	@touch stmp-xml
+
+docbook: $(DOCBOOK_OUT_FILES)
+	for chapter in $(DOCBOOK_CHAPTERS) ; \
+	do \
+	  ${top_srcdir}/../doc/chapter-texi2docbook.py <$(srcdir)/$${chapter%.xml}.tex >../$$chapter ; \
 	done
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.

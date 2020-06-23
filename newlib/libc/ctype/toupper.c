@@ -1,21 +1,23 @@
 /*
 FUNCTION
-	<<toupper>>---translate characters to uppercase
+	<<toupper>>, <<toupper_l>>---translate characters to uppercase
 
 INDEX
 	toupper
+
+INDEX
+	toupper_l
+
 INDEX
 	_toupper
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <ctype.h>
 	int toupper(int <[c]>);
 	int _toupper(int <[c]>);
 
-TRAD_SYNOPSIS
 	#include <ctype.h>
-	int toupper(<[c]>);
-	int _toupper(<[c]>);
+	int toupper_l(int <[c]>, locale_t <[locale]>);
 
 
 DESCRIPTION
@@ -23,15 +25,19 @@ DESCRIPTION
 leaving all other characters unchanged.  It is only defined when
 <[c]> is an integer in the range <<EOF>> to <<255>>.
 
+<<toupper_l>> is like <<toupper>> but performs the function based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 You can use a compiled subroutine instead of the macro definition by
-undefining this macro using `<<#undef toupper>>'.
+undefining this macro using `<<#undef toupper>>' or `<<#undef toupper_l>>'.
 
 <<_toupper>> performs the same conversion as <<toupper>>, but should
 only be used when <[c]> is known to be a lowercase character (<<a>>--<<z>>).
 
 RETURNS
-<<toupper>> returns the uppercase equivalent of <[c]> when it is a
-character between <<a>> and <<z>>, and <[c]> otherwise.
+<<toupper>>, <<toupper_l>> return the uppercase equivalent of <[c]> when
+<[c]> is a lowercase character, and <[c]> otherwise.
 
 <<_toupper>> returns the uppercase equivalent of <[c]> when it is a
 character between <<a>> and <<z>>.  If <[c]> is not one of these
@@ -39,6 +45,7 @@ characters, the behaviour of <<_toupper>> is undefined.
 
 PORTABILITY
 <<toupper>> is ANSI C.  <<_toupper>> is not recommended for portable programs.
+<<toupper_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -55,7 +62,7 @@ No supporting OS subroutines are required.
 
 #undef toupper
 int
-_DEFUN(toupper,(c),int c)
+toupper (int c)
 {
 #if defined (_MB_EXTENDED_CHARSETS_ISO) || defined (_MB_EXTENDED_CHARSETS_WINDOWS)
   if ((unsigned char) c <= 0x7f)

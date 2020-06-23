@@ -1,5 +1,6 @@
 /* Copyright (c) 2002 Red Hat Incorporated.
    All rights reserved.
+   Modified (m) 2017 Thomas Wolff to refer to generated Unicode data tables.
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions are met:
@@ -29,29 +30,35 @@
 
 /*
 FUNCTION
-	<<iswgraph>>---graphic wide character test
+	<<iswgraph>>, <<iswgraph_l>>---graphic wide character test
 
 INDEX
 	iswgraph
 
-ANSI_SYNOPSIS
+INDEX
+	iswgraph_l
+
+SYNOPSIS
 	#include <wctype.h>
 	int iswgraph(wint_t <[c]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	int iswgraph(<[c]>)
-	wint_t <[c]>;
+	int iswgraph_l(wint_t <[c]>, locale_t <[locale]>);
 
 DESCRIPTION
 <<iswgraph>> is a function which classifies wide-character values that
 are graphic.
 
+<<iswgraph_l>> is like <<iswgraph>> but performs the check based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<iswgraph>> returns non-zero if <[c]> is a graphic wide character.
+<<iswgraph>>, <<iswgraph_l>> return non-zero if <[c]> is a graphic wide character.
 
 PORTABILITY
 <<iswgraph>> is C99.
+<<iswgraph_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -59,8 +66,7 @@ No supporting OS subroutines are required.
 #include <wctype.h>
 
 int
-_DEFUN(iswgraph,(c),wint_t c)
+iswgraph (wint_t c)
 {
-  return (iswprint (c) && !iswspace (c));
+  return iswgraph_l (c, 0);
 }
-

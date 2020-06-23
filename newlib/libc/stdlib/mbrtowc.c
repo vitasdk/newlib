@@ -8,11 +8,10 @@
 #include "local.h"
 
 size_t
-_DEFUN (_mbrtowc_r, (ptr, pwc, s, n, ps),
-	struct _reent *ptr _AND
-	wchar_t *pwc _AND
-	const char *s _AND
-	size_t n _AND
+_mbrtowc_r (struct _reent *ptr,
+	wchar_t *pwc,
+	const char *s,
+	size_t n,
 	mbstate_t *ps)
 {
   int retval = 0;
@@ -26,9 +25,9 @@ _DEFUN (_mbrtowc_r, (ptr, pwc, s, n, ps),
 #endif
 
   if (s == NULL)
-    retval = __mbtowc (ptr, NULL, "", 1, __locale_charset (), ps);
+    retval = __MBTOWC (ptr, NULL, "", 1, ps);
   else
-    retval = __mbtowc (ptr, pwc, s, n, __locale_charset (), ps);
+    retval = __MBTOWC (ptr, pwc, s, n, ps);
 
   if (retval == -1)
     {
@@ -42,10 +41,9 @@ _DEFUN (_mbrtowc_r, (ptr, pwc, s, n, ps),
 
 #ifndef _REENT_ONLY
 size_t
-_DEFUN (mbrtowc, (pwc, s, n, ps),
-	wchar_t *__restrict pwc _AND
-	const char *__restrict s _AND
-	size_t n _AND
+mbrtowc (wchar_t *__restrict pwc,
+	const char *__restrict s,
+	size_t n,
 	mbstate_t *__restrict ps)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
@@ -63,9 +61,9 @@ _DEFUN (mbrtowc, (pwc, s, n, ps),
 #endif
 
   if (s == NULL)
-    retval = __mbtowc (reent, NULL, "", 1, __locale_charset (), ps);
+    retval = __MBTOWC (reent, NULL, "", 1, ps);
   else
-    retval = __mbtowc (reent, pwc, s, n, __locale_charset (), ps);
+    retval = __MBTOWC (reent, pwc, s, n, ps);
 
   if (retval == -1)
     {

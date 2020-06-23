@@ -1,8 +1,5 @@
 /* child_info.h: shared child info for cygwin
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2011, 2012,
-   2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -24,7 +21,8 @@ enum child_status
 {
   _CI_STRACED	 = 0x01,
   _CI_ISCYGWIN	 = 0x02,
-  _CI_SAW_CTRL_C = 0x04
+  _CI_SAW_CTRL_C = 0x04,
+  _CI_SILENTFAIL = 0x08
 };
 
 #define OPROC_MAGIC_MASK 0xff00ff00
@@ -39,7 +37,7 @@ enum child_status
 #define EXEC_MAGIC_SIZE sizeof(child_info)
 
 /* Change this value if you get a message indicating that it is out-of-sync. */
-#define CURR_CHILD_INFO_MAGIC 0x4a91a908U
+#define CURR_CHILD_INFO_MAGIC 0xf4531879U
 
 #define NPROCS	256
 
@@ -56,7 +54,7 @@ struct cchildren
 class child_info
 {
 public:
-  DWORD msv_count;	// zeroed on < W2K3, set to pseudo-count on Vista
+  DWORD msv_count;	// set to pseudo-count on Vista WOW64, zeroed otherwise
   DWORD cb;		// size of this record
   DWORD intro;		// improbable string
   DWORD magic;		// magic number unique to child_info
@@ -85,6 +83,7 @@ public:
   bool isstraced () const {return !!(flag & _CI_STRACED);}
   bool iscygwin () const {return !!(flag & _CI_ISCYGWIN);}
   bool saw_ctrl_c () const {return !!(flag & _CI_SAW_CTRL_C);}
+  bool silentfail () const {return !!(flag & _CI_SILENTFAIL);}
   void prefork (bool = false);
   void cleanup ();
   void postfork (pinfo& child)
@@ -93,6 +92,13 @@ public:
     wr_proc_pipe = NULL;
     child.set_rd_proc_pipe (rd_proc_pipe);
     rd_proc_pipe = NULL;
+  }
+  void silentfail (bool f)
+  {
+    if (f)
+      flag |= _CI_SILENTFAIL;
+    else
+      flag &= ~_CI_SILENTFAIL;
   }
 };
 
@@ -103,9 +109,10 @@ class child_info_fork: public child_info
 public:
   HANDLE forker_finished;// for synchronization with child
   jmp_buf jmp;		// where child will jump to
-  void *stackaddr;	// address of parent stack
-  void *stacktop;	// location of top of parent stack
-  void *stackbottom;	// location of bottom of parent stack
+  void *stackaddr;	// DeallocationStack or user-provided allocation address
+			// of parent thread
+  void *stacklimit;	// StackLimit of parent thread
+  void *stackbase;	// StackBase of parent thread
   size_t guardsize;     // size of POSIX guard region or (size_t) -1 if
 			// user stack
   char filler[4];
@@ -137,6 +144,7 @@ class child_info_spawn: public child_info
 {
   HANDLE hExeced;
   HANDLE ev;
+  pid_t cygpid;
 public:
   cygheap_exec_info *moreinfo;
   int __stdin;

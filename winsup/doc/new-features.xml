@@ -4,9 +4,616 @@
 
 <sect1 id="ov-new"><title>What's new and what changed in Cygwin</title>
 
+<sect2 id="ov-new3.1"><title>What's new and what changed in 3.1</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+FIFOs can now be opened multiple times for writing.
+</para></listitem>
+
+<listitem><para>
+Add 24 bit color support using xterm compatibility mode in Windows 10
+1703 or later.  Add fake 24 bit color support for legacy console, which
+uses the nearest color from 16 system colors.
+</para></listitem>
+
+<listitem><para>
+Support pseudo console in PTY. Pseudo console is a new feature
+in Windows 10 1809, which provides console APIs on virtual
+terminal. With this patch, native console applications can work
+in PTYs such as mintty, ssh, gnu screen or tmux.
+</para></listitem>
+
+<listitem><para>
+Eliminate a header file name collision with &lt;X11/XLocale.h&gt; on
+case insensitive filesystems by reverting &lt;xlocale.h&gt; back to
+&lt;sys/_locale.h&gt;.
+</para></listitem>
+
+<listitem><para>
+If a SA_SIGINFO signal handler changes the ucontext_t pointed to by the
+third parameter, follow it after returning from the handler.
+</para></listitem>
+
+<listitem><para>
+New APIs: sched_getaffinity, sched_setaffinity, pthread_getaffinity_np,
+pthread_setaffinity_np, plus CPU_SET macros.
+</para></listitem>
+
+<listitem><para>
+New APIs: dbm_clearerr, dbm_close, dbm_delete, dbm_dirfno, dbm_error,
+dbm_fetch, dbm_firstkey, dbm_nextkey, dbm_open, dbm_store.
+</para></listitem>
+
+<listitem><para>
+Allow times(2) to have a NULL argument, as on Linux.
+</para></listitem>
+
+<listitem><para>
+Improve /proc/cpuinfo output and align more closely with Linux.
+</para></listitem>
+
+<listitem><para>
+Allow symlinks to be opened with O_PATH | O_NOFOLLOW.
+</para></listitem>
+
+<listitem><para>
+Allow the pathname argument to readlinkat(2) to be an empty string,
+provided the dirfd argument refers to a symlink opened with O_PATH |
+O_NOFOLLOW.  The readlinkat call then operates on that symlink.
+</para></listitem>
+
+<listitem><para>
+Support the Linux-specific AT_EMPTY_PATH flag for fchownat(2) and
+fstatat(2).
+</para></listitem>
+
+<listitem><para>
+Allow AF_LOCAL sockets to be opened with O_PATH.  If that flag is not
+set, or if an attempt is made to open a different type of socket, the
+errno is now EOPNOTSUPP instead of ENXIO.
+</para></listitem>
+
+<listitem><para>
+The new locale modifier @cjksingle allows enforcing of single-width
+character property for usually double-widthed characters.  This will
+be supported by upcoming mintty releases.  For the reasoning, see
+https://gitlab.freedesktop.org/terminal-wg/specifications/issues/9.
+</para></listitem>
+
+<listitem><para>
+Support WSL symlinks.  Create those by default now.
+</para></listitem>
+
+<listitem><para>
+FIFOs can now be opened multiple times for reading.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new3.0"><title>What's new and what changed in 3.0</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Updated era and message locale data, in particular add era data for
+the new Tennō.
+</para></listitem>
+
+<listitem><para>
+Support for CLOCK_REALTIME_COARSE, CLOCK_MONOTONIC_COARSE,
+CLOCK_MONOTONIC_RAW, CLOCK_BOOTTIME, CLOCK_REALTIME_ALARM,
+CLOCK_BOOTTIME_ALARM clocks.
+</para></listitem>
+
+<listitem><para>
+Support for case sensitive directories via chattr(1).  This feature requires
+Windows 10 1803 or later and WSL installed.
+</para></listitem>
+
+<listitem><para>
+New file ioctls's FS_IOC_GETFLAGS and FS_IOC_SETFLAGS.  The actual inode
+flags are Cygwin-specific.  This allows to set or reset DOS attributes,
+file sparseness, FS level encryption and compression, as well as
+directory case sensitivity programatically.
+</para></listitem>
+
+<listitem><para>
+New tools chattr(1) and lsattr(1) to utilize setting and viewing the
+aforementioned new ioctl's on the command line.
+</para></listitem>
+
+<listitem><para>
+Support for exFAT.
+</para></listitem>
+
+<listitem><para>
+Support Linux-specific open(2) flag O_PATH.
+</para></listitem>
+
+<listitem><para>
+Support Linux-specific linkat(2) flag AT_EMPTY_PATH.
+</para></listitem>
+
+<listitem><para>
+Support overrun counter for posix timers (via timer_getoverrun() or
+siginfo_t::si_overrun).
+</para></listitem>
+
+<listitem><para>
+New APIs: secure_getenv, signalfd, timerfd_create, timerfd_gettime,
+timerfd_settime, timer_getoverrun.
+</para></listitem>
+
+<listitem><para>
+clock_nanosleep, pthread_condattr_setclock and timer_create now support
+all clocks, except CLOCK_PROCESS_CPUTIME_ID and CLOCK_THREAD_CPUTIME_ID.
+</para></listitem>
+
+<listitem><para>
+clock_setres is a no-op now.
+</para></listitem>
+
+<listitem><para>
+Use the new POSIX unlink semantics on NTFS starting with Windows 10
+1709.  Deleting an in-use file now actually removes the file, rather
+than moving it to the recycler bin.
+</para></listitem>
+
+<listitem><para>
+Use the new POSIX rename semantics on NTFS starting with Windows 10
+1809.  Renaming a file to another in-use file now actually removes the
+other file, rather than moving it to the recycler bin.
+</para></listitem>
+
+<listitem><para>
+open(..., O_TMPFILE) now moves the file to the trash bin immediately,
+to free the parent directory.
+</para></listitem>
+
+<listitem><para>
+Wctype functions updated to Unicode 11.0.
+</para></listitem>
+
+<listitem><para>
+Remove matherr, and SVID and X/Open math library configurations.
+Default math library configuration is now IEEE.
+</para></listitem>
+
+<listitem><para>
+Improve uname(2) for newly built applications.
+</para></listitem>
+
+<listitem><para>
+Kerberos/MSV1_0 S4U authentication replaces two old methods:
+Creating a token from scratch and Cygwin LSA authentication package.
+</para></listitem>
+
+<listitem><para>
+Cygwin PIDs have been decoupled from Windows PID.  Cygwin PIDs are now
+incrementally dealt in the range from 2 up to 65535, POSIX-like.
+Native Windows processes not started by Cygwin processes are mapped
+into the range beyond 65535.
+</para></listitem>
+
+<listitem><para>
+fork(2) now is able to recover from when an in-use executable/dll is
+removed or replaced during process runtime.  This feature is disabled by
+default and limited to exes/dlls on the same NTFS partition as the Cygwin
+installation.  For more information and how to enable, please refer to
+<xref linkend="ov-hi-process"></xref>.
+</para></listitem>
+
+<listitem><para>
+Improve /proc/&lt;PID&gt;/cmdline and /proc/&lt;PID&gt;/stat handling to allow
+all processes access to basic process information of foreign processes.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.11"><title>What's new and what changed in 2.11</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+SO_RCVTIMEO and SO_SNDTIMEO socket options are now honored.
+</para></listitem>
+
+<listitem><para>
+/proc/cpuinfo now reports L3 cache size on Intel CPUs.
+</para></listitem>
+
+<listitem><para>
+New APIs: clearenv, pthread_tryjoin_np, pthread_timedjoin_np, sched_getcpu.
+</para></listitem>
+
+<listitem><para>
+New APIs for POSIX Asynchronous I/O: aio_cancel, aio_error, aio_fsync,
+aio_read, aio_return, aio_suspend, aio_write, lio_listio.
+New Header: &lt;aio.h&gt;.
+</para></listitem>
+
+<listitem><para>
+Drop denormal-operand exception from FE_ALL_EXCEPT, as on Linux.
+</para></listitem>
+
+<listitem><para>
+Rename the --file option of setfacl(1) to --set-file, as on Linux.
+</para></listitem>
+
+<listitem><para>
+Support Unicode 10.
+</para></listitem>
+
+<listitem><para>
+Following glibc, `union wait' has now been removed.  Applications
+using union wait and these macros will have to migrate to the
+POSIX-specified int status type.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.10"><title>What's new and what changed in 2.10</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+New open(2) flags O_TMPFILE and O_NOATIME.
+</para></listitem>
+
+<listitem><para>
+scanf/wscanf now handle the POSIX %m modifier.
+</para></listitem>
+
+<listitem><para>
+scanf now handles the %l[ conversion.
+</para></listitem>
+
+<listitem><para>
+Improved hostprogs compatibility for cross-compiling the Linux kernel.
+New headers: &lt;asm/bitsperlong.h&gt;, &lt;asm/posix_types.h&gt;.
+</para></listitem>
+
+<listitem><para>
+Built-in implementation of Stack Smashing Protection compiler feature.
+New APIs: __stack_chk_fail, __stack_chk_guard.
+</para></listitem>
+
+<listitem><para>
+Built-in implementation of _FORTIFY_SOURCE guards for functions in
+&lt;stdio.h&gt;, &lt;stdlib.h&gt;, &lt;string.h&gt;, &lt;strings.h&gt;,
+&lt;unistd.h&gt;, &lt;wchar.h&gt;, &lt;sys/poll.h&gt;, and &lt;sys/socket.h&gt;.
+New APIs:  __chk_fail, __gets_chk, __memcpy_chk, __memmove_chk, __mempcpy_chk,
+__memset_chk, __snprintf_chk, __sprintf_chk, __stpcpy_chk, __stpncpy_chk,
+__strcat_chk, __strcpy_chk, __strncat_chk, __strncpy_chk, __vsnprintf_chk,
+__vsprintf_chk.
+</para></listitem>
+
+<listitem><para>
+Built-in implementation of POSIX.1-2001 message catalog support.
+New APIs: catclose, catgets, catopen.  New tool: gencat.
+</para></listitem>
+
+<listitem><para>
+New APIs: sigtimedwait, wmempcpy.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.9"><title>What's new and what changed in 2.9</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+New APIs: explicit_bzero, strnstr.
+</para></listitem>
+
+<listitem><para>
+New APIs: pthread_mutex_timedwait, pthread_rwlock_timedrdlock,
+pthread_rwlock_timedwrlock.
+</para></listitem>
+
+<listitem><para>
+New API: renameat2.
+</para></listitem>
+
+<listitem><para>
+Improved implementation of &lt;elf.h&gt;.
+</para></listitem>
+
+<listitem><para>
+strptime(3) supports %s (seconds since Epoch) now, analogue to strftime.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.8"><title>What's new and what changed in 2.8</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+New API: timingsafe_bcmp, timingsafe_memcmp
+</para></listitem>
+
+<listitem><para>
+New API: dladdr
+</para></listitem>
+
+<listitem><para>
+New API: getloadavg
+</para></listitem>
+
+<listitem><para>
+Cygcheck and strace now always generate output with Unix LF line endings,
+rather than with DOS/Windows CR LF line endings.
+</para></listitem>
+
+<listitem><para>
+Fork now preserves the load order of unrelated dlopen'd modules.
+</para></listitem>
+
+<listitem><para>
+Pthread_cond_wait now acts like Linux and BSD: Resume waiting for the
+condition variable as if it was not interrupted, rather than returning 0.
+</para></listitem>
+
+<listitem><para>
+The internal &lt;sys/_locale.h&gt; header was renamed to &lt;xlocale.h&gt; for
+source compatibility with other systems.
+</para></listitem>
+
+<listitem><para>
+Try harder supporting Netapp drives.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.7"><title>What's new and what changed in 2.7</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Support for /proc/&lt;PID&gt;/environ.
+</para></listitem>
+
+<listitem><para>
+- New API: getentropy, getrandom.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.6"><title>What's new and what changed in 2.6</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Support for POSIX-1.2008 locale objects and per-thread locales.
+</para>
+
+<para>
+New API per POSIX-1.2008: newlocale, freelocale, duplocale, uselocale,
+nl_langinfo_l, isalnum_l, isalpha_l, isblank_l, iscntrl_l, isdigit_l,
+isgraph_l, islower_l, isprint_l, ispunct_l, isspace_l, isupper_l, iswalnum_l,
+iswalpha_l, iswblank_l, iswcntrl_l, iswctype_l, iswdigit_l, iswgraph_l,
+iswlower_l, iswprint_l, iswpunct_l, iswspace_l, iswupper_l, iswxdigit_l,
+isxdigit_l, tolower_l, toupper_l, towctrans_l, towlower_l, towupper_l,
+wctrans_l, wctype_l, strcasecmp_l, strcoll_l, strerror_l, strfmon_l,
+strftime_l, strncasecmp_l, strxfrm_l, wcscasecmp_l, wcscoll_l, wcstrncasecmp_l,
+wcstrxfrm_l.
+</para>
+
+<para>
+New API, GNU extensions: isascii_l, toascii_l, strptime_l, strtod_l, strtof_l,
+strtol_l, strtold_l, strtoll_l, strtoul_l, strtoull_l, wcsftime_l, wcstod_l,
+wcstof_l, wcstol_l, wcstold_l, wcstoll_l, wcstoul_l, wcstoull_l.
+</para></listitem>
+
+<listitem><para>
+locale(1) now supports a -i/--input option to fetch the current input locale
+(this is basically equivalent to the current keyboard layout setting).
+</para></listitem>
+
+<listitem><para>
+Drop support for Windows XP and Windows Server 2003/2003 R2.
+</para></listitem>
+
+<listitem><para>
+Drop support for very old SUNWNFS filesystem.
+</para></listitem>
+
+<listitem><para>
+Raise number of supported partitions per disk (for raw access) to 63.
+</para></listitem>
+
+<listitem><para>
+Further header file improvements in terms of feature test macros.
+</para></listitem>
+
+<listitem><para>
+Add a workaround for filesystems not supporting the FileAllInformation
+info class.
+</para></listitem>
+
+<listitem><para>
+Support AzureAD accounts.
+</para></listitem>
+
+<listitem><para>
+"nobody" account support for WinFSP.
+</para></listitem>
+
+<listitem><para>
+New API: pthread_getname_np, pthread_setname_np.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.5"><title>What's new and what changed in 2.5</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Full set of POSIX.1e ACL API functions now implemented.
+New APIs: acl_add_perm, acl_calc_mask, acl_clear_perms, acl_copy_entry,
+acl_copy_ext, acl_copy_int, acl_create_entry, acl_delete_def_file,
+acl_delete_entry, acl_delete_perm, acl_dup, acl_free, acl_from_text,
+acl_get_entry, acl_get_fd, acl_get_file, acl_get_permset, acl_get_qualifier,
+acl_get_tag_type, acl_init, acl_set_fd, acl_set_file, acl_set_permset,
+acl_set_qualifier, acl_set_tag_type, acl_size, acl_to_text, acl_valid.
+</para></listitem>
+
+<listitem><para>
+Most libacl extensions now implemented, too:
+New APIs: acl_check, acl_cmp, acl_entries, acl_equiv_mode, acl_error,
+acl_extended_fd, acl_extended_file, acl_extended_file_nofollow,
+acl_from_mode, acl_get_perm, acl_to_any_text.
+</para></listitem>
+
+<listitem><para>
+Including &lt;sys/acl.h&gt; now *only* includes the POSIX ACL API.  To include
+the old Solaris API, include &lt;cygwin/acl.h&gt;.
+</para></listitem>
+
+<listitem><para>
+First implementation of pthread_barrier/pthread_barrierattr functions.
+New APIs: pthread_barrierattr_init, pthread_barrierattr_setpshared,
+pthread_barrierattr_getpshared, pthread_barrierattr_destroy,
+pthread_barrier_init, pthread_barrier_destroy, pthread_barrier_wait.
+</para></listitem>
+
+<listitem><para>
+Enabled console reports requested by escape sequences: Requesting primary
+and secondary device attributes, requesting cursor position report;
+see https://cygwin.com/ml/cygwin-patches/2012-q3/msg00019.html
+</para></listitem>
+
+<listitem><para>
+New APIs: clog10, clog10f, nexttoward, nexttowardf, nexttowardl.
+</para></listitem>
+
+<listitem><para>
+Add missing long double functions.  New APIs:
+acoshl, acosl, asinhl, asinl, atan2l, atanhl, atanl, cacoshl, cacosl, cargl,
+casinhl, casinl, catanhl, catanl, ccoshl, ccosl, ceill, cexpl, clog10l,
+clogl, conjl, copysignl, coshl, cosl, cpowl, cprojl, csinhl, csinl, csqrtl,
+ctanhl, ctanl, dreml, erfcl, erfl, exp10l, exp2l, expl, expm1l, fabsl,
+fdiml, floorl, fmal, fmaxl, fminl, fmodl, frexpl, ilogbl, isinfl, isnanl,
+ldexpl, lgammal, lgammal_r, llroundl, log10l, log1pl, log2l, logbl, logl,
+lroundl, modfl, nearbyintl, nextafterl, pow10l, powl, remainderl, remquol,
+roundl, scalbl, scalblnl, scalbnl, sincosl, sinhl, sinl, tanhl, tanl,
+tgammal, truncl.
+</para></listitem>
+
+<listitem><para>
+In calls to chmod treat ACLs with extra ACEs *only* for Admins and
+SYSTEM like a trivial ACL.
+</para></listitem>
+
+<listitem><para>
+Bump POSIX option macros to POSIX.1-2008.
+</para></listitem>
+
+<listitem><para>
+Profiling data, specifically pc sampling, now covers all threads of a
+program and not just the main thread.  Environment variable GMON_OUT_PREFIX
+enables multiple gmon.out files to preserve profiling data after fork or
+from multiple program runs.
+</para></listitem>
+
+<listitem><para>
+Feature test macros, which control which symbols are exposed in the standard
+headers, have been completely overhauled for compatibility with glibc.
+</para></listitem>
+
+<listitem><para>
+The isinf, isinff, and isinfl functions are signed, returning -1 for
+negative infinity for compatibility with glibc.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new2.4"><title>What's new and what changed in 2.4</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+New, unified implementation of POSIX permission and ACL handling.  The
+new ACLs now store the POSIX ACL MASK/CLASS_OBJ permission mask, and
+they allow to inherit the S_ISGID bit.  ACL inheritance now really
+works as desired, in a limited, but theoretically equivalent fashion
+even for non-Cygwin processes.</para>
+
+<para>To accommodate standard Windows ACLs, the POSIX permissions of
+the owner and all other users in the ACL are computed using the Windows
+AuthZ API.  This may slow down the computation of POSIX permissions
+noticably in some circumstances, but is generally more correct.
+The new code also ignores SYSTEM and Administrators group permissions
+when computing the MASK/CLASS_OBJ permission mask on old ACLs, and it
+doesn't deny access to SYSTEM and Administrators group based on the
+value of MASK/CLASS_OBJ when creating the new ACLs.</para>
+
+<para>The new code now handles the S_ISGID bit on directories as on Linux:
+Setting S_ISGID on a directory causes new files and subdirs created
+within to inherit its group, rather than the primary group of the user
+who created the file.  This only works for files and directories
+created by Cygwin processes.
+</para></listitem>
+
+<listitem><para>
+cygpath has a new -U option, which creates cygdrive paths using the
+unambiguous /proc/cygdrive prefix.
+</para></listitem>
+
+<listitem><para>
+New API: rpmatch.
+</para></listitem>
+
+<listitem><para>
+Align setfacl(1) usage a bit closer to the usage on Linux.  Rename -d option
+to -x, --substitute to --set.  Add --no-mask and --mask options.  Allow to
+use the -b and -k option combined to allow reducing an ACL to only reflect
+standard POSIX permissions.
+</para></listitem>
+
+<listitem><para>
+Fix (numeric and monetary) decimal point and thousands separator in
+fa_IR and ps_AF locales to be aligned with Linux.
+</para></listitem>
+
+<listitem><para>
+utmpname/utmpxname are now defined as int functions as on Linux.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
 <sect2 id="ov-new2.3"><title>What's new and what changed in 2.3</title>
 
 <itemizedlist mark="bullet">
+
+<listitem><para>
+strftime(3) supports %s (seconds since Epoch) now.
+</para></listitem>
 
 <listitem><para>
 posix_madvise(POSIX_MADV_WILLNEED) now utilizes OS functionality available
@@ -25,6 +632,14 @@ sysconf() now supports returning CPU cache information:
   _SC_LEVEL3_CACHE_SIZE, _SC_LEVEL3_CACHE_ASSOC, _SC_LEVEL3_CACHE_LINESIZE,
   _SC_LEVEL4_CACHE_SIZE, _SC_LEVEL4_CACHE_ASSOC, _SC_LEVEL4_CACHE_LINESIZE
   </screen>
+</para></listitem>
+
+<listitem><para>
+New API: aligned_alloc, at_quick_exit, quick_exit.
+</para></listitem>
+
+<listitem><para>
+Add support for Parallels Desktop FS (prlfs).
 </para></listitem>
 
 </itemizedlist>

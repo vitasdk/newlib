@@ -1,8 +1,5 @@
 /* external.cc: Interface to Cygwin internals from external programs.
 
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2010, 2011, 2012, 2014 Red Hat, Inc.
-
    Written by Christopher Faylor <cgf@cygnus.com>
 
 This file is part of Cygwin.
@@ -66,19 +63,23 @@ fillout_pinfo (pid_t pid, int winpid)
       _pinfo *p = pids[i];
       i++;
 
+      /* Native Windows process not started from Cygwin have no procinfo
+	 attached.  They don't have a real Cygwin PID either.  We fake a
+	 Cygwin PID beyond MAX_PID. */
       if (!p)
 	{
-	  if (!nextpid && thispid != (DWORD) pid)
+	  if (!nextpid && thispid + MAX_PID != (DWORD) pid)
 	    continue;
-	  ep.pid = cygwin_pid (thispid);
+	  ep.pid = thispid + MAX_PID;
 	  ep.dwProcessId = thispid;
 	  ep.process_state = PID_IN_USE;
 	  ep.ctty = -1;
 	  break;
 	}
-      else if (nextpid || p->pid == pid || (winpid && thispid == (DWORD) pid))
+      else if (nextpid || p->pid == pid)
 	{
-	  ep.ctty = (p->ctty < 0 || iscons_dev (p->ctty)) ? p->ctty : device::minor (p->ctty);
+	  ep.ctty = (p->ctty < 0 || iscons_dev (p->ctty))
+		    ? p->ctty : device::minor (p->ctty);
 	  ep.pid = p->pid;
 	  ep.ppid = p->ppid;
 	  ep.dwProcessId = p->dwProcessId;
@@ -245,7 +246,7 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 	break;
 
       case CW_USER_DATA:
-#ifndef __x86_64__
+#ifdef __i386__
 	/* This is a kludge to work around a version of _cygwin_common_crt0
 	   which overwrote the cxx_malloc field with the local DLL copy.
 	   Hilarity ensues if the DLL is not loaded like while the process
@@ -321,6 +322,19 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 	  res = p ? p->dwProcessId : 0;
 	}
 	break;
+
+      case CW_WINPID_TO_CYGWIN_PID:
+	{
+	  DWORD winpid = va_arg (arg, DWORD);
+	  pid_t pid = cygwin_pid (winpid);
+	  res = pid ?: winpid + MAX_PID;
+	}
+	break;
+
+      case CW_MAX_CYGWIN_PID:
+	res = MAX_PID;
+	break;
+
       case CW_EXTRACT_DOMAIN_AND_USER:
 	{
 	  WCHAR nt_domain[MAX_DOMAIN_NAME_LEN + 1];
@@ -342,7 +356,7 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 	  size_t n;
 	  pid_t pid = va_arg (arg, pid_t);
 	  pinfo p (pid);
-	  res = (uintptr_t) p->cmdline (n);
+	  res = (uintptr_t) (p ? p->cmdline (n) : NULL);
 	}
 	break;
       case CW_CHECK_NTSEC:
@@ -438,10 +452,7 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 	res = CYGTLS_PADSIZE;
 	break;
       case CW_SET_DOS_FILE_WARNING:
-	{
-	  dos_file_warning = va_arg (arg, int);
-	  res = 0;
-	}
+	res = 0;
 	break;
       case CW_SET_PRIV_KEY:
 	{
@@ -534,7 +545,7 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 	break;
 
       case CW_ALLOC_DRIVE_MAP:
-      	{
+	{
 	  dos_drive_mappings *ddm = new dos_drive_mappings ();
 	  res = (uintptr_t) ddm;
 	}
@@ -645,7 +656,7 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 					 "sshd",
 					 username_buffer,
 					 sizeof username_buffer);
-	     
+
 	     If this call succeeds, sshd expects the correct Cygwin
 	     username of the unprivileged sshd account in username_buffer.
 
@@ -699,6 +710,17 @@ cygwin_internal (cygwin_getinfo_types t, ...)
 		     sizeof(EXCEPTION_RECORD));
 	      res = 0;
 	    }
+	}
+	break;
+
+      case CW_CYGHEAP_PROFTHR_ALL:
+	{
+	  typedef void (*func_t) (HANDLE);
+	  extern void cygheap_profthr_all (func_t);
+
+	  func_t profthr_byhandle = va_arg(arg, func_t);
+	  cygheap_profthr_all (profthr_byhandle);
+	  res = 0;
 	}
 	break;
 

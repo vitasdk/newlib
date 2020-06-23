@@ -1,8 +1,5 @@
 /* passwd.c: Changing passwords and managing account information
 
-   Copyright 1999, 2000, 2001, 2002, 2003, 2005, 2008, 2009, 2011, 2012,
-   2013, 2014 Red Hat, Inc.
-
    Written by Corinna Vinschen <corinna.vinschen@cityweb.de>
 
 This file is part of Cygwin.
@@ -91,9 +88,6 @@ EvalRet (int ret, const char *user)
 	eprint (0, "You may not change the password for %s.", user);
       break;
 
-      eprint (0, "Bad password: Invalid.");
-      break;
-
     case NERR_PasswordTooShort:
       eprint (0, "Bad password: Too short.");
       break;
@@ -116,57 +110,57 @@ EvalRet (int ret, const char *user)
 }
 
 PUSER_INFO_3
-GetPW (char *user, int print_win_name, LPWSTR *server)
+GetPW (char *user, int print_win_name, LPWSTR *server, LPWSTR domain)
 {
   char usr_buf[UNLEN + 1];
   WCHAR name[UNLEN + 1];
   DWORD ret;
   PUSER_INFO_3 ui;
   struct passwd *pw;
-  char *domain = (char *) alloca (INTERNET_MAX_HOST_NAME_LENGTH + 1);
+  char dom[INTERNET_MAX_HOST_NAME_LENGTH + 1];
 
   /* Get the Win32 username and a suitable server. */
-  if ((pw = getpwnam (user)))
+  pw = getpwnam (user);
+  if (!pw)
     {
-      cygwin_internal (CW_EXTRACT_DOMAIN_AND_USER, pw, domain, usr_buf);
-      if (strcasecmp (pw->pw_name, usr_buf))
-	{
-	  /* Hack to avoid problem with LookupAccountSid after impersonation */
-	  if (strcasecmp (usr_buf, "SYSTEM"))
-	    {
-	      user = usr_buf;
-	      if (print_win_name)
-		printf ("Windows username : %s\n", user);
-	    }
-	}
-      if (!*server)
-	{
-	  PDOMAIN_CONTROLLER_INFOW dci;
-	  char machine[INTERNET_MAX_HOST_NAME_LENGTH + 1];
-	  DWORD mlen = sizeof machine;
-	  WCHAR wdom[INTERNET_MAX_HOST_NAME_LENGTH + 1];
+      EvalRet (NERR_UserNotFound, user);
+      return NULL;
+    }
 
-	  /* If we can't fetch the local machine name, or if the machine name
-	     is not the same as the user's domain name, try to fetch the DC via
-	     DsGetDcName.  Otherwise, just stick to a NULL servername, since
-	     that's the same as using the local machine. */
-	  if (!GetComputerNameExA (ComputerNameNetBIOS, machine, &mlen)
-	      || strcasecmp (domain, machine) != 0)
-	    {
-	      mbstowcs (wdom, domain, INTERNET_MAX_HOST_NAME_LENGTH + 1);
-	      if (!DsGetDcNameW (NULL, wdom, NULL, NULL, DS_IS_FLAT_NAME, &dci))
-		*server = dci->DomainControllerName;
-	    }
-	}
+  cygwin_internal (CW_EXTRACT_DOMAIN_AND_USER, pw, dom, usr_buf);
+  /* Hack to avoid problem with LookupAccountSid after impersonation
+     using the simple NtCreateToken method. */
+  if (strcasecmp (pw->pw_name, usr_buf) && strcasecmp (usr_buf, "SYSTEM"))
+    {
+      user = usr_buf;
+      if (print_win_name)
+	printf ("Windows username : %s\n", user);
     }
   mbstowcs (name, user, UNLEN + 1);
+  mbstowcs (domain, dom, INTERNET_MAX_HOST_NAME_LENGTH + 1);
+  if (!*server)
+    {
+      PDOMAIN_CONTROLLER_INFOW dci;
+      WCHAR machine[INTERNET_MAX_HOST_NAME_LENGTH + 1];
+      DWORD mlen = INTERNET_MAX_HOST_NAME_LENGTH + 1;
+
+      /* If the machine name is not the same as the user's domain name we're
+	 in a domain.  Fetch the DC via DsGetDcName.  Otherwise, just stick
+	 to a NULL servername, since that's the same as using the local
+	 machine. */
+      if ((!GetComputerNameExW (ComputerNameNetBIOS, machine, &mlen)
+	   || wcscasecmp (domain, machine) != 0)
+	  && !DsGetDcNameW (NULL, domain, NULL, NULL, DS_IS_FLAT_NAME, &dci))
+	*server = dci->DomainControllerName;
+    }
+
   ret = NetUserGetInfo (*server, name, 3, (void *) &ui);
   return EvalRet (ret, user) ? NULL : ui;
 }
 
 int
-ChangePW (const char *user, PCWSTR name, const char *oldpwd, const char *pwd,
-	  int justcheck, LPCWSTR server)
+ChangePW (const char *user, PCWSTR domain, PCWSTR name, const char *oldpwd,
+	  const char *pwd, int justcheck, PCWSTR server)
 {
   WCHAR oldpass[512], pass[512];
   DWORD ret;
@@ -182,7 +176,11 @@ ChangePW (const char *user, PCWSTR name, const char *oldpwd, const char *pwd,
   else
     {
       mbstowcs (oldpass, oldpwd, 512);
-      ret = NetUserChangePassword (server, name, oldpass, pass);
+      /* NetUserChangePassword has changed between W7 and W8.1.  For some
+	 reason it doesn't accept the usual "\\server" servername anymore,
+	 rather you have to use the domain name as server parameter, otherwise
+	 you suffer an error 1265, ERROR_DOWNGRADE_DETECTED. */
+      ret = NetUserChangePassword (domain, name, oldpass, pass);
     }
   if (justcheck && ret != ERROR_INVALID_PASSWORD)
     return 0;
@@ -192,7 +190,7 @@ ChangePW (const char *user, PCWSTR name, const char *oldpwd, const char *pwd,
 }
 
 void
-PrintPW (PUSER_INFO_3 ui, LPCWSTR server)
+PrintPW (PUSER_INFO_3 ui, PCWSTR server)
 {
   time_t t = time (NULL) - ui->usri3_password_age;
   int ret;
@@ -233,7 +231,7 @@ PrintPW (PUSER_INFO_3 ui, LPCWSTR server)
 }
 
 int
-SetModals (int xarg, int narg, int iarg, int Larg, LPCWSTR server)
+SetModals (int xarg, int narg, int iarg, int Larg, PCWSTR server)
 {
   int ret;
   PUSER_MODALS_INFO_0 mi;
@@ -369,7 +367,7 @@ print_version ()
 {
   printf ("passwd (cygwin) %d.%d.%d\n"
 	  "Password Utility\n"
-	  "Copyright (C) 1999 - %s Red Hat, Inc.\n"
+	  "Copyright (C) 1999 - %s Cygwin Authors\n"
 	  "This is free software; see the source for copying conditions.  There is NO\n"
 	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
 	  CYGWIN_VERSION_DLL_MAJOR / 1000,
@@ -382,7 +380,9 @@ int
 main (int argc, char **argv)
 {
   char *logonserver;
-  char user[UNLEN + 1], oldpwd[_PASSWORD_LEN + 1], newpwd[_PASSWORD_LEN + 1];
+  char user[UNLEN + 1];
+  WCHAR domain[INTERNET_MAX_HOST_NAME_LENGTH + 1];
+  char oldpwd[_PASSWORD_LEN + 1], newpwd[_PASSWORD_LEN + 1];
   int ret = 0;
   int cnt = 0;
   int opt;
@@ -592,7 +592,8 @@ main (int argc, char **argv)
       return SetModals (xarg, narg, iarg, Larg, server);
     }
 
-  strcpy (user, optind >= argc ? getlogin () : argv[optind]);
+  user[0] = '\0';
+  strncat (user, optind >= argc ? getlogin () : argv[optind], UNLEN);
 
   /* Changing password for calling user?  Use logonserver for user as well. */
   if (!server && optind >= argc)
@@ -607,7 +608,7 @@ main (int argc, char **argv)
 	}
     }
 
-  ui = GetPW (user, 1, &server);
+  ui = GetPW (user, 1, &server, domain);
   if (!ui)
     return 1;
 
@@ -655,7 +656,7 @@ main (int argc, char **argv)
   if (!caller_is_admin ())
     {
       strcpy (oldpwd, getpass ("Old password: "));
-      if (ChangePW (user, ui->usri3_name, oldpwd, oldpwd, 1, server))
+      if (ChangePW (user, domain, ui->usri3_name, oldpwd, oldpwd, 1, server))
 	return 1;
     }
 
@@ -664,8 +665,8 @@ main (int argc, char **argv)
       strcpy (newpwd, getpass ("New password: "));
       if (strcmp (newpwd, getpass ("Re-enter new password: ")))
 	eprint (0, "Password is not identical.");
-      else if (!ChangePW (user, ui->usri3_name, *oldpwd ? oldpwd : NULL,
-      			  newpwd, 0, server))
+      else if (!ChangePW (user, domain, ui->usri3_name,
+			  *oldpwd ? oldpwd : NULL, newpwd, 0, server))
 	ret = 1;
       if (!ret && cnt < 2)
 	eprint (0, "Try again.");

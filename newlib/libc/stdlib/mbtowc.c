@@ -5,16 +5,9 @@ FUNCTION
 INDEX
 	mbtowc
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
 	int mbtowc(wchar_t *restrict <[pwc]>, const char *restrict <[s]>, size_t <[n]>);
-
-TRAD_SYNOPSIS
-	#include <stdlib.h>
-	int mbtowc(<[pwc]>, <[s]>, <[n]>)
-	wchar_t *<[pwc]>;
-	const char *<[s]>;
-	size_t <[n]>;
 
 DESCRIPTION
 When _MB_CAPABLE is not defined, this is a minimal ANSI-conforming 
@@ -57,9 +50,8 @@ effects vary with the locale.
 #include "local.h"
 
 int
-_DEFUN (mbtowc, (pwc, s, n),
-        wchar_t *__restrict pwc _AND
-        const char *__restrict s _AND
+mbtowc (wchar_t *__restrict pwc,
+        const char *__restrict s,
         size_t n)
 {
 #ifdef _MB_CAPABLE
@@ -70,7 +62,7 @@ _DEFUN (mbtowc, (pwc, s, n),
   _REENT_CHECK_MISC(reent);
   ps = &(_REENT_MBTOWC_STATE(reent));
   
-  retval = __mbtowc (reent, pwc, s, n, __locale_charset (), ps);
+  retval = __MBTOWC (reent, pwc, s, n, ps);
   
   if (retval < 0)
     {

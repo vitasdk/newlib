@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -32,7 +32,7 @@ INDEX
 INDEX
 	_swprintf_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <wchar.h>
 
         int wprintf(const wchar_t *<[format]>, ...);
@@ -167,39 +167,43 @@ DESCRIPTION
 	        o #
 			The result is to be converted to an
 			alternative form, according to the <[type]>
-			character:
-
-			o+
-			o o
-				Increases precision to force the first
-				digit of the result to be a zero.
-
-			o x
-				A non-zero result will have a <<0x>>
-				prefix.
-
-			o X
-				A non-zero result will have a <<0X>>
-				prefix.
-
-			o a, A, e, E, f, or F
-				The result will always contain a
-			        decimal point even if no digits follow
-			        the point.  (Normally, a decimal point
-			        appears only if a digit follows it.)
-			        Trailing zeros are removed.
-
-			o g or G
-				The result will always contain a
-			        decimal point even if no digits follow
-			        the point.  Trailing zeros are not
-			        removed.
-
-			o all others
-				Undefined.
-
-			o-
+			character.
 		o-
+
+	The alternative form output with the # flag depends on the <[type]>
+	character:
+
+		o+
+		o o
+			Increases precision to force the first
+			digit of the result to be a zero.
+
+		o x
+			A non-zero result will have a <<0x>>
+			prefix.
+
+		o X
+			A non-zero result will have a <<0X>>
+			prefix.
+
+		o a, A, e, E, f, or F
+			The result will always contain a
+			decimal point even if no digits follow
+			the point.  (Normally, a decimal point
+			appears only if a digit follows it.)
+			Trailing zeros are removed.
+
+		o g or G
+			The result will always contain a
+			decimal point even if no digits follow
+			the point.  Trailing zeros are not
+			removed.
+
+		o all others
+			Undefined.
+
+		o-
+
 
 	o <[width]>
 
@@ -549,11 +553,10 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  * a variable set to _REENT.  */
 
 int
-_DEFUN(_swprintf_r, (ptr, str, size, fmt),
-       struct _reent *ptr _AND
-       wchar_t *str          _AND
-       size_t size        _AND
-       _CONST wchar_t *fmt _DOTS)
+_swprintf_r (struct _reent *ptr,
+       wchar_t *str,
+       size_t size,
+       const wchar_t *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -590,10 +593,9 @@ _DEFUN(_swprintf_r, (ptr, str, size, fmt),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(swprintf, (str, size, fmt),
-       wchar_t *__restrict str   _AND
-       size_t size _AND
-       _CONST wchar_t *__restrict fmt _DOTS)
+swprintf (wchar_t *__restrict str,
+       size_t size,
+       const wchar_t *__restrict fmt, ...)
 {
   int ret;
   va_list ap;

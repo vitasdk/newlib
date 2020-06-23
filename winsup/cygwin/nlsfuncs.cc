@@ -1,7 +1,5 @@
 /* nlsfuncs.cc: NLS helper functions
 
-   Copyright 2010, 2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -18,12 +16,6 @@ details. */
 #include "dtable.h"
 #include "cygheap.h"
 #include "tls_pbuf.h"
-/* Internal headers from newlib */
-#include "../locale/timelocal.h"
-#include "../locale/lctype.h"
-#include "../locale/lnumeric.h"
-#include "../locale/lmonetary.h"
-#include "../locale/lmessages.h"
 #include "lc_msg.h"
 #include "lc_era.h"
 
@@ -31,12 +23,13 @@ details. */
 
 #define getlocaleinfo(category,type) \
 	    __getlocaleinfo(lcid,(type),_LC(category))
+#define setlocaleinfo(category,val) \
+	    __setlocaleinfo(_LC(category),(val))
 #define eval_datetimefmt(type,flags) \
 	    __eval_datetimefmt(lcid,(type),(flags),&lc_time_ptr,\
 			       lc_time_end-lc_time_ptr)
 #define charfromwchar(category,in) \
-	    __charfromwchar (_##category##_locale->in,_LC(category),\
-			     f_wctomb,charset)
+	    __charfromwchar (_##category##_locale->in,_LC(category),f_wctomb)
 
 #define has_modifier(x)	((x)[0] && !strcmp (modifier, (x)))
 
@@ -79,157 +72,82 @@ __get_lcid_from_locale (const char *name)
   c = strchr (locale, '_');
   if (!c)
     return last_lcid = (LCID) -1;
-  if (wincap.has_localenames ())
-    {
-      wchar_t wlocale[ENCODING_LEN + 1];
 
-      /* Convert to RFC 4646 syntax which is the standard for the locale names
-	 replacing LCIDs starting with Vista. */
-      *c = '-';
-      mbstowcs (wlocale, locale, ENCODING_LEN + 1);
-      lcid = LocaleNameToLCID (wlocale, 0);
-      if (lcid == 0)
-	{
-	  /* Unfortunately there are a couple of locales for which no form
-	     without a Script part per RFC 4646 exists.
-	     Linux also supports no_NO which is equivalent to nb_NO. */
-	  struct {
-	    const char    *loc;
-	    const wchar_t *wloc;
-	  } sc_only_locale[] = {
-	    { "az-AZ" , L"az-Latn-AZ"  },
-	    { "bs-BA" , L"bs-Latn-BA"  },
-	    { "chr-US", L"chr-Cher-US"},
-	    { "ff-SN" , L"ff-Latn-SN"  },
-	    { "ha-NG" , L"ha-Latn-NG"  },
-	    { "iu-CA" , L"iu-Latn-CA"  },
-	    { "ku-IQ" , L"ku-Arab-IQ"  },
-	    { "mn-CN" , L"mn-Mong-CN"  },
-	    { "no-NO" , L"nb-NO"       },
-	    { "pa-PK" , L"pa-Arab-PK"  },
-	    { "sd-PK" , L"sd-Arab-PK"  },
-	    { "sr-BA" , L"sr-Cyrl-BA"  },
-	    { "sr-CS" , L"sr-Cyrl-CS"  },
-	    { "sr-ME" , L"sr-Cyrl-ME"  },
-	    { "sr-RS" , L"sr-Cyrl-RS"  },
-	    { "tg-TJ" , L"tg-Cyrl-TJ"  },
-	    { "tzm-DZ", L"tzm-Latn-DZ" },
-	    { "tzm-MA", L"tzm-Tfng-MA" },
-	    { "uz-UZ" , L"uz-Latn-UZ"  },
-	    { NULL    , NULL	       }
-	  };
-	  for (int i = 0; sc_only_locale[i].loc
-			  && sc_only_locale[i].loc[0] <= locale[0]; ++i)
-	    if (!strcmp (locale, sc_only_locale[i].loc))
-	      {
-		lcid = LocaleNameToLCID (sc_only_locale[i].wloc, 0);
-		if (!strncmp (locale, "sr-", 3))
-		  {
-		    /* Vista/2K8 is missing sr-ME and sr-RS.  It has only the
-		       deprecated sr-CS.  So we map ME and RS to CS here. */
-		    if (lcid == 0)
-		      lcid = LocaleNameToLCID (L"sr-Cyrl-CS", 0);
-		    /* "@latin" modifier for the sr_XY locales changes
-			collation behaviour so lcid should accommodate that
-			by being set to the Latin sublang. */
-		    if (lcid != 0 && has_modifier ("@latin"))
-		      lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) - 1);
-		  }
-		else if (!strncmp (locale, "uz-", 3))
-		  {
-		    /* Equivalent for "@cyrillic" modifier in uz_UZ locale */
-		    if (lcid != 0 && has_modifier ("@cyrillic"))
-		      lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) + 1);
-		  }
-		break;
-	      }
-	}
-      last_lcid = lcid ?: (LCID) -1;
-      debug_printf ("LCID=%04y", last_lcid);
-      return last_lcid;
-    }
-  /* Pre-Vista we have to loop through the LCID values and see if they
-     match language and TERRITORY. */
-  *c++ = '\0';
-  /* locale now points to the language, c points to the TERRITORY */
-  const char *language = locale;
-  const char *territory = c;
-  LCID lang, sublang;
-  char iso[10];
+  wchar_t wlocale[ENCODING_LEN + 1];
 
-  /* In theory the lang part takes 10 bits (0x3ff), but up to Windows 2003 R2
-     the highest lang value is 0x81. */
-  for (lang = 1; lang <= 0x81; ++lang)
-    if (GetLocaleInfo (lang, LOCALE_SISO639LANGNAME, iso, 10)
-	&& !strcmp (language, iso))
-      break;
-  if (lang > 0x81)
-    lcid = 0;
-  else if (!territory)
-    lcid = lang;
-  else
+  /* Convert to RFC 4646 syntax which is the standard for the locale names
+     replacing LCIDs starting with Vista. */
+  *c = '-';
+  mbstowcs (wlocale, locale, ENCODING_LEN + 1);
+  lcid = LocaleNameToLCID (wlocale, 0);
+  /* Bug on Windows 10: LocaleNameToLCID returns LOCALE_CUSTOM_UNSPECIFIED
+     for unknown locales. */
+  if (lcid == 0 || lcid == LOCALE_CUSTOM_UNSPECIFIED)
     {
-      /* In theory the sublang part takes 7 bits (0x3f), but up to
-	 Windows 2003 R2 the highest sublang value is 0x14. */
-      for (sublang = 1; sublang <= 0x14; ++sublang)
-	{
-	  lcid = (sublang << 10) | lang;
-	  if (GetLocaleInfo (lcid, LOCALE_SISO3166CTRYNAME, iso, 10)
-	      && !strcmp (territory, iso))
-	    break;
-	}
-      if (sublang > 0x14)
-	lcid = 0;
-    }
-  if (lcid == 0 && territory)
-    {
-      /* Unfortunately there are four language LCID number areas representing
-	 multiple languages.  Fortunately only two of them already existed
-	 pre-Vista.  The concealed languages have to be tested explicitly,
-	 since they are not catched by the above loops.
-	 This also enables the serbian ISO 3166 territory codes which have
-	 been changed post 2003, and maps them to the old wrong (SP was never
-	 a valid ISO 3166 code) territory code sr_SP which fortunately has the
-	 same LCID as the newer sr_CS.
+      /* Unfortunately there are a couple of locales for which no form
+	 without a Script part per RFC 4646 exists.
 	 Linux also supports no_NO which is equivalent to nb_NO. */
       struct {
-	const char *loc;
-	LCID	    lcid;
-      } ambiguous_locale[] = {
-	{ "bs_BA", MAKELANGID (LANG_BOSNIAN, 0x05)			    },
-	{ "nn_NO", MAKELANGID (LANG_NORWEGIAN, SUBLANG_NORWEGIAN_NYNORSK)   },
-	{ "no_NO", MAKELANGID (LANG_NORWEGIAN, SUBLANG_NORWEGIAN_BOKMAL)    },
-	{ "sr_BA", MAKELANGID (LANG_BOSNIAN,
-			       SUBLANG_SERBIAN_BOSNIA_HERZEGOVINA_CYRILLIC) },
-	{ "sr_CS", MAKELANGID (LANG_SERBIAN, SUBLANG_SERBIAN_CYRILLIC)      },
-	{ "sr_ME", MAKELANGID (LANG_SERBIAN, SUBLANG_SERBIAN_CYRILLIC)      },
-	{ "sr_RS", MAKELANGID (LANG_SERBIAN, SUBLANG_SERBIAN_CYRILLIC)      },
-	{ "sr_SP", MAKELANGID (LANG_SERBIAN, SUBLANG_SERBIAN_CYRILLIC)      },
-	{ NULL,    0 },
+	const char    *loc;
+	const wchar_t *wloc;
+      } sc_only_locale[] = {
+	{ "az-AZ" , L"az-Latn-AZ"  },
+	{ "bs-BA" , L"bs-Latn-BA"  },
+	{ "chr-US", L"chr-Cher-US"},
+	{ "ff-SN" , L"ff-Latn-SN"  },
+	{ "ha-NG" , L"ha-Latn-NG"  },
+	{ "iu-CA" , L"iu-Latn-CA"  },
+	{ "ks-IN" , L"ks-Arab-IN"  },
+	{ "ku-IQ" , L"ku-Arab-IQ"  },
+	{ "mn-CN" , L"mn-Mong-CN"  },
+	{ "mn-MN" , L"mn-Mong-MN"  },
+	{ "no-NO" , L"nb-NO"       },
+	{ "pa-PK" , L"pa-Arab-PK"  },
+	{ "quc-GT", L"quc-Latn-GT" },
+	{ "sd-PK" , L"sd-Arab-PK"  },
+	{ "sd-IN" , L"sd-Deva-IN"  },
+	{ "sr-BA" , L"sr-Cyrl-BA"  },
+	{ "sr-CS" , L"sr-Cyrl-CS"  },
+	{ "sr-ME" , L"sr-Cyrl-ME"  },
+	{ "sr-RS" , L"sr-Cyrl-RS"  },
+	{ "tg-TJ" , L"tg-Cyrl-TJ"  },
+	{ "tzm-DZ", L"tzm-Latn-DZ" },
+	{ "tzm-MA", L"tzm-Tfng-MA" },
+	{ "uz-UZ" , L"uz-Latn-UZ"  },
+	{ NULL    , NULL	   }
       };
-      *--c = '_';
-      for (int i = 0; ambiguous_locale[i].loc
-		      && ambiguous_locale[i].loc[0] <= locale[0]; ++i)
-	if (!strcmp (locale, ambiguous_locale[i].loc)
-	    && GetLocaleInfo (ambiguous_locale[i].lcid, LOCALE_SISO639LANGNAME,
-			      iso, 10))
+      for (int i = 0; sc_only_locale[i].loc
+		      && sc_only_locale[i].loc[0] <= locale[0]; ++i)
+	if (!strcmp (locale, sc_only_locale[i].loc))
 	  {
-	    lcid = ambiguous_locale[i].lcid;
-	    /* "@latin" modifier for the sr_XY locales changes collation
-	       behaviour so lcid should accommodate that by being set to
-	       the Latin sublang. */
-	    if (!strncmp (locale, "sr_", 3) && has_modifier ("@latin"))
-	      lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) - 1);
+	    lcid = LocaleNameToLCID (sc_only_locale[i].wloc, 0);
+	    if (!strncmp (locale, "sr-", 3))
+	      {
+		/* Vista/2K8 is missing sr-ME and sr-RS.  It has only the
+		   deprecated sr-CS.  So we map ME and RS to CS here. */
+		if (lcid == 0 || lcid == LOCALE_CUSTOM_UNSPECIFIED)
+		  lcid = LocaleNameToLCID (L"sr-Cyrl-CS", 0);
+		/* "@latin" modifier for the sr_XY locales changes
+		    collation behaviour so lcid should accommodate that
+		    by being set to the Latin sublang. */
+		if (lcid != 0 && lcid != LOCALE_CUSTOM_UNSPECIFIED
+		    && has_modifier ("@latin"))
+		  lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) - 1);
+	      }
+	    else if (!strncmp (locale, "uz-", 3))
+	      {
+		/* Equivalent for "@cyrillic" modifier in uz_UZ locale */
+		if (lcid != 0 && lcid != LOCALE_CUSTOM_UNSPECIFIED
+		    && has_modifier ("@cyrillic"))
+		  lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) + 1);
+	      }
 	    break;
 	  }
     }
-  else if (lcid == 0x0443)		/* uz_UZ (Uzbek/Uzbekistan) */
-    {
-      /* Equivalent for "@cyrillic" modifier in uz_UZ locale */
-      if (lcid != 0 && has_modifier ("@cyrillic"))
-	lcid = MAKELANGID (lcid & 0x3ff, (lcid >> 10) + 1);
-    }
-  last_lcid = lcid ?: (LCID) -1;
+  if (lcid && lcid != LOCALE_CUSTOM_UNSPECIFIED)
+    last_lcid = lcid;
+  else
+    last_lcid = (LCID) -1;
   debug_printf ("LCID=%04y", last_lcid);
   return last_lcid;
 }
@@ -238,8 +156,7 @@ __get_lcid_from_locale (const char *name)
    is set, s==NULL returns -1 since then it's used to recognize invalid strings
    in the used charset. */
 static size_t
-lc_wcstombs (wctomb_p f_wctomb, const char *charset,
-	     char *s, const wchar_t *pwcs, size_t n,
+lc_wcstombs (wctomb_p f_wctomb, char *s, const wchar_t *pwcs, size_t n,
 	     bool return_invalid = false)
 {
   char *ptr = s;
@@ -254,7 +171,7 @@ lc_wcstombs (wctomb_p f_wctomb, const char *charset,
       size_t num_bytes = 0;
       while (*pwcs != 0)
 	{
-	  bytes = f_wctomb (_REENT, buf, *pwcs++, charset, &state);
+	  bytes = f_wctomb (_REENT, buf, *pwcs++, &state);
 	  if (bytes != (size_t) -1)
 	    num_bytes += bytes;
 	  else if (return_invalid)
@@ -264,7 +181,7 @@ lc_wcstombs (wctomb_p f_wctomb, const char *charset,
     }
   while (n > 0)
     {
-      bytes = f_wctomb (_REENT, buf, *pwcs, charset, &state);
+      bytes = f_wctomb (_REENT, buf, *pwcs, &state);
       if (bytes == (size_t) -1)
 	{
 	  memset (&state, 0, sizeof state);
@@ -286,8 +203,7 @@ lc_wcstombs (wctomb_p f_wctomb, const char *charset,
 /* Never returns -1.  Invalid sequences are translated to replacement
    wide-chars. */
 static size_t
-lc_mbstowcs (mbtowc_p f_mbtowc, const char *charset,
-	     wchar_t *pwcs, const char *s, size_t n)
+lc_mbstowcs (mbtowc_p f_mbtowc, wchar_t *pwcs, const char *s, size_t n)
 {
   size_t ret = 0;
   char *t = (char *) s;
@@ -299,8 +215,7 @@ lc_mbstowcs (mbtowc_p f_mbtowc, const char *charset,
     n = 1;
   while (n > 0)
     {
-      bytes = f_mbtowc (_REENT, pwcs, t, 6 /* fake, always enough */,
-			charset, &state);
+      bytes = f_mbtowc (_REENT, pwcs, t, 6 /* fake, always enough */, &state);
       if (bytes == (size_t) -1)
 	{
 	  state.__count = 0;
@@ -358,14 +273,27 @@ __getlocaleinfo (LCID lcid, LCTYPE type, char **ptr, size_t size)
   return ret;
 }
 
+static wchar_t *
+__setlocaleinfo (char **ptr, size_t size, wchar_t val)
+{
+  wchar_t *ret;
+
+  if ((uintptr_t) *ptr % 1)
+    ++*ptr;
+  ret = (wchar_t *) *ptr;
+  ret[0] = val;
+  ret[1] = L'\0';
+  *ptr = (char *) (ret + 2);
+  return ret;
+}
+
 static char *
-__charfromwchar (const wchar_t *in, char **ptr, size_t size,
-		 wctomb_p f_wctomb, const char *charset)
+__charfromwchar (const wchar_t *in, char **ptr, size_t size, wctomb_p f_wctomb)
 {
   size_t num;
   char *ret;
 
-  num = lc_wcstombs (f_wctomb, charset, ret = *ptr, in, size);
+  num = lc_wcstombs (f_wctomb, ret = *ptr, in, size);
   *ptr += num + 1;
   return ret;
 }
@@ -665,11 +593,11 @@ __set_lc_time_from_win (const char *name,
 	  /* Evaluate string length in target charset.  Characters invalid in the
 	     target charset are simply ignored, as on Linux. */
 	  len = 0;
-	  len += lc_wcstombs (f_wctomb, charset, NULL, era->era, 0) + 1;
-	  len += lc_wcstombs (f_wctomb, charset, NULL, era->era_d_fmt, 0) + 1;
-	  len += lc_wcstombs (f_wctomb, charset, NULL, era->era_d_t_fmt, 0) + 1;
-	  len += lc_wcstombs (f_wctomb, charset, NULL, era->era_t_fmt, 0) + 1;
-	  len += lc_wcstombs (f_wctomb, charset, NULL, era->alt_digits, 0) + 1;
+	  len += lc_wcstombs (f_wctomb, NULL, era->era, 0) + 1;
+	  len += lc_wcstombs (f_wctomb, NULL, era->era_d_fmt, 0) + 1;
+	  len += lc_wcstombs (f_wctomb, NULL, era->era_d_t_fmt, 0) + 1;
+	  len += lc_wcstombs (f_wctomb, NULL, era->era_t_fmt, 0) + 1;
+	  len += lc_wcstombs (f_wctomb, NULL, era->alt_digits, 0) + 1;
 	  len += (wcslen (era->era) + 1) * sizeof (wchar_t);
 	  len += (wcslen (era->era_d_fmt) + 1) * sizeof (wchar_t);
 	  len += (wcslen (era->era_d_t_fmt) + 1) * sizeof (wchar_t);
@@ -750,8 +678,6 @@ __set_lc_time_from_win (const char *name,
   if (tmp != new_lc_time_buf)
     rebase_locale_buf (_time_locale, _time_locale + 1, tmp,
 		       new_lc_time_buf, lc_time_ptr);
-  if (*lc_time_buf)
-    free (*lc_time_buf);
   *lc_time_buf = tmp;
   return 1;
 }
@@ -809,8 +735,7 @@ __set_lc_ctype_from_win (const char *name,
 	  lc_ctype_ptr = (char *) woutdig;
 	  _ctype_locale->outdigits[i] = lc_ctype_ptr;
 	  memset (&state, 0, sizeof state);
-	  lc_ctype_ptr += f_wctomb (_REENT, lc_ctype_ptr, digits[i], charset,
-				      &state);
+	  lc_ctype_ptr += f_wctomb (_REENT, lc_ctype_ptr, digits[i], &state);
 	  *lc_ctype_ptr++ = '\0';
 	}
     }
@@ -825,8 +750,6 @@ __set_lc_ctype_from_win (const char *name,
   if (tmp != new_lc_ctype_buf)
     rebase_locale_buf (_ctype_locale, _ctype_locale + 1, tmp,
 		       new_lc_ctype_buf, lc_ctype_ptr);
-  if (*lc_ctype_buf)
-    free (*lc_ctype_buf);
   *lc_ctype_buf = tmp;
   return 1;
 }
@@ -861,11 +784,28 @@ __set_lc_numeric_from_win (const char *name,
     memcpy (_numeric_locale, _C_numeric_locale, sizeof (struct lc_numeric_T));
   else
     {
-      /* decimal_point */
-      _numeric_locale->wdecimal_point = getlocaleinfo (numeric, LOCALE_SDECIMAL);
+      /* decimal_point and thousands_sep */
+      if (lcid == 0x0429)	/* fa_IR.  Windows decimal_point is slash,
+					   correct is dot */
+	{
+	  _numeric_locale->wdecimal_point = setlocaleinfo (numeric, L'.');
+	  _numeric_locale->wthousands_sep = setlocaleinfo (numeric, L',');
+	}
+      else if (lcid == 0x0463)	/* ps_AF.  Windows decimal_point is dot,
+					   thousands_sep is comma, correct are
+					   arabic separators. */
+	{
+	  _numeric_locale->wdecimal_point = setlocaleinfo (numeric, 0x066b);
+	  _numeric_locale->wthousands_sep = setlocaleinfo (numeric, 0x066c);
+	}
+      else
+	{
+	  _numeric_locale->wdecimal_point = getlocaleinfo (numeric,
+							   LOCALE_SDECIMAL);
+	  _numeric_locale->wthousands_sep = getlocaleinfo (numeric,
+							   LOCALE_STHOUSAND);
+	}
       _numeric_locale->decimal_point = charfromwchar (numeric, wdecimal_point);
-      /* thousands_sep */
-      _numeric_locale->wthousands_sep = getlocaleinfo (numeric, LOCALE_STHOUSAND);
       _numeric_locale->thousands_sep = charfromwchar (numeric, wthousands_sep);
       /* grouping */
       _numeric_locale->grouping = conv_grouping (lcid, LOCALE_SGROUPING,
@@ -885,8 +825,6 @@ __set_lc_numeric_from_win (const char *name,
   if (tmp != new_lc_numeric_buf)
     rebase_locale_buf (_numeric_locale, _numeric_locale + 1, tmp,
 		       new_lc_numeric_buf, lc_numeric_ptr);
-  if (*lc_numeric_buf)
-    free (*lc_numeric_buf);
   *lc_numeric_buf = tmp;
   return 1;
 }
@@ -939,21 +877,33 @@ __set_lc_monetary_from_win (const char *name,
 							  LOCALE_SCURRENCY);
       /* As on Linux:  If the currency_symbol can't be represented in the
 	 given charset, use int_curr_symbol. */
-      if (lc_wcstombs (f_wctomb, charset, NULL,
-		       _monetary_locale->wcurrency_symbol,
+      if (lc_wcstombs (f_wctomb, NULL, _monetary_locale->wcurrency_symbol,
 		       0, true) == (size_t) -1)
 	_monetary_locale->currency_symbol = _monetary_locale->int_curr_symbol;
       else
 	_monetary_locale->currency_symbol = charfromwchar (monetary,
 							   wcurrency_symbol);
-      /* mon_decimal_point */
-      _monetary_locale->wmon_decimal_point = getlocaleinfo (monetary,
-							    LOCALE_SMONDECIMALSEP);
+      /* mon_decimal_point and mon_thousands_sep */
+      if (lcid == 0x0429 || lcid == 0x0463)	/* fa_IR or ps_AF.  Windows
+						   mon_decimal_point is slash
+						   and comma, mon_thousands_sep
+						   is comma and dot, correct
+						   are arabic separators. */
+	{
+	  _monetary_locale->wmon_decimal_point = setlocaleinfo (monetary,
+								0x066b);
+	  _monetary_locale->wmon_thousands_sep = setlocaleinfo (monetary,
+								0x066c);
+	}
+      else
+	{
+	  _monetary_locale->wmon_decimal_point = getlocaleinfo (monetary,
+							LOCALE_SMONDECIMALSEP);
+	  _monetary_locale->wmon_thousands_sep = getlocaleinfo (monetary,
+							LOCALE_SMONTHOUSANDSEP);
+	}
       _monetary_locale->mon_decimal_point = charfromwchar (monetary,
 							   wmon_decimal_point);
-      /* mon_thousands_sep */
-      _monetary_locale->wmon_thousands_sep = getlocaleinfo (monetary,
-							    LOCALE_SMONTHOUSANDSEP);
       _monetary_locale->mon_thousands_sep = charfromwchar (monetary,
 							   wmon_thousands_sep);
       /* mon_grouping */
@@ -1012,8 +962,6 @@ __set_lc_monetary_from_win (const char *name,
   if (tmp != new_lc_monetary_buf)
     rebase_locale_buf (_monetary_locale, _monetary_locale + 1, tmp,
 		       new_lc_monetary_buf, lc_monetary_ptr);
-  if (*lc_monetary_buf)
-    free (*lc_monetary_buf);
   *lc_monetary_buf = tmp;
   return 1;
 }
@@ -1069,10 +1017,10 @@ __set_lc_messages_from_win (const char *name,
   len += (strlen (charset) + 1);
   if (lcid)
     {
-      len += lc_wcstombs (f_wctomb, charset, NULL, msg->yesexpr, 0) + 1;
-      len += lc_wcstombs (f_wctomb, charset, NULL, msg->noexpr, 0) + 1;
-      len += lc_wcstombs (f_wctomb, charset, NULL, msg->yesstr, 0) + 1;
-      len += lc_wcstombs (f_wctomb, charset, NULL, msg->nostr, 0) + 1;
+      len += lc_wcstombs (f_wctomb, NULL, msg->yesexpr, 0) + 1;
+      len += lc_wcstombs (f_wctomb, NULL, msg->noexpr, 0) + 1;
+      len += lc_wcstombs (f_wctomb, NULL, msg->yesstr, 0) + 1;
+      len += lc_wcstombs (f_wctomb, NULL, msg->nostr, 0) + 1;
       len += (wcslen (msg->yesexpr) + 1) * sizeof (wchar_t);
       len += (wcslen (msg->noexpr) + 1) * sizeof (wchar_t);
       len += (wcslen (msg->yesstr) + 1) * sizeof (wchar_t);
@@ -1094,13 +1042,13 @@ __set_lc_messages_from_win (const char *name,
   if (lcid)
     {
       _messages_locale->yesexpr = (const char *) c;
-      len = lc_wcstombs (f_wctomb, charset, c, msg->yesexpr, lc_messages_end - c);
+      len = lc_wcstombs (f_wctomb, c, msg->yesexpr, lc_messages_end - c);
       _messages_locale->noexpr = (const char *) (c += len + 1);
-      len = lc_wcstombs (f_wctomb, charset, c, msg->noexpr, lc_messages_end - c);
+      len = lc_wcstombs (f_wctomb, c, msg->noexpr, lc_messages_end - c);
       _messages_locale->yesstr = (const char *) (c += len + 1);
-      len = lc_wcstombs (f_wctomb, charset, c, msg->yesstr, lc_messages_end - c);
+      len = lc_wcstombs (f_wctomb, c, msg->yesstr, lc_messages_end - c);
       _messages_locale->nostr = (const char *) (c += len + 1);
-      len = lc_wcstombs (f_wctomb, charset, c, msg->nostr, lc_messages_end - c);
+      len = lc_wcstombs (f_wctomb, c, msg->nostr, lc_messages_end - c);
       c += len + 1;
       if ((uintptr_t) c % 1)
 	++c;
@@ -1114,45 +1062,66 @@ __set_lc_messages_from_win (const char *name,
       _messages_locale->wnostr = (const wchar_t *) wc;
       wcpcpy (wc, msg->nostr);
     }
-  /* Aftermath. */
-  if (*lc_messages_buf)
-    free (*lc_messages_buf);
   *lc_messages_buf = new_lc_messages_buf;
   return 1;
 }
 
-LCID collate_lcid = 0;
-static mbtowc_p collate_mbtowc = __ascii_mbtowc;
-char collate_charset[ENCODING_LEN + 1] = "ASCII";
+const struct lc_collate_T _C_collate_locale =
+{
+  0,
+  __ascii_mbtowc,
+  "ASCII"
+};
 
 /* Called from newlib's setlocale() if category is LC_COLLATE.  Stores
    LC_COLLATE locale information.  This is subsequently accessed by the
    below functions strcoll, strxfrm, wcscoll, wcsxfrm. */
 extern "C" int
-__collate_load_locale (const char *name, mbtowc_p f_mbtowc, const char *charset)
+__collate_load_locale (struct __locale_t *locale, const char *name,
+		       void *f_mbtowc, const char *charset)
 {
+  char *bufp = NULL;
+  struct lc_collate_T *cop = NULL;
+
   LCID lcid = __get_lcid_from_locale (name);
   if (lcid == (LCID) -1)
     return -1;
-  collate_lcid = lcid;
-  collate_mbtowc = f_mbtowc;
-  stpcpy (collate_charset, charset);
+  if (lcid)
+    {
+      bufp = (char *) malloc (1);	/* dummy */
+      if (!bufp)
+	return -1;
+      cop = (struct lc_collate_T *) calloc (1, sizeof (struct lc_collate_T));
+      if (!cop)
+	{
+	  free (bufp);
+	  return -1;
+	}
+      cop->lcid = lcid;
+      cop->mbtowc = (mbtowc_p) f_mbtowc;
+      stpcpy (cop->codeset, charset);
+    }
+  struct __lc_cats tmp = locale->lc_cat[LC_COLLATE];
+  locale->lc_cat[LC_COLLATE].ptr = lcid == 0 ? &_C_collate_locale : cop;
+  locale->lc_cat[LC_COLLATE].buf = bufp;
+  /* If buf is not NULL, both pointers have been alloc'ed */
+  if (tmp.buf)
+    {
+      free ((void *) tmp.ptr);
+      free (tmp.buf);
+    }
   return 0;
-}
-
-extern "C" const char *
-__get_current_collate_codeset (void)
-{
-  return collate_charset;
 }
 
 /* We use the Windows functions for locale-specific string comparison and
    transformation.  The advantage is that we don't need any files with
    collation information. */
 extern "C" int
-wcscoll (const wchar_t *__restrict ws1, const wchar_t *__restrict ws2)
+wcscoll_l (const wchar_t *__restrict ws1, const wchar_t *__restrict ws2,
+	   struct __locale_t *locale)
 {
   int ret;
+  LCID collate_lcid = __get_collate_locale (locale)->lcid;
 
   if (!collate_lcid)
     return wcscmp (ws1, ws2);
@@ -1163,25 +1132,34 @@ wcscoll (const wchar_t *__restrict ws1, const wchar_t *__restrict ws2)
 }
 
 extern "C" int
-strcoll (const char *__restrict s1, const char *__restrict s2)
+wcscoll (const wchar_t *__restrict ws1, const wchar_t *__restrict ws2)
+{
+  return wcscoll_l (ws1, ws2, __get_current_locale ());
+}
+
+extern "C" int
+strcoll_l (const char *__restrict s1, const char *__restrict s2,
+	   struct __locale_t *locale)
 {
   size_t n1, n2;
   wchar_t *ws1, *ws2;
   tmp_pathbuf tp;
   int ret;
+  LCID collate_lcid = __get_collate_locale (locale)->lcid;
 
   if (!collate_lcid)
     return strcmp (s1, s2);
   /* The ANSI version of CompareString uses the default charset of the lcid,
      so we must use the Unicode version. */
-  n1 = lc_mbstowcs (collate_mbtowc, collate_charset, NULL, s1, 0) + 1;
+  mbtowc_p collate_mbtowc = __get_collate_locale (locale)->mbtowc;
+  n1 = lc_mbstowcs (collate_mbtowc, NULL, s1, 0) + 1;
   ws1 = (n1 > NT_MAX_PATH ? (wchar_t *) malloc (n1 * sizeof (wchar_t))
 			  : tp.w_get ());
-  lc_mbstowcs (collate_mbtowc, collate_charset, ws1, s1, n1);
-  n2 = lc_mbstowcs (collate_mbtowc, collate_charset, NULL, s2, 0) + 1;
+  lc_mbstowcs (collate_mbtowc, ws1, s1, n1);
+  n2 = lc_mbstowcs (collate_mbtowc, NULL, s2, 0) + 1;
   ws2 = (n2 > NT_MAX_PATH ? (wchar_t *) malloc (n2 * sizeof (wchar_t))
 			  : tp.w_get ());
-  lc_mbstowcs (collate_mbtowc, collate_charset, ws2, s2, n2);
+  lc_mbstowcs (collate_mbtowc, ws2, s2, n2);
   ret = CompareStringW (collate_lcid, 0, ws1, -1, ws2, -1);
   if (n1 > NT_MAX_PATH)
     free (ws1);
@@ -1190,6 +1168,12 @@ strcoll (const char *__restrict s1, const char *__restrict s2)
   if (!ret)
     set_errno (EINVAL);
   return ret - CSTR_EQUAL;
+}
+
+extern "C" int
+strcoll (const char *__restrict s1, const char *__restrict s2)
+{
+  return strcoll_l (s1, s2, __get_current_locale ());
 }
 
 /* BSD.  Used from glob.cc, fnmatch.c and regcomp.c.  Make sure caller is
@@ -1204,60 +1188,97 @@ __collate_range_cmp (int c1, int c2)
 }
 
 extern "C" size_t
-wcsxfrm (wchar_t *__restrict ws1, const wchar_t *__restrict ws2, size_t wsn)
+wcsxfrm_l (wchar_t *__restrict ws1, const wchar_t *__restrict ws2, size_t wsn,
+	   struct __locale_t *locale)
 {
   size_t ret;
+  LCID collate_lcid = __get_collate_locale (locale)->lcid;
 
   if (!collate_lcid)
     return wcslcpy (ws1, ws2, wsn);
-  ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY | LCMAP_BYTEREV,
-		      ws2, -1, ws1, wsn * sizeof (wchar_t));
-  /* LCMapStringW returns byte count including the terminating NUL character,
-     wcsxfrm is supposed to return length in wchar_t excluding the NUL.
-     Since the array is only single byte NUL-terminated we must make sure
-     the result is wchar_t-NUL terminated. */
+  /* Don't use LCMAP_SORTKEY in conjunction with LCMAP_BYTEREV.  The cchDest
+     parameter is used as byte count with LCMAP_SORTKEY but as char count with
+     LCMAP_BYTEREV. */
+  ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY, ws2, -1, ws1,
+		      wsn * sizeof (wchar_t));
   if (ret)
     {
-      ret = (ret + 1) / sizeof (wchar_t);
-      if (ret >= wsn)
-	return wsn;
-      ws1[ret] = L'\0';
+      ret /= sizeof (wchar_t);
+      if (wsn)
+	{
+	  /* Byte swap the array ourselves here. */
+	  for (size_t idx = 0; idx < ret; ++idx)
+	    ws1[idx] = __builtin_bswap16 (ws1[idx]);
+	  /* LCMapStringW returns byte count including the terminating NUL char.
+	     wcsxfrm is supposed to return length in wchar_t excluding the NUL.
+	     Since the array is only single byte NUL-terminated yet, make sure
+	     the result is wchar_t-NUL terminated. */
+	  if (ret < wsn)
+	    ws1[ret] = L'\0';
+	}
       return ret;
     }
   if (GetLastError () != ERROR_INSUFFICIENT_BUFFER)
     set_errno (EINVAL);
+  else
+    {
+      ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY, ws2, -1, NULL, 0);
+      if (ret)
+	wsn = ret / sizeof (wchar_t);
+    }
   return wsn;
 }
 
 extern "C" size_t
-strxfrm (char *__restrict s1, const char *__restrict s2, size_t sn)
+wcsxfrm (wchar_t *__restrict ws1, const wchar_t *__restrict ws2, size_t wsn)
 {
-  size_t ret;
+  return wcsxfrm_l (ws1, ws2, wsn, __get_current_locale ());
+}
+
+extern "C" size_t
+strxfrm_l (char *__restrict s1, const char *__restrict s2, size_t sn,
+	   struct __locale_t *locale)
+{
+  size_t ret = 0;
   size_t n2;
   wchar_t *ws2;
   tmp_pathbuf tp;
+  LCID collate_lcid = __get_collate_locale (locale)->lcid;
 
   if (!collate_lcid)
     return strlcpy (s1, s2, sn);
   /* The ANSI version of LCMapString uses the default charset of the lcid,
      so we must use the Unicode version. */
-  n2 = lc_mbstowcs (collate_mbtowc, collate_charset, NULL, s2, 0) + 1;
+  mbtowc_p collate_mbtowc = __get_collate_locale (locale)->mbtowc;
+  n2 = lc_mbstowcs (collate_mbtowc, NULL, s2, 0) + 1;
   ws2 = (n2 > NT_MAX_PATH ? (wchar_t *) malloc (n2 * sizeof (wchar_t))
 			  : tp.w_get ());
-  lc_mbstowcs (collate_mbtowc, collate_charset, ws2, s2, n2);
-  /* The sort key is a NUL-terminated byte string. */
-  ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY, ws2, -1, (PWCHAR) s1, sn);
-  if (n2 > NT_MAX_PATH)
-    free (ws2);
+  if (ws2)
+    {
+      lc_mbstowcs (collate_mbtowc, ws2, s2, n2);
+      /* The sort key is a NUL-terminated byte string. */
+      ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY, ws2, -1,
+			  (PWCHAR) s1, sn);
+    }
   if (ret == 0)
     {
-      if (GetLastError () != ERROR_INSUFFICIENT_BUFFER)
+      ret = sn + 1;
+      if (!ws2 || GetLastError () != ERROR_INSUFFICIENT_BUFFER)
 	set_errno (EINVAL);
-      return sn;
+      else
+	ret = LCMapStringW (collate_lcid, LCMAP_SORTKEY, ws2, -1, NULL, 0);
     }
+  if (ws2 && n2 > NT_MAX_PATH)
+    free (ws2);
   /* LCMapStringW returns byte count including the terminating NUL character.
      strxfrm is supposed to return length excluding the NUL. */
   return ret - 1;
+}
+
+extern "C" size_t
+strxfrm (char *__restrict s1, const char *__restrict s2, size_t sn)
+{
+  return strxfrm_l (s1, s2, sn, __get_current_locale ());
 }
 
 /* Fetch default ANSI codepage from locale info and generate a setlocale
@@ -1399,7 +1420,7 @@ __set_charset_from_locale (const char *locale, char *charset)
       break;
     case 1258:
     default:
-      if (lcid == 0x3c09 		/* en_HK (English/Hong Kong) */
+      if (lcid == 0x3c09		/* en_HK (English/Hong Kong) */
 	  || lcid == 0x200c		/* fr_RE (French/Réunion) */
 	  || lcid == 0x240c		/* fr_CD (French/Congo) */
 	  || lcid == 0x280c		/* fr_SN (French/Senegal) */
@@ -1410,9 +1431,9 @@ __set_charset_from_locale (const char *locale, char *charset)
 	  || lcid == 0x3c0c		/* fr_HT (French/Haiti) */
 	  || lcid == 0x0477		/* so_SO (Somali/Somali) */
 	  || lcid == 0x0430)		/* st_ZA (Sotho/South Africa) */
-      	cs = "ISO-8859-1";
+	cs = "ISO-8859-1";
       else if (lcid == 0x818)		/* ro_MD (Romanian/Moldovia) */
-      	cs = "ISO-8859-2";
+	cs = "ISO-8859-2";
       else if (lcid == 0x043a)		/* mt_MT (Maltese/Malta) */
 	cs = "ISO-8859-3";
       else if (lcid == 0x0481)		/* mi_NZ (Maori/New Zealand) */
@@ -1482,7 +1503,7 @@ __set_locale_from_locale_alias (const char *locale, char *new_locale)
       if (strlen (replace) > ENCODING_LEN)
 	continue;
       /* The file is latin1 encoded */
-      lc_mbstowcs (__iso_mbtowc, "ISO-8859-1", walias, alias, ENCODING_LEN + 1);
+      lc_mbstowcs (__iso_mbtowc (1), walias, alias, ENCODING_LEN + 1);
       walias[ENCODING_LEN] = L'\0';
       if (!wcscmp (wlocale, walias))
 	{
@@ -1491,35 +1512,6 @@ __set_locale_from_locale_alias (const char *locale, char *new_locale)
 	}
     }
   fclose (fp);
-  return ret;
-}
-
-static char *
-check_codepage (char *ret)
-{
-  if (!wincap.has_always_all_codepages ())
-    {
-      /* Prior to Windows Vista, many codepages are not installed by
-	 default, or can be deinstalled.  The following codepages require
-	 that the respective conversion tables are installed into the OS.
-	 So we check if they are installed and if not, setlocale should
-	 fail. */
-      CPINFO cpi;
-      UINT cp = 0;
-      if (__mbtowc == __sjis_mbtowc)
-	cp = 932;
-      else if (__mbtowc == __eucjp_mbtowc)
-	cp = 20932;
-      else if (__mbtowc == __gbk_mbtowc)
-	cp = 936;
-      else if (__mbtowc == __kr_mbtowc)
-	cp = 949;
-      else if (__mbtowc == __big5_mbtowc)
-	cp = 950;
-      if (cp && !GetCPInfo (cp, &cpi)
-	  && GetLastError () == ERROR_INVALID_PARAMETER)
-	return NULL;
-    }
   return ret;
 }
 
@@ -1540,33 +1532,26 @@ internal_setlocale ()
   wchar_t *w_path = NULL, *w_cwd;
 
   /* Don't do anything if the charset hasn't actually changed. */
-  if (strcmp (cygheap->locale.charset, __locale_charset ()) == 0)
+  if (cygheap->locale.mbtowc == __get_global_locale ()->mbtowc)
     return;
 
-  debug_printf ("Cygwin charset changed from %s to %s",
-		cygheap->locale.charset, __locale_charset ());
+  debug_printf ("Global charset set to %s",
+		__locale_charset (__get_global_locale ()));
   /* Fetch PATH and CWD and convert to wchar_t in previous charset. */
   path = getenv ("PATH");
   if (path && *path)	/* $PATH can be potentially unset. */
     {
       w_path = tp.w_get ();
-      sys_mbstowcs (w_path, 32768, path);
+      sys_cp_mbstowcs (cygheap->locale.mbtowc, w_path, 32768, path);
     }
   w_cwd = tp.w_get ();
   cwdstuff::cwd_lock.acquire ();
-  sys_mbstowcs (w_cwd, 32768, cygheap->cwd.get_posix ());
+  sys_cp_mbstowcs (cygheap->locale.mbtowc, w_cwd, 32768,
+		   cygheap->cwd.get_posix ());
   /* Set charset for internal conversion functions. */
-  if (*__locale_charset () == 'A'/*SCII*/)
-    {
-      cygheap->locale.mbtowc = __utf8_mbtowc;
-      cygheap->locale.wctomb = __utf8_wctomb;
-    }
-  else
-    {
-      cygheap->locale.mbtowc = __mbtowc;
-      cygheap->locale.wctomb = __wctomb;
-    }
-  strcpy (cygheap->locale.charset, __locale_charset ());
+  cygheap->locale.mbtowc = __get_global_locale ()->mbtowc;
+  if (cygheap->locale.mbtowc == __ascii_mbtowc)
+    cygheap->locale.mbtowc = __utf8_mbtowc;
   /* Restore CWD and PATH in new charset. */
   cygheap->cwd.reset_posix (w_cwd);
   cwdstuff::cwd_lock.release ();
@@ -1587,22 +1572,6 @@ void
 initial_setlocale ()
 {
   char *ret = _setlocale_r (_REENT, LC_CTYPE, "");
-  if (ret && check_codepage (ret))
+  if (ret)
     internal_setlocale ();
-}
-
-/* Like newlib's setlocale, but additionally check if the charset needs
-   OS support and the required codepage is actually installed.  If codepage
-   is not available, revert to previous locale and return NULL.  For details
-   about codepage availability, see the comment in check_codepage() above. */
-extern "C" char *
-setlocale (int category, const char *locale)
-{
-  char old[(LC_MESSAGES + 1) * (ENCODING_LEN + 1/*"/"*/ + 1)];
-  if (locale && !wincap.has_always_all_codepages ())
-    stpcpy (old, _setlocale_r (_REENT, category, NULL));
-  char *ret = _setlocale_r (_REENT, category, locale);
-  if (ret && locale && !(ret = check_codepage (ret)))
-    _setlocale_r (_REENT, category, old);
-  return ret;
 }

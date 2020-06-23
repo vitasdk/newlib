@@ -1,32 +1,28 @@
 /*
 FUNCTION
-   <<wcstol>>---wide string to long
+   <<wcstol>>, <<wcstol_l>>---wide string to long
 
 INDEX
 	wcstol
+
+INDEX
+	wcstol_l
+
 INDEX
 	_wcstol_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <wchar.h>
         long wcstol(const wchar_t *__restrict <[s]>,
-        	wchar_t **__restrict <[ptr]>,int <[base]>);
+		    wchar_t **__restrict <[ptr]>, int <[base]>);
 
-        long _wcstol_r(void *<[reent]>, 
-                       const wchar_t *<[s]>, wchar_t **<[ptr]>,int <[base]>);
+	#include <wchar.h>
+        long wcstol_l(const wchar_t *__restrict <[s]>,
+		      wchar_t **__restrict <[ptr]>, int <[base]>,
+		      locale_t <[locale]>);
 
-TRAD_SYNOPSIS
-	#include <stdlib.h>
-	long wcstol (<[s]>, <[ptr]>, <[base]>)
-        wchar_t *__restrict <[s]>;
-        wchar_t **__restrict <[ptr]>;
-        int <[base]>;
-
-	long _wcstol_r (<[reent]>, <[s]>, <[ptr]>, <[base]>)
-	struct _reent *<[reent]>;
-        wchar_t *<[s]>;
-        wchar_t **<[ptr]>;
-        int <[base]>;
+        long _wcstol_r(void *<[reent]>, const wchar_t *<[s]>,
+		       wchar_t **<[ptr]>, int <[base]>);
 
 DESCRIPTION
 The function <<wcstol>> converts the wide string <<*<[s]>>> to
@@ -71,15 +67,21 @@ not <<NULL>>).
 The alternate function <<_wcstol_r>> is a reentrant version.  The
 extra argument <[reent]> is a pointer to a reentrancy structure.
 
-RETURNS
-<<wcstol>> returns the converted value, if any. If no conversion was
-made, 0 is returned.
+<<wcstol_l>> is like <<wcstol>> but performs the conversion based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
 
-<<wcstol>> returns <<LONG_MAX>> or <<LONG_MIN>> if the magnitude of
-the converted value is too large, and sets <<errno>> to <<ERANGE>>.
+RETURNS
+<<wcstol>>, <<wcstol_l>> return the converted value, if any. If no
+conversion was made, 0 is returned.
+
+<<wcstol>>, <<wcstol_l>> return <<LONG_MAX>> or <<LONG_MIN>> if the
+magnitude of the converted value is too large, and sets <<errno>>
+to <<ERANGE>>.
 
 PORTABILITY
 <<wcstol>> is ANSI.
+<<wcstol_l>> is a GNU extension.
 
 No supporting OS subroutines are required.
 */
@@ -96,11 +98,7 @@ No supporting OS subroutines are required.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -124,19 +122,14 @@ No supporting OS subroutines are required.
 #include <errno.h>
 #include <wchar.h>
 #include <reent.h>
+#include "../locale/setlocale.h"
 
 /*
  * Convert a wide string to a long integer.
- *
- * Ignores `locale' stuff.  Assumes that the upper and lower case
- * alphabets and digits are each contiguous.
  */
-long
-_DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST wchar_t *nptr _AND
-	wchar_t **endptr _AND
-	int base)
+static long
+_wcstol_l (struct _reent *rptr, const wchar_t *nptr, wchar_t **endptr,
+	   int base, locale_t loc)
 {
 	register const wchar_t *s = nptr;
 	register unsigned long acc;
@@ -151,7 +144,7 @@ _DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
 	 */
 	do {
 		c = *s++;
-	} while (iswspace(c));
+	} while (iswspace_l(c, loc));
 	if (c == L'-') {
 		neg = 1;
 		c = *s++;
@@ -187,10 +180,12 @@ _DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
 	cutlim = cutoff % (unsigned long)base;
 	cutoff /= (unsigned long)base;
 	for (acc = 0, any = 0;; c = *s++) {
-		if (iswdigit(c))
+		if (c >= L'0' && c <= L'9')
 			c -= L'0';
-		else if (iswalpha(c))
-			c -= iswupper(c) ? L'A' - 10 : L'a' - 10;
+		else if (c >= L'A' && c <= L'Z')
+			c -= L'A' - 10;
+		else if (c >= L'a' && c <= L'z')
+			c -= L'a' - 10;
 		else
 			break;
 		if (c >= base)
@@ -213,15 +208,30 @@ _DEFUN (_wcstol_r, (rptr, nptr, endptr, base),
 	return (acc);
 }
 
+long
+_wcstol_r (struct _reent *rptr,
+	const wchar_t *nptr,
+	wchar_t **endptr,
+	int base)
+{
+	return _wcstol_l (rptr, nptr, endptr, base, __get_current_locale ());
+}
+
 #ifndef _REENT_ONLY
 
 long
-_DEFUN (wcstol, (s, ptr, base),
-	_CONST wchar_t *__restrict s _AND
-	wchar_t **__restrict ptr _AND
+wcstol_l (const wchar_t *__restrict s, wchar_t **__restrict ptr, int base,
+	  locale_t loc)
+{
+	return _wcstol_l (_REENT, s, ptr, base, loc);
+}
+
+long
+wcstol (const wchar_t *__restrict s,
+	wchar_t **__restrict ptr,
 	int base)
 {
-	return _wcstol_r (_REENT, s, ptr, base);
+	return _wcstol_l (_REENT, s, ptr, base, __get_current_locale ());
 }
 
 #endif

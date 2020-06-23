@@ -1,7 +1,5 @@
 /* crt0.c
 
-   Copyright 2001, 2003, 2004, 2005, 2010, 2011 Red Hat, Inc.
-
 This software is a copyrighted work licensed under the terms of the
 Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
@@ -18,14 +16,12 @@ extern int main (int argc, char **argv);
 
 void cygwin_crt0 (int (*main) (int, char **));
 
+#ifdef __i386__
+__attribute__ ((force_align_arg_pointer))
+#endif
 void
 mainCRTStartup ()
 {
-#ifdef __i386__
-  (void)__builtin_return_address(1);
-  asm volatile ("andl $-16,%%esp" ::: "%esp");
-#endif
-
   cygwin_crt0 (main);
 
   /* These are never actually called.  They are just here to force the inclusion

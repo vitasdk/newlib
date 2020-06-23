@@ -10,18 +10,10 @@ acosh
 INDEX
 acoshf
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double acosh(double <[x]>);
         float acoshf(float <[x]>);
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double acosh(<[x]>)
-        double <[x]>;
-
-        float acoshf(<[x]>)
-        float <[x]>;
 
 DESCRIPTION
 <<acosh>> calculates the inverse hyperbolic cosine of <[x]>.
@@ -41,17 +33,15 @@ RETURNS
 <<acosh>> and <<acoshf>> return the calculated value.  If <[x]>
 less than 1, the return value is NaN and <<errno>> is set to <<EDOM>>.
 
-You can change the error-handling behavior with the non-ANSI
-<<matherr>> function.
-
 PORTABILITY
 Neither <<acosh>> nor <<acoshf>> are ANSI C.  They are not recommended
 for portable programs.
 
 
-QUICKREF ANSI SVID POSIX RENTRANT
- acos    n,n,n,m
- acosf   n,n,n,m
+QUICKREF
+ ansi posix rentrant
+ acos    n,n,m
+ acosf   n,n,m
 
 MATHREF
  acosh, NAN,   arg,DOMAIN,EDOM

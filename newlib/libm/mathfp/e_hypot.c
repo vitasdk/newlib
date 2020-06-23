@@ -19,17 +19,10 @@ INDEX
 INDEX
         hypotf
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double hypot(double <[x]>, double <[y]>);
         float hypotf(float <[x]>, float <[y]>);
-
-TRAD_SYNOPSIS
-        double hypot(<[x]>, <[y]>)
-        double <[x]>, <[y]>;
-
-        float hypotf(<[x]>, <[y]>)
-        float <[x]>, <[y]>;
 
 DESCRIPTION
         <<hypot>> calculates the Euclidean distance
@@ -47,8 +40,6 @@ RETURNS
         Normally, the distance value is returned.  On overflow,
         <<hypot>> returns <<HUGE_VAL>> and sets <<errno>> to
         <<ERANGE>>.
-
-        You can change the error treatment with <<matherr>>.
 
 PORTABILITY
         <<hypot>> and <<hypotf>> are not ANSI C.  */

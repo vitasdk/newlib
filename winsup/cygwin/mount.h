@@ -1,8 +1,5 @@
 /* mount.h: mount definitions.
 
-   Copyright 1996, 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2010, 2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -11,6 +8,10 @@ details. */
 
 #ifndef _MOUNT_H
 #define _MOUNT_H
+
+#define __CCP_APP_SLASH	0x10000000	/* Internal flag for conv_to_posix_path.
+					   always append slash, even if path
+					   is "X:\\" only. */
 
 enum disk_type
 {
@@ -30,6 +31,7 @@ enum fs_info_type
 {
   none = 0,
   fat,
+  exfat,
   ntfs,
   refs,
   samba,
@@ -38,13 +40,13 @@ enum fs_info_type
   cdrom,
   udf,
   csc_cache,
-  sunwnfs,
   unixfs,
   mvfs,
   cifs,
   nwfs,
   ncfsd,
   afs,
+  prlfs,
   /* Always last. */
   max_fs_type
 };
@@ -70,7 +72,6 @@ class fs_info
     unsigned has_acls			: 1;
     unsigned hasgood_inode		: 1;
     unsigned caseinsensitive		: 1;
-    unsigned has_buggy_open		: 1;
     unsigned has_buggy_reopen		: 1;
     unsigned has_buggy_fileid_dirinfo	: 1;
     unsigned has_buggy_basic_info	: 1;
@@ -95,12 +96,12 @@ class fs_info
   IMPLEMENT_STATUS_FLAG (bool, has_acls)
   IMPLEMENT_STATUS_FLAG (bool, hasgood_inode)
   IMPLEMENT_STATUS_FLAG (bool, caseinsensitive)
-  IMPLEMENT_STATUS_FLAG (bool, has_buggy_open)
   IMPLEMENT_STATUS_FLAG (bool, has_buggy_reopen)
   IMPLEMENT_STATUS_FLAG (bool, has_buggy_fileid_dirinfo)
   IMPLEMENT_STATUS_FLAG (bool, has_buggy_basic_info)
   IMPLEMENT_STATUS_FLAG (bool, has_dos_filenames_only)
   IMPLEMENT_FS_FLAG (fat)
+  IMPLEMENT_FS_FLAG (exfat)
   IMPLEMENT_FS_FLAG (ntfs)
   IMPLEMENT_FS_FLAG (refs)
   IMPLEMENT_FS_FLAG (samba)
@@ -109,13 +110,13 @@ class fs_info
   IMPLEMENT_FS_FLAG (cdrom)
   IMPLEMENT_FS_FLAG (udf)
   IMPLEMENT_FS_FLAG (csc_cache)
-  IMPLEMENT_FS_FLAG (sunwnfs)
   IMPLEMENT_FS_FLAG (unixfs)
   IMPLEMENT_FS_FLAG (mvfs)
   IMPLEMENT_FS_FLAG (cifs)
   IMPLEMENT_FS_FLAG (nwfs)
   IMPLEMENT_FS_FLAG (ncfsd)
   IMPLEMENT_FS_FLAG (afs)
+  IMPLEMENT_FS_FLAG (prlfs)
   fs_info_type what_fs () const { return status.fs_type; }
   bool got_fs () const { return status.fs_type != none; }
 
@@ -188,19 +189,17 @@ class mount_info
   int add_item (const char *dev, const char *path, unsigned flags);
   int del_item (const char *path, unsigned flags);
 
-  unsigned set_flags_from_win32_path (const char *path);
   int conv_to_win32_path (const char *src_path, char *dst, device&,
 			  unsigned *flags = NULL);
-  int conv_to_posix_path (PWCHAR src_path, char *posix_path,
-			  int keep_rel_p);
+  int conv_to_posix_path (PWCHAR src_path, char *posix_path, int ccp_flags);
   int conv_to_posix_path (const char *src_path, char *posix_path,
-			  int keep_rel_p);
+			  int ccp_flags);
   struct mntent *getmntent (int x);
 
   int write_cygdrive_info (const char *cygdrive_prefix, unsigned flags);
   int get_cygdrive_info (char *user, char *system, char* user_flags,
 			 char* system_flags);
-  void cygdrive_posix_path (const char *src, char *dst, int trailing_slash_p);
+  void cygdrive_posix_path (const char *src, char *dst, int flags);
   int get_mounts_here (const char *parent_dir, int,
 		       PUNICODE_STRING mount_points,
 		       PUNICODE_STRING cygd);

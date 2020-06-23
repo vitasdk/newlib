@@ -356,6 +356,13 @@ $(MKDOC): makedoc.o
 makedoc.o: makedoc.c
 	$(CC_FOR_BUILD) -g $(CFLAGS_FOR_BUILD) -c $(srcdir)/makedoc.c
 
+man:
+
+man-cache:
+	${srcdir}/makedocbook.py --cache
+
+.PHONY: man-cache
+
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

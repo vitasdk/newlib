@@ -1,8 +1,5 @@
 /* pinfo.h: process table info
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -29,7 +26,9 @@ enum picom
   PICOM_ROOT = 3,
   PICOM_FDS = 4,
   PICOM_FD = 5,
-  PICOM_PIPE_FHANDLER = 6
+  PICOM_PIPE_FHANDLER = 6,
+  PICOM_FILE_PATHCONV = 7,
+  PICOM_ENVIRON = 8
 };
 
 #define EXITCODE_SET		0x8000000
@@ -53,8 +52,6 @@ public:
   pid_t ppid;		/* Parent process id.  */
 
   DWORD exitcode;	/* set when process exits */
-
-#define PINFO_REDIR_SIZE ((char *) &myself.procinfo->exitcode - (char *) myself.procinfo)
 
   /* > 0 if started by a cygwin process */
   DWORD cygstarted;
@@ -103,12 +100,14 @@ public:
 
   commune_result commune_request (__uint32_t, ...);
   bool alive ();
-  fhandler_pipe *pipe_fhandler (HANDLE, size_t &);
+  fhandler_pipe *pipe_fhandler (int64_t, size_t &);
+  void *file_pathconv (int, uint32_t, size_t &);
   char *fd (int fd, size_t &);
   char *fds (size_t &);
   char *root (size_t &);
   char *cwd (size_t &);
   char *cmdline (size_t &);
+  char *environ (size_t &);
   char *win_heap_info (size_t &);
   bool set_ctty (class fhandler_termios *, int);
   bool alert_parent (char);
@@ -140,28 +139,32 @@ public:
   HANDLE rd_proc_pipe;
   pinfo_minimal (): h (NULL), hProcess (NULL), rd_proc_pipe (NULL) {}
   void set_rd_proc_pipe (HANDLE& h) {rd_proc_pipe = h;}
+  void set_inheritance (bool);
   friend class pinfo;
 };
 
 class pinfo: public pinfo_minimal
 {
   bool destroy;
+  HANDLE winpid_hdl;
   _pinfo *procinfo;
 public:
   bool waiter_ready;
   class cygthread *wait_thread;
 
   void __reg3 init (pid_t, DWORD, HANDLE);
-  pinfo (_pinfo *x = NULL): pinfo_minimal (), destroy (false), procinfo (x),
-		     waiter_ready (false), wait_thread (NULL) {}
-  pinfo (pid_t n, DWORD flag = 0): pinfo_minimal (), destroy (false),
-				   procinfo (NULL), waiter_ready (false),
-				   wait_thread (NULL)
+  pinfo (_pinfo *x = NULL)
+  : pinfo_minimal (), destroy (false), winpid_hdl (NULL), procinfo (x),
+    waiter_ready (false), wait_thread (NULL) {}
+  pinfo (pid_t n, DWORD flag = 0)
+  : pinfo_minimal (), destroy (false), winpid_hdl (NULL), procinfo (NULL),
+    waiter_ready (false), wait_thread (NULL)
   {
     init (n, flag, NULL);
   }
   pinfo (HANDLE, pinfo_minimal&, pid_t);
   void __reg2 thisproc (HANDLE);
+  void create_winpid_symlink ();
   inline void _pinfo_release ();
   void release ();
   bool __reg1 wait ();
@@ -202,12 +205,15 @@ public:
   }
 #endif
   HANDLE shared_handle () {return h;}
+  HANDLE shared_winpid_handle () {return winpid_hdl;}
   void set_acl ();
   friend class _pinfo;
   friend class winpids;
 private:
   DWORD status_exit (DWORD);
 };
+
+#define MAX_PID 65536
 
 #define ISSTATE(p, f)	(!!((p)->process_state & f))
 #define NOTSTATE(p, f)	(!((p)->process_state & f))
@@ -227,8 +233,6 @@ public:
   inline void reset () { release (); npids = 0;}
   void set (bool winpid);
   winpids (): make_copy (true) {}
-  winpids (int): make_copy (false), npidlist (0), pidlist (NULL),
-		 pinfolist (NULL), pinfo_access (0), npids (0) {}
   winpids (DWORD acc): make_copy (false), npidlist (0), pidlist (NULL),
 		       pinfolist (NULL), pinfo_access (acc), npids (0)
   {
@@ -240,11 +244,8 @@ public:
   void release ();
 };
 
-extern __inline pid_t
-cygwin_pid (pid_t pid)
-{
-  return pid;
-}
+pid_t create_cygwin_pid ();
+pid_t cygwin_pid (DWORD);
 
 void __stdcall pinfo_init (char **, int);
 extern pinfo myself;

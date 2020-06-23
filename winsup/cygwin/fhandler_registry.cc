@@ -1,8 +1,5 @@
 /* fhandler_registry.cc: fhandler for /proc/registry virtual filesystem
 
-   Copyright 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012,
-   2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -286,7 +283,7 @@ multi_wcstombs (char *dst, size_t len, const wchar_t *src, size_t nwc)
 
   while (nwc)
     {
-      siz = sys_wcstombs (dst, len, src, nwc);
+      siz = sys_wcstombs (dst, len, src, nwc) + 1;
       sum += siz;
       if (dst)
 	{
@@ -309,13 +306,6 @@ multi_wcstombs (char *dst, size_t len, const wchar_t *src, size_t nwc)
   return sum;
 }
 
-/* Returns 0 if path doesn't exist, >0 if path is a directory,
- * <0 if path is a file.
- *
- * We open the last key but one and then enum it's sub-keys and values to see if the
- * final component is there. This gets round the problem of not having security access
- * to the final key in the path.
- */
 virtual_ftype_t
 fhandler_registry::exists ()
 {
@@ -505,7 +495,7 @@ fhandler_registry::fstat (struct stat *buf)
       const char *path = get_name () + proc_len + prefix_len + 2;
       hKey =
 	open_key (path, STANDARD_RIGHTS_READ | KEY_QUERY_VALUE, wow64,
-		  (file_type < virt_none) ? true : false);
+		  virt_ftype_isfile (file_type) ? true : false);
 
       if (hKey == HKEY_PERFORMANCE_DATA)
 	/* RegQueryInfoKey () always returns write time 0,
@@ -522,7 +512,7 @@ fhandler_registry::fstat (struct stat *buf)
 	      to_timestruc_t ((PLARGE_INTEGER) &ftLastWriteTime, &buf->st_mtim);
 	      buf->st_ctim = buf->st_birthtim = buf->st_mtim;
 	      time_as_timestruc_t (&buf->st_atim);
-	      if (file_type > virt_none)
+	      if (virt_ftype_isdir (file_type))
 		buf->st_nlink = subkey_count + 2;
 	      else
 		{
@@ -555,7 +545,8 @@ fhandler_registry::fstat (struct stat *buf)
 		      else
 			buf->st_size = sys_wcstombs (NULL, 0,
 						     (wchar_t *) tmpbuf,
-						     dwSize / sizeof (wchar_t));
+						     dwSize / sizeof (wchar_t))
+				       + 1;
 		      if (tmpbuf)
 			free (tmpbuf);
 		    }
@@ -569,7 +560,7 @@ fhandler_registry::fstat (struct stat *buf)
 		  buf->st_uid = uid;
 		  buf->st_gid = gid;
 		  buf->st_mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
-		  if (file_type > virt_none)
+		  if (virt_ftype_isdir (file_type))
 		    buf->st_mode |= S_IFDIR;
 		  else
 		    buf->st_mode &= NO_X;
@@ -828,7 +819,7 @@ fhandler_registry::open (int flags, mode_t mode)
 	      }
 	    else
 	      {
-		set_io_handle (fetch_hkey (i));
+		set_handle (fetch_hkey (i));
 		/* Marking as nohandle allows to call dup on pseudo registry
 		   handles. */
 		if (get_handle () >= HKEY_CLASSES_ROOT)
@@ -883,7 +874,7 @@ fhandler_registry::open (int flags, mode_t mode)
       else
 	flags |= O_DIROPEN;
 
-      set_io_handle (handle);
+      set_handle (handle);
       set_close_on_exec (!!(flags & O_CLOEXEC));
       value_name = cwcsdup (dec_file);
 
@@ -972,7 +963,7 @@ fhandler_registry::fill_filebuf ()
 	}
       if (type == REG_SZ || type == REG_EXPAND_SZ || type == REG_LINK)
 	bufalloc = sys_wcstombs (NULL, 0, (wchar_t *) tmpbuf,
-				 size / sizeof (wchar_t));
+				 size / sizeof (wchar_t)) + 1;
       else if (type == REG_MULTI_SZ)
 	bufalloc = multi_wcstombs (NULL, 0, (wchar_t *) tmpbuf,
 				   size / sizeof (wchar_t));
@@ -1120,7 +1111,7 @@ fhandler_registry::dup (fhandler_base *child, int flags)
      allows fhandler_base::dup to succeed as usual for nohandle fhandlers.
      Here we just have to fix up by copying the pseudo handle value. */
   if ((HKEY) get_handle () >= HKEY_CLASSES_ROOT)
-    fhs->set_io_handle (get_handle ());
+    fhs->set_handle (get_handle ());
   if (value_name)
     fhs->value_name = cwcsdup (value_name);
   return ret;

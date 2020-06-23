@@ -31,11 +31,11 @@ They can be used from one of the provided Unix shells like bash, tcsh or zsh.
 <answer>
 
 <para>Cygwin can be expected to run on all modern, released versions of Windows.
-State January 2015 this includes Windows XP SP3, Windows Server 2003/2003R2
-and all later versions of Windows up to Windows 8.1 and Windows Server 2012R2.
+State January 2016 this includes Windows Vista, Windows Server 2008 and all
+later versions of Windows up to Windows 10 and Windows Server 2016.
 The 32 bit version of Cygwin also runs in the WOW64 32 bit environment on
-released 64 bit versions of Windows (XP SP3 up to 8.1/2012R2), the 64 bit
-version of course only on 64 bit Windows.
+released 64 bit versions of Windows, the 64 bit version of course only on
+64 bit Windows.
 </para>
 <para>Keep in mind that Cygwin can only do as much as the underlying OS
 supports.  Because of this, Cygwin will behave differently, and
@@ -56,9 +56,7 @@ Guide, an API Reference, mailing lists and archives.
 <para>You can find documentation for the individual GNU tools typically
 as man pages or info pages as part of the Cygwin net distribution.
 Additionally you can get the latest docs at
-<ulink url="http://www.gnu.org/manual/"/>.  (You should read GNU manuals from a
-local mirror.  Check <ulink url="http://www.gnu.org/server/list-mirrors.html"/>
-for a list of them.)
+<ulink url="http://www.gnu.org/manual"/>.
 </para>
 </answer></qandaentry>
 
@@ -74,17 +72,10 @@ but you should be sure to read the copyright section of the FAQ for more
 information on how the GNU General Public License may affect your use of
 these tools.
 </para>
-<para>In particular, if you intend to port a proprietary (non-GPL'd)
-application using Cygwin, you will need the proprietary-use license 
-for the Cygwin library.  This is available for purchase from Red Hat;
-please visit <ulink url="https://cygwin.com/licensing.html"/> for more
-information.  All other questions should be sent to the public project
-mailing list cygwin@cygwin.com.
-</para>
 <para>Note that when we say "free" we mean freedom, not price.  The goal of
 such freedom is that the people who use a given piece of software
 should be able to change it to fit their needs, learn from it, share
-it with their friends, etc.  The Cygwin license allows you those
+it with their friends, etc.  The GPL or LGPL licenses allows you those
 freedoms, so it is free software.
 </para>
 </answer></qandaentry>

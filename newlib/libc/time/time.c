@@ -5,14 +5,9 @@ FUNCTION
 INDEX
 	time
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <time.h>
 	time_t time(time_t *<[t]>);
-
-TRAD_SYNOPSIS
-	#include <time.h>
-	time_t time(<[t]>)
-	time_t *<[t]>;
 
 DESCRIPTION
 <<time>> looks up the best available representation of the current
@@ -38,16 +33,14 @@ Supporting OS subroutine required: Some implementations require
 #include <sys/time.h>
 
 time_t
-_DEFUN (time, (t),
-	time_t * t)
+time (time_t * t)
 {
   struct timeval now;
 
-  if (_gettimeofday_r (_REENT, &now, NULL) >= 0)
-    {
-      if (t)
-	*t = now.tv_sec;
-      return now.tv_sec;
-    }
-  return -1;
+  if (_gettimeofday_r (_REENT, &now, NULL) < 0)
+    now.tv_sec = (time_t) -1;
+
+  if (t)
+    *t = now.tv_sec;
+  return now.tv_sec;
 }

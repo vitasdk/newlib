@@ -16,22 +16,6 @@ by prefixing with <literal>no</literal>.</para>
 <itemizedlist mark="bullet">
 
 <listitem>
-<para><envar>(no)detect_bloda</envar> - If set, Cygwin will try to detect
-foreign applications which try to inject threads into a Cygwin process,
-or which redirect system sockets by providing an enforced so-called
-<literal>Layered Service Provider</literal>.  This may or may not help to
-detect <ulink url="https://cygwin.com/faq/faq.html#faq.using.bloda">
-BLODAs</ulink>.  Don't use this option for day-to-day usage, it will slow
-down every thread and socket creation!</para>
-</listitem>
-
-<listitem>
-<para><envar>(no)dosfilewarning</envar> - If set, Cygwin will warn the
-first time a user uses an "MS-DOS" style path name rather than a POSIX-style
-path name.  Defaults to off.</para>
-</listitem>
-
-<listitem>
 <para><envar>(no)export</envar> - If set, the final values of these
 settings are re-exported to the environment as <envar>CYGWIN</envar> again.
 Defaults to off.</para>
@@ -95,9 +79,7 @@ the R/O attribute set.</para>
 
 <para>If set to <literal>winsymlinks:native</literal> or
 <literal>winsymlinks:nativestrict</literal>, Cygwin creates symlinks as
-native Windows symlinks on filesystems and OS versions supporting them.
-If the OS is known not to support native symlinks (Windows XP, Windows
-Server 2003), a warning message is produced once per session.</para>
+native Windows symlinks on filesystems and OS versions supporting them.</para>
 
 <para>The difference between <literal>winsymlinks:native</literal> and
 <literal>winsymlinks:nativestrict</literal> is this:  If the filesystem
@@ -111,6 +93,12 @@ system call will immediately fail.</para>
 <xref linkend="pathnames-symlinks"></xref>.</para>
 </listitem>
 
+<listitem>
+<para><envar>disable_pcon</envar> - if set, pseudo console support in
+pty will be disabled.  This is for programs which do not work properly
+under pty with pseudo console enabled.  Defaults to not set.</para>
+</listitem>
+
 </itemizedlist>
 
 </sect2>
@@ -119,8 +107,8 @@ system call will immediately fail.</para>
 <title>Obsolete options</title>
 
 <para>
-Certain CYGWIN options available in past releases have been removed in
-Cygwin 1.7 for one reason or another.  These obsolete options are listed
+Certain CYGWIN options available in past releases have been removed over
+time for one reason or another.  These obsolete options are listed
 below.</para>
 
 <itemizedlist mark="bullet">
@@ -130,6 +118,16 @@ below.</para>
 all file opens default to binary mode, unless the open mode has been specified
 explicitly in the open(2) call.
 </para>
+</listitem>
+
+<listitem>
+<para><envar>(no)detect_bloda</envar> - No case of a BLODA found by this
+option has been reported in years.</para>
+</listitem>
+
+<listitem>
+<para><envar>(no)dosfilewarning</envar> - This option had been disabled for
+quite some time and nobody missed it.</para>
 </listitem>
 
 <listitem>
@@ -225,8 +223,8 @@ Windows programs.</para>
 <listitem>
 <para><envar>(no)upcaseenv</envar> - This option could be used to convert
 all environment variables to uppercase.  This was the default behavior in
-releases prior to Cygwin 1.7.  Since keeping the case of environment
-variables intact is POSIXly correct, Cygwin now does not change the case
+older releases of Cygwin.  Since keeping the case of environment variables
+intact is POSIXly correct, Cygwin now does not change the case
 of environment variables, except for a restricted set to maintain minimal
 backward compatibility.  The current list of always uppercased variables is:
 </para>

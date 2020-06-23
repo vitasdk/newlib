@@ -1,8 +1,5 @@
 /* spawn.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -261,8 +258,24 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 			  int in__stdin, int in__stdout)
 {
   bool rc;
-  pid_t cygpid;
   int res = -1;
+  DWORD pid_restore = 0;
+  bool attach_to_console = false;
+  pid_t ctty_pgid = 0;
+
+  /* Search for CTTY and retrieve its PGID */
+  cygheap_fdenum cfd (false);
+  while (cfd.next () >= 0)
+    if (cfd->get_major () == DEV_PTYS_MAJOR ||
+	cfd->get_major () == DEV_CONS_MAJOR)
+      {
+	fhandler_termios *fh = (fhandler_termios *) (fhandler_base *) cfd;
+	if (fh->tc ()->ntty == myself->ctty)
+	  {
+	    ctty_pgid = fh->tc ()->getpgid ();
+	    break;
+	  }
+      }
 
   /* Check if we have been called from exec{lv}p or spawn{lv}p and mask
      mode to keep only the spawn mode. */
@@ -395,52 +408,40 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       pi.hProcess = pi.hThread = NULL;
       pi.dwProcessId = pi.dwThreadId = 0;
 
-      /* Set up needed handles for stdio */
-      si.dwFlags = STARTF_USESTDHANDLES;
-      si.hStdInput = handle ((in__stdin < 0 ? 0 : in__stdin), false);
-      si.hStdOutput = handle ((in__stdout < 0 ? 1 : in__stdout), true);
-      si.hStdError = handle (2, true);
-
-      si.cb = sizeof (si);
-
       c_flags = GetPriorityClass (GetCurrentProcess ());
       sigproc_printf ("priority class %d", c_flags);
 
       c_flags |= CREATE_SEPARATE_WOW_VDM | CREATE_UNICODE_ENVIRONMENT;
 
-      if (wincap.has_program_compatibility_assistant ())
+      /* We're adding the CREATE_BREAKAWAY_FROM_JOB flag here to workaround
+	 issues with the "Program Compatibility Assistant (PCA) Service".
+	 For some reason, when starting long running sessions from mintty(*),
+	 the affected svchost.exe process takes more and more memory and at one
+	 point takes over the CPU.  At this point the machine becomes
+	 unresponsive.  The only way to get back to normal is to stop the
+	 entire mintty session, or to stop the PCA service.  However, a process
+	 which is controlled by PCA is part of a compatibility job, which
+	 allows child processes to break away from the job.  This helps to
+	 avoid this issue.
+
+	 First we call IsProcessInJob.  It fetches the information whether or
+	 not we're part of a job 20 times faster than QueryInformationJobObject.
+
+	 (*) Note that this is not mintty's fault.  It has just been observed
+	 with mintty in the first place.  See the archives for more info:
+	 http://cygwin.com/ml/cygwin-developers/2012-02/msg00018.html */
+      JOBOBJECT_BASIC_LIMIT_INFORMATION jobinfo;
+      BOOL is_in_job;
+
+      if (IsProcessInJob (GetCurrentProcess (), NULL, &is_in_job)
+	  && is_in_job
+	  && QueryInformationJobObject (NULL, JobObjectBasicLimitInformation,
+				     &jobinfo, sizeof jobinfo, NULL)
+	  && (jobinfo.LimitFlags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK
+				    | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)))
 	{
-	  /* We're adding the CREATE_BREAKAWAY_FROM_JOB flag here to workaround
-	     issues with the "Program Compatibility Assistant (PCA) Service"
-	     starting with Windows Vista.  For some reason, when starting long
-	     running sessions from mintty(*), the affected svchost.exe process
-	     takes more and more memory and at one point takes over the CPU.  At
-	     this point the machine becomes unresponsive.  The only way to get
-	     back to normal is to stop the entire mintty session, or to stop the
-	     PCA service.  However, a process which is controlled by PCA is part
-	     of a compatibility job, which allows child processes to break away
-	     from the job.  This helps to avoid this issue.
-
-	     First we call IsProcessInJob.  It fetches the information whether or
-	     not we're part of a job 20 times faster than QueryInformationJobObject.
-
-	     (*) Note that this is not mintty's fault.  It has just been observed
-	     with mintty in the first place.  See the archives for more info:
-	     http://cygwin.com/ml/cygwin-developers/2012-02/msg00018.html */
-
-	  JOBOBJECT_BASIC_LIMIT_INFORMATION jobinfo;
-	  BOOL is_in_job;
-
-	  if (IsProcessInJob (GetCurrentProcess (), NULL, &is_in_job)
-	      && is_in_job
-	      && QueryInformationJobObject (NULL, JobObjectBasicLimitInformation,
-					 &jobinfo, sizeof jobinfo, NULL)
-	      && (jobinfo.LimitFlags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK
-					| JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)))
-	    {
-	      debug_printf ("Add CREATE_BREAKAWAY_FROM_JOB");
-	      c_flags |= CREATE_BREAKAWAY_FROM_JOB;
-	    }
+	  debug_printf ("Add CREATE_BREAKAWAY_FROM_JOB");
+	  c_flags |= CREATE_BREAKAWAY_FROM_JOB;
 	}
 
       if (mode == _P_DETACH)
@@ -545,8 +546,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	 in a console will break native processes running in the background,
 	 because the Ctrl-C event is sent to all processes in the console, unless
 	 they ignore it explicitely.  CREATE_NEW_PROCESS_GROUP does that for us. */
-      if (!iscygwin () && fhandler_console::exists ()
-	  && fhandler_console::tc_getpgid () != myself->pgid)
+      if (!iscygwin () && ctty_pgid && ctty_pgid != myself->pgid)
 	c_flags |= CREATE_NEW_PROCESS_GROUP;
       refresh_cygheap ();
 
@@ -574,6 +574,64 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	SetHandleInformation (my_wr_proc_pipe, HANDLE_FLAG_INHERIT, 0);
       parent_winpid = GetCurrentProcessId ();
 
+      PSECURITY_ATTRIBUTES sa = (PSECURITY_ATTRIBUTES) tp.w_get ();
+      if (!sec_user_nih (sa, cygheap->user.sid (),
+			 well_known_authenticated_users_sid,
+			 PROCESS_QUERY_LIMITED_INFORMATION))
+	sa = &sec_none_nih;
+
+      /* Attach to pseudo console if pty salve is used */
+      pid_restore = fhandler_console::get_console_process_id
+	(GetCurrentProcessId (), false);
+      for (int i = 0; i < 3; i ++)
+	{
+	  const int chk_order[] = {1, 0, 2};
+	  int fd = chk_order[i];
+	  fhandler_base *fh = ::cygheap->fdtab[fd];
+	  if (fh && fh->get_major () == DEV_PTYS_MAJOR)
+	    {
+	      fhandler_pty_slave *ptys = (fhandler_pty_slave *) fh;
+	      if (ptys->get_pseudo_console ())
+		{
+		  DWORD helper_process_id = ptys->get_helper_process_id ();
+		  debug_printf ("found a PTY slave %d: helper_PID=%d",
+				    fh->get_minor (), helper_process_id);
+		  if (fhandler_console::get_console_process_id
+					      (helper_process_id, true))
+		    /* Already attached */
+		    attach_to_console = true;
+		  else if (!attach_to_console)
+		    {
+		      FreeConsole ();
+		      if (AttachConsole (helper_process_id))
+			attach_to_console = true;
+		    }
+		  ptys->fixup_after_attach (!iscygwin (), fd);
+		  if (mode == _P_OVERLAY)
+		    ptys->set_freeconsole_on_close (iscygwin ());
+		}
+	    }
+	  else if (fh && fh->get_major () == DEV_CONS_MAJOR)
+	    {
+	      attach_to_console = true;
+	      fhandler_console *cons = (fhandler_console *) fh;
+	      if (wincap.has_con_24bit_colors () && !iscygwin ())
+		if (fd == 1 || fd == 2)
+		  cons->request_xterm_mode_output (false);
+	    }
+	}
+
+      /* Set up needed handles for stdio */
+      si.dwFlags = STARTF_USESTDHANDLES;
+      si.hStdInput = handle ((in__stdin < 0 ? 0 : in__stdin), false);
+      si.hStdOutput = handle ((in__stdout < 0 ? 1 : in__stdout), true);
+      si.hStdError = handle (2, true);
+
+      si.cb = sizeof (si);
+
+      if (!iscygwin ())
+	init_console_handler (myself->ctty > 0);
+
     loop:
       /* When ruid != euid we create the new process under the current original
 	 account and impersonate in child, this way maintaining the different
@@ -585,6 +643,8 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       if (!real_path.iscygexec () && mode == _P_OVERLAY)
 	myself->process_state |= PID_NOTCYGWIN;
 
+      cygpid = (mode != _P_OVERLAY) ? create_cygwin_pid () : myself->pid;
+
       wchar_t wcmd[(size_t) cmd];
       if (!::cygheap->user.issetuid ()
 	  || (::cygheap->user.saved_uid == ::cygheap->user.real_uid
@@ -592,13 +652,13 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	      && !::cygheap->user.groups.issetgroups ()
 	      && !::cygheap->user.setuid_to_restricted))
 	{
-	  rc = CreateProcessW (runpath,	  /* image name - with full path */
-			       cmd.wcs (wcmd),/* what was passed to exec */
-			       &sec_none_nih, /* process security attrs */
-			       &sec_none_nih, /* thread security attrs */
-			       TRUE,	  /* inherit handles from parent */
+	  rc = CreateProcessW (runpath,		/* image name w/ full path */
+			       cmd.wcs (wcmd),	/* what was passed to exec */
+			       sa,		/* process security attrs */
+			       sa,		/* thread security attrs */
+			       TRUE,		/* inherit handles */
 			       c_flags,
-			       envblock,	  /* environment */
+			       envblock,	/* environment */
 			       NULL,
 			       &si,
 			       &pi);
@@ -609,31 +669,22 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	  if (mode == _P_OVERLAY)
 	    myself.set_acl();
 
-	  WCHAR wstname[1024] = { L'\0' };
-	  HWINSTA hwst_orig = NULL, hwst = NULL;
-	  HDESK hdsk_orig = NULL, hdsk = NULL;
-	  PSECURITY_ATTRIBUTES sa;
-	  DWORD n;
-
-	  hwst_orig = GetProcessWindowStation ();
-	  hdsk_orig = GetThreadDesktop (GetCurrentThreadId ());
-	  GetUserObjectInformationW (hwst_orig, UOI_NAME, wstname, 1024, &n);
-	  /* Prior to Vista it was possible to start a service with the
-	     "Interact with desktop" flag.  This started the service in the
-	     interactive window station of the console.  A big security
-	     risk, but we don't want to disable this behaviour for older
-	     OSes because it's still heavily used by some users.  They have
-	     been warned. */
-	  if (!::cygheap->user.setuid_to_restricted
-	      && wcscasecmp (wstname, L"WinSta0") != 0)
+	  HWINSTA hwst = NULL;
+	  HWINSTA hwst_orig = GetProcessWindowStation ();
+	  HDESK hdsk = NULL;
+	  HDESK hdsk_orig = GetThreadDesktop (GetCurrentThreadId ());
+	  /* Don't create WindowStation and Desktop for restricted child. */
+	  if (!::cygheap->user.setuid_to_restricted)
 	    {
+	      PSECURITY_ATTRIBUTES sa;
 	      WCHAR sid[128];
+	      WCHAR wstname[1024] = { L'\0' };
 
 	      sa = sec_user ((PSECURITY_ATTRIBUTES) alloca (1024),
 			     ::cygheap->user.sid ());
-	      /* We're creating a window station per user, not per logon session.
-		 First of all we might not have a valid logon session for
-		 the user (logon by create_token), and second, it doesn't
+	      /* We're creating a window station per user, not per logon
+		 session First of all we might not have a valid logon session
+		 for the user (logon by create_token), and second, it doesn't
 		 make sense in terms of security to create a new window
 		 station for every logon of the same user.  It just fills up
 		 the system with window stations for no good reason. */
@@ -655,13 +706,13 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	    }
 
 	  rc = CreateProcessAsUserW (::cygheap->user.primary_token (),
-			       runpath,	  /* image name - with full path */
-			       cmd.wcs (wcmd),/* what was passed to exec */
-			       &sec_none_nih, /* process security attrs */
-			       &sec_none_nih, /* thread security attrs */
-			       TRUE,	  /* inherit handles from parent */
+			       runpath,		/* image name w/ full path */
+			       cmd.wcs (wcmd),	/* what was passed to exec */
+			       sa,		/* process security attrs */
+			       sa,		/* thread security attrs */
+			       TRUE,		/* inherit handles */
 			       c_flags,
-			       envblock,	  /* environment */
+			       envblock,	/* environment */
 			       NULL,
 			       &si,
 			       &pi);
@@ -695,15 +746,16 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	      myself->exec_sendsig = NULL;
 	    }
 	  myself->process_state &= ~PID_NOTCYGWIN;
-	  /* Reset handle inheritance to default when the execution of a non-Cygwin
-	     process fails.  Only need to do this for _P_OVERLAY since the handle will
-	     be closed otherwise.  Don't need to do this for 'parent' since it will
-	     be closed in every case.  See FIXME above. */
+	  /* Reset handle inheritance to default when the execution of a'
+	     non-Cygwin process fails.  Only need to do this for _P_OVERLAY
+	     since the handle will be closed otherwise.  Don't need to do
+	     this for 'parent' since it will be closed in every case.
+	     See FIXME above. */
 	  if (!iscygwin () && mode == _P_OVERLAY)
 	    SetHandleInformation (wr_proc_pipe, HANDLE_FLAG_INHERIT,
 				  HANDLE_FLAG_INHERIT);
 	  if (wr_proc_pipe == my_wr_proc_pipe)
-	    wr_proc_pipe = NULL;	/* We still own it: don't nuke in destructor */
+	    wr_proc_pipe = NULL; /* We still own it: don't nuke in destructor */
 
 	  /* Restore impersonation. In case of _P_OVERLAY this isn't
 	     allowed since it would overwrite child data. */
@@ -723,12 +775,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       if (::cygheap->fdtab.need_fixup_before ())
 	::cygheap->fdtab.fixup_before_exec (pi.dwProcessId);
 
-      if (mode != _P_OVERLAY)
-	cygpid = cygwin_pid (pi.dwProcessId);
-      else
-	cygpid = myself->pid;
-
-      /* We print the original program name here so the user can see that too.  */
+      /* Print the original program name here so the user can see that too.  */
       syscall_printf ("pid %d, prog_arg %s, cmd line %.9500s)",
 		      rc ? cygpid : (unsigned int) -1, prog_arg, (const char *) cmd);
 
@@ -740,6 +787,15 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	  myself->dwProcessId = pi.dwProcessId;
 	  strace.execing = 1;
 	  myself.hProcess = hExeced = pi.hProcess;
+	  HANDLE old_winpid_hdl = myself.shared_winpid_handle ();
+	  if (!real_path.iscygexec ())
+	    {
+	      /* If the child process is not a Cygwin process, we have to
+		 create a new winpid symlink on behalf of the child process
+		 not being able to do this by itself. */
+	      myself.create_winpid_symlink ();
+	    }
+	  NtClose (old_winpid_hdl);
 	  real_path.get_wide_win32_path (myself->progname); // FIXME: race?
 	  sigproc_printf ("new process name %W", myself->progname);
 	  if (!iscygwin ())
@@ -763,17 +819,29 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	  child.hProcess = pi.hProcess;
 
 	  real_path.get_wide_win32_path (child->progname);
-	  /* FIXME: This introduces an unreferenced, open handle into the child.
-	     The purpose is to keep the pid shared memory open so that all of
-	     the fields filled out by child.remember do not disappear and so there
-	     is not a brief period during which the pid is not available.
-	     However, we should try to find another way to do this eventually. */
+	  /* This introduces an unreferenced, open handle into the child.
+	     The purpose is to keep the pid shared memory open so that all
+	     of the fields filled out by child.remember do not disappear
+	     and so there is not a brief period during which the pid is
+	     not available. */
 	  DuplicateHandle (GetCurrentProcess (), child.shared_handle (),
 			   pi.hProcess, NULL, 0, 0, DUPLICATE_SAME_ACCESS);
+	  if (!real_path.iscygexec ())
+	    {
+	      /* If the child process is not a Cygwin process, we have to
+		 create a new winpid symlink and induce it into the child
+		 process as well to keep it over the lifetime of the child. */
+	      child.create_winpid_symlink ();
+	      DuplicateHandle (GetCurrentProcess (),
+			       child.shared_winpid_handle (),
+			       pi.hProcess, NULL, 0, 0, DUPLICATE_SAME_ACCESS);
+	    }
 	  child->start_time = time (NULL); /* Register child's starting time. */
 	  child->nice = myself->nice;
 	  postfork (child);
-	  if (!child.remember (mode == _P_DETACH))
+	  if (mode == _P_DETACH
+	      ? !child.remember (true)
+	      : !(child.remember (false) && child.reattach ()))
 	    {
 	      /* FIXME: Child in strange state now */
 	      CloseHandle (pi.hProcess);
@@ -861,6 +929,22 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
   this->cleanup ();
   if (envblock)
     free (envblock);
+
+  if (attach_to_console && pid_restore)
+    {
+      FreeConsole ();
+      AttachConsole (pid_restore);
+      cygheap_fdenum cfd (false);
+      int fd;
+      while ((fd = cfd.next ()) >= 0)
+	if (cfd->get_major () == DEV_PTYS_MAJOR)
+	  {
+	    fhandler_pty_slave *ptys =
+	      (fhandler_pty_slave *) (fhandler_base *) cfd;
+	    ptys->fixup_after_attach (false, fd);
+	  }
+    }
+
   return (int) res;
 }
 
@@ -882,14 +966,6 @@ spawnve (int mode, const char *path, const char *const *argv,
   static char *const empty_env[] = { NULL };
 
   int ret;
-#ifdef NEWVFORK
-  vfork_save *vf = vfork_storage.val ();
-
-  if (vf != NULL && (vf->pid < 0) && mode == _P_OVERLAY)
-    mode = _P_NOWAIT;
-  else
-    vf = NULL;
-#endif
 
   syscall_printf ("spawnve (%s, %s, %p)", path, argv[0], envp);
 
@@ -910,16 +986,6 @@ spawnve (int mode, const char *path, const char *const *argv,
     case _P_DETACH:
     case _P_SYSTEM:
       ret = ch_spawn.worker (path, argv, envp, mode);
-#ifdef NEWVFORK
-      if (vf)
-	{
-	  if (ret > 0)
-	    {
-	      debug_printf ("longjmping due to vfork");
-	      vf->restore_pid (ret);
-	    }
-	}
-#endif
       break;
     default:
       set_errno (EINVAL);
@@ -1032,8 +1098,9 @@ extern "C" int
 spawnvp (int mode, const char *file, const char * const *argv)
 {
   path_conv buf;
-  return spawnve (mode | _P_PATH_TYPE_EXEC, find_exec (file, buf), argv,
-		  cur_environ ());
+  return spawnve (mode | _P_PATH_TYPE_EXEC,
+		  find_exec (file, buf, "PATH", FE_NNF) ?: "",
+		  argv, cur_environ ());
 }
 
 extern "C" int
@@ -1041,7 +1108,9 @@ spawnvpe (int mode, const char *file, const char * const *argv,
 	  const char * const *envp)
 {
   path_conv buf;
-  return spawnve (mode | _P_PATH_TYPE_EXEC, find_exec (file, buf), argv, envp);
+  return spawnve (mode | _P_PATH_TYPE_EXEC,
+		  find_exec (file, buf, "PATH", FE_NNF) ?: "",
+		  argv, envp);
 }
 
 int
@@ -1085,6 +1154,7 @@ av::setup (const char *prog_arg, path_conv& real_path, const char *ext,
 		real_path.set_cygexec (true);
 		break;
 	      }
+	    SetLastError (RtlNtStatusToDosError (status));
 	    goto err;
 	  }
 	if (!GetFileSizeEx (h, &size))
@@ -1181,6 +1251,12 @@ av::setup (const char *prog_arg, path_conv& real_path, const char *ext,
 	  }
 	UnmapViewOfFile (buf);
   just_shell:
+	/* Check if script is executable.  Otherwise we start non-executable
+	   scripts successfully, which is incorrect behaviour. */
+	if (real_path.has_acls ()
+	    && check_file_access (real_path, X_OK, true) < 0)
+	  return -1;	/* errno is already set. */
+
 	if (!pgm)
 	  {
 	    if (!p_type_exec)
@@ -1196,12 +1272,6 @@ av::setup (const char *prog_arg, path_conv& real_path, const char *ext,
 	    pgm = (char *) "/bin/sh";
 	    arg1 = NULL;
 	  }
-
-	/* Check if script is executable.  Otherwise we start non-executable
-	   scripts successfully, which is incorrect behaviour. */
-	if (real_path.has_acls ()
-	    && check_file_access (real_path, X_OK, true) < 0)
-	  return -1;	/* errno is already set. */
 
 	/* Replace argv[0] with the full path to the script if this is the
 	   first time through the loop. */

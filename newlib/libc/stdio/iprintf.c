@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -25,8 +25,7 @@
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(iprintf, (fmt),
-       const char *fmt _DOTS)
+iprintf (const char *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -42,9 +41,8 @@ _DEFUN(iprintf, (fmt),
 #endif /* ! _REENT_ONLY */
 
 int
-_DEFUN(_iprintf_r, (ptr, fmt),
-       struct _reent *ptr _AND
-       const char *fmt _DOTS)
+_iprintf_r (struct _reent *ptr,
+       const char *fmt, ...)
 {
   int ret;
   va_list ap;

@@ -47,34 +47,37 @@
   (param_block_t)(unsigned long) (PTR)
 
 /* Forward prototypes.  */
-int _system _PARAMS ((const char *));
-int _rename _PARAMS ((const char *, const char *));
-int _isatty _PARAMS ((int));
-clock_t _times _PARAMS ((struct tms *));
-int _gettimeofday _PARAMS ((struct timeval *, void *));
-int _unlink _PARAMS ((const char *));
-int _link _PARAMS ((void));
-int _stat _PARAMS ((const char *, struct stat *));
-int _fstat _PARAMS ((int, struct stat *));
-int _swistat _PARAMS ((int fd, struct stat * st));
-caddr_t _sbrk _PARAMS ((int));
-int _getpid _PARAMS ((int));
-int _close _PARAMS ((int));
-clock_t _clock _PARAMS ((void));
-int _swiclose _PARAMS ((int));
-int _open _PARAMS ((const char *, int, ...));
-int _swiopen _PARAMS ((const char *, int));
-int _write _PARAMS ((int, char *, int));
-int _swiwrite _PARAMS ((int, char *, int));
-int _lseek _PARAMS ((int, int, int));
-int _swilseek _PARAMS ((int, int, int));
-int _read _PARAMS ((int, char *, int));
-int _swiread _PARAMS ((int, char *, int));
-void initialise_monitor_handles _PARAMS ((void));
+int _system (const char *);
+int _rename (const char *, const char *);
+int _isatty (int);
+clock_t _times (struct tms *);
+int _gettimeofday (struct timeval *, void *);
+int _unlink (const char *);
+int _link (void);
+int _stat (const char *, struct stat *);
+int _fstat (int, struct stat *);
+int _swistat (int fd, struct stat * st);
+void * _sbrk (ptrdiff_t);
+pid_t _getpid (void);
+int _close (int);
+clock_t _clock (void);
+int _swiclose (int);
+int _open (const char *, int, ...);
+int _swiopen (const char *, int);
+int _write (int, const char *, size_t);
+int _swiwrite (int, const char *, size_t);
+off_t _lseek (int, off_t, int);
+off_t _swilseek (int, off_t, int);
+int _read (int, void *, size_t);
+int _swiread (int, void *, size_t);
+void initialise_monitor_handles (void);
 
-static int checkerror _PARAMS ((int));
-static int error _PARAMS ((int));
-static int get_errno _PARAMS ((void));
+static int checkerror (int);
+static int error (int);
+static int get_errno (void);
+
+/* Semihosting utilities.  */
+static void initialise_semihosting_exts (void);
 
 /* Struct used to keep track of the file position, just so we
    can implement fseek(fh,x,SEEK_CUR).  */
@@ -105,8 +108,8 @@ struct fdent
 
 static struct fdent openfiles[MAX_OPEN_FILES];
 
-static struct fdent *findslot _PARAMS ((int));
-static int newslot _PARAMS ((void));
+static struct fdent *findslot (int);
+static int newslot (void);
 
 /* Register name faking - works in collusion with the linker.  */
 #ifdef __ILP32__
@@ -117,7 +120,7 @@ register char * stack_ptr asm ("sp");
 
 
 /* following is copied from libc/stdio/local.h to check std streams */
-extern void _EXFUN (__sinit, (struct _reent *));
+extern void __sinit (struct _reent *);
 #define CHECK_INIT(ptr) \
   do						\
     {						\
@@ -129,6 +132,9 @@ extern void _EXFUN (__sinit, (struct _reent *));
 static int monitor_stdin;
 static int monitor_stdout;
 static int monitor_stderr;
+
+static int supports_ext_exit_extended = -1;
+static int supports_ext_stdout_stderr = -1;
 
 /* Return a pointer to the structure associated with
    the user file descriptor fd. */
@@ -188,32 +194,131 @@ initialise_monitor_handles (void)
   block[1] = 0;			/* mode "r" */
   monitor_stdin = do_AngelSVC (AngelSVC_Reason_Open, block);
 
-  block[0] = POINTER_TO_PARAM_BLOCK_T (":tt");
-  block[2] = 3;			/* length of filename */
-  block[1] = 4;			/* mode "w" */
-  monitor_stdout = do_AngelSVC (AngelSVC_Reason_Open, block);
+  for (i = 0; i < MAX_OPEN_FILES; i++)
+    openfiles[i].handle = -1;;
 
-  block[0] = POINTER_TO_PARAM_BLOCK_T (":tt");
-  block[2] = 3;			/* length of filename */
-  block[1] = 8;			/* mode "a" */
-  monitor_stderr = do_AngelSVC (AngelSVC_Reason_Open, block);
+  if (_has_ext_stdout_stderr ())
+  {
+    block[0] = POINTER_TO_PARAM_BLOCK_T (":tt");
+    block[2] = 3;			/* length of filename */
+    block[1] = 4;			/* mode "w" */
+    monitor_stdout = do_AngelSVC (AngelSVC_Reason_Open, block);
+
+    block[0] = POINTER_TO_PARAM_BLOCK_T (":tt");
+    block[2] = 3;			/* length of filename */
+    block[1] = 8;			/* mode "a" */
+    monitor_stderr = do_AngelSVC (AngelSVC_Reason_Open, block);
+  }
 
   /* If we failed to open stderr, redirect to stdout. */
   if (monitor_stderr == -1)
     monitor_stderr = monitor_stdout;
 
-  for (i = 0; i < MAX_OPEN_FILES; i++)
-    openfiles[i].handle = -1;
-
   openfiles[0].handle = monitor_stdin;
   openfiles[0].flags = _FREAD;
   openfiles[0].pos = 0;
-  openfiles[1].handle = monitor_stdout;
-  openfiles[0].flags = _FWRITE;
-  openfiles[1].pos = 0;
-  openfiles[2].handle = monitor_stderr;
-  openfiles[0].flags = _FWRITE;
-  openfiles[2].pos = 0;
+
+  if (_has_ext_stdout_stderr ())
+  {
+    openfiles[1].handle = monitor_stdout;
+    openfiles[0].flags = _FWRITE;
+    openfiles[1].pos = 0;
+    openfiles[2].handle = monitor_stderr;
+    openfiles[0].flags = _FWRITE;
+    openfiles[2].pos = 0;
+  }
+}
+
+int
+_has_ext_exit_extended (void)
+{
+  if (supports_ext_exit_extended < 0)
+  {
+    initialise_semihosting_exts ();
+  }
+
+  return supports_ext_exit_extended;
+}
+
+int
+_has_ext_stdout_stderr (void)
+{
+  if (supports_ext_stdout_stderr < 0)
+  {
+    initialise_semihosting_exts ();
+  }
+
+  return supports_ext_stdout_stderr;
+}
+
+static void
+initialise_semihosting_exts (void)
+{
+  supports_ext_exit_extended = 0;
+  supports_ext_stdout_stderr = 1;
+
+#if SEMIHOST_V2
+  char features[1];
+  if (_get_semihosting_exts (features, 0, 1) > 0)
+  {
+     supports_ext_exit_extended
+       = features[0] & (1 << SH_EXT_EXIT_EXTENDED_BITNUM);
+     supports_ext_stdout_stderr
+       = features[0] & (1 << SH_EXT_STDOUT_STDERR_BITNUM);
+  }
+#endif
+}
+
+int
+_get_semihosting_exts (char* features, int offset, int num)
+{
+  int fd = _open (":semihosting-features", O_RDONLY);
+  memset (features, 0, num);
+
+  if (fd == -1)
+  {
+    return -1;
+  }
+
+  struct fdent *pfd;
+  pfd = findslot (fd);
+
+  param_block_t block[1];
+  block[0] = pfd->handle;
+
+  int len = do_AngelSVC (AngelSVC_Reason_FLen, block);
+
+  if (len < NUM_SHFB_MAGIC
+      || num > (len - NUM_SHFB_MAGIC))
+  {
+     _close (fd);
+     return -1;
+  }
+
+  char buffer[NUM_SHFB_MAGIC];
+  int n_read = _read (fd, buffer, NUM_SHFB_MAGIC);
+
+  if (n_read < NUM_SHFB_MAGIC
+      || buffer[0] != SHFB_MAGIC_0
+      || buffer[1] != SHFB_MAGIC_1
+      || buffer[2] != SHFB_MAGIC_2
+      || buffer[3] != SHFB_MAGIC_3)
+  {
+     _close (fd);
+     return -1;
+  }
+
+  if (_lseek (fd, offset, SEEK_CUR) < 0)
+  {
+     _close (fd);
+     return -1;
+  }
+
+  n_read = _read (fd, features, num);
+
+  _close (fd);
+
+  return checkerror (n_read);
 }
 
 static int
@@ -244,7 +349,7 @@ checkerror (int result)
    len, is the length in bytes to read.
    Returns the number of bytes *not* written. */
 int
-_swiread (int fh, char *ptr, int len)
+_swiread (int fh, void *ptr, size_t len)
 {
   param_block_t block[3];
 
@@ -259,7 +364,7 @@ _swiread (int fh, char *ptr, int len)
    Translates the return of _swiread into
    bytes read. */
 int
-_read (int fd, char *ptr, int len)
+_read (int fd, void *ptr, size_t len)
 {
   int res;
   struct fdent *pfd;
@@ -284,8 +389,8 @@ _read (int fd, char *ptr, int len)
 }
 
 /* fd, is a user file descriptor. */
-int
-_swilseek (int fd, int ptr, int dir)
+off_t
+_swilseek (int fd, off_t ptr, int dir)
 {
   int res;
   struct fdent *pfd;
@@ -344,7 +449,8 @@ _swilseek (int fd, int ptr, int dir)
     return -1;
 }
 
-_lseek (int fd, int ptr, int dir)
+off_t
+_lseek (int fd, off_t ptr, int dir)
 {
   return _swilseek (fd, ptr, dir);
 }
@@ -352,7 +458,7 @@ _lseek (int fd, int ptr, int dir)
 /* fh, is a valid internal file handle.
    Returns the number of bytes *not* written. */
 int
-_swiwrite (int fh, char *ptr, int len)
+_swiwrite (int fh, const char *ptr, size_t len)
 {
   param_block_t block[3];
 
@@ -365,7 +471,7 @@ _swiwrite (int fh, char *ptr, int len)
 
 /* fd, is a user file descriptor. */
 int
-_write (int fd, char *ptr, int len)
+_write (int fd, const char *ptr, size_t len)
 {
   int res;
   struct fdent *pfd;
@@ -515,13 +621,16 @@ _close (int fd)
 }
 
 int __attribute__((weak))
-_getpid (int n __attribute__ ((unused)))
+_getpid (void)
 {
   return 1;
 }
 
-caddr_t
-_sbrk (int incr)
+/* Heap limit returned from SYS_HEAPINFO Angel semihost call.  */
+ulong __heap_limit __attribute__ ((aligned (8))) = 0xcafedead;
+
+void *
+_sbrk (ptrdiff_t incr)
 {
   extern char end asm ("end");	/* Defined by the linker.  */
   static char *heap_end;
@@ -532,7 +641,9 @@ _sbrk (int incr)
 
   prev_heap_end = heap_end;
 
-  if (heap_end + incr > stack_ptr)
+  if ((heap_end + incr > stack_ptr)
+      /* Honour heap limit if it's valid.  */
+      || ((__heap_limit != 0xcafedead) && (heap_end + incr > (char *)__heap_limit)))
     {
       /* Some of the libstdc++-v3 tests rely upon detecting
          out of memory errors, so do not abort here.  */

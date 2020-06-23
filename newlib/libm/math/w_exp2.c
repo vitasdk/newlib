@@ -13,13 +13,13 @@
 
 /*
 FUNCTION
-	<<exp2>>, <<exp2f>>--exponential, base 2
+	<<exp2>>, <<exp2f>>---exponential, base 2
 INDEX
 	exp2
 INDEX
 	exp2f
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double exp2(double <[x]>);
 	float exp2f(float <[x]>);
@@ -32,9 +32,6 @@ DESCRIPTION
 	@tex
 	$2^x$
 	@end tex
-
-	You can use the (non-ANSI) function <<matherr>> to specify
-	error handling for these functions.
 
 RETURNS
 	On success, <<exp2>> and <<exp2f>> return the calculated value.
@@ -52,6 +49,7 @@ PORTABILITY
  */
 
 #include "fdlibm.h"
+#if __OBSOLETE_MATH
 #include <errno.h>
 #include <math.h>
 
@@ -68,3 +66,4 @@ PORTABILITY
 }
 
 #endif /* defined(_DOUBLE_IS_32BITS) */
+#endif /* __OBSOLETE_MATH */

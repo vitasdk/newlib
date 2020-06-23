@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -44,7 +44,7 @@ INDEX
 INDEX
 	_asnprintf_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <stdio.h>
 
         int printf(const char *restrict <[format]>, ...);
@@ -199,38 +199,41 @@ DESCRIPTION
 	        o #
 			The result is to be converted to an
 			alternative form, according to the <[type]>
-			character:
+			character.
+		o-
 
-			o+
-			o o
-				Increases precision to force the first
-				digit of the result to be a zero.
+	The alternative form output with the # flag depends on the <[type]>
+	character:
 
-			o x
-				A non-zero result will have a <<0x>>
-				prefix.
+		o+
+		o o
+			Increases precision to force the first
+			digit of the result to be a zero.
 
-			o X
-				A non-zero result will have a <<0X>>
-				prefix.
+		o x
+			A non-zero result will have a <<0x>>
+			prefix.
 
-			o a, A, e, E, f, or F
-				The result will always contain a
-			        decimal point even if no digits follow
-			        the point.  (Normally, a decimal point
-			        appears only if a digit follows it.)
-			        Trailing zeros are removed.
+		o X
+			A non-zero result will have a <<0X>>
+			prefix.
 
-			o g or G
-				The result will always contain a
-			        decimal point even if no digits follow
-			        the point.  Trailing zeros are not
-			        removed.
+		o a, A, e, E, f, or F
+			The result will always contain a
+			decimal point even if no digits follow
+			the point.  (Normally, a decimal point
+			appears only if a digit follows it.)
+			Trailing zeros are removed.
 
-			o all others
-				Undefined.
+		o g or G
+			The result will always contain a
+			decimal point even if no digits follow
+			the point.  Trailing zeros are not
+			removed.
 
-			o-
+		o all others
+			Undefined.
+
 		o-
 
 	o <[width]>
@@ -567,27 +570,14 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include <limits.h>
 #include "local.h"
 
 int
-#ifdef _HAVE_STDC
-_DEFUN(_sprintf_r, (ptr, str, fmt),
-       struct _reent *ptr _AND
-       char *__restrict str          _AND
-       _CONST char *__restrict fmt _DOTS)
-#else
-_sprintf_r(ptr, str, fmt, va_alist)
-           struct _reent *ptr;
-           char *__restrict str;
-           _CONST char *__restrict fmt;
-           va_dcl
-#endif
+_sprintf_r (struct _reent *ptr,
+       char *__restrict str,
+       const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -597,11 +587,7 @@ _sprintf_r(ptr, str, fmt, va_alist)
   f._bf._base = f._p = (unsigned char *) str;
   f._bf._size = f._w = INT_MAX;
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = _svfprintf_r (ptr, &f, fmt, ap);
   va_end (ap);
   *f._p = '\0';	/* terminate the string */
@@ -610,23 +596,15 @@ _sprintf_r(ptr, str, fmt, va_alist)
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(_siprintf_r, (struct _reent *, char *, const char *, ...)
-       _ATTRIBUTE ((__alias__("_sprintf_r"))));
+_siprintf_r (struct _reent *, char *, const char *, ...)
+       _ATTRIBUTE ((__alias__("_sprintf_r")));
 #endif
 
 #ifndef _REENT_ONLY
 
 int
-#ifdef _HAVE_STDC
-_DEFUN(sprintf, (str, fmt),
-       char *__restrict str _AND
-       _CONST char *__restrict fmt _DOTS)
-#else
-sprintf(str, fmt, va_alist)
-        char *str;
-        _CONST char *fmt;
-        va_dcl
-#endif
+sprintf (char *__restrict str,
+       const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -636,11 +614,7 @@ sprintf(str, fmt, va_alist)
   f._bf._base = f._p = (unsigned char *) str;
   f._bf._size = f._w = INT_MAX;
   f._file = -1;  /* No file. */
-#ifdef _HAVE_STDC
   va_start (ap, fmt);
-#else
-  va_start (ap);
-#endif
   ret = _svfprintf_r (_REENT, &f, fmt, ap);
   va_end (ap);
   *f._p = '\0';	/* terminate the string */
@@ -649,7 +623,7 @@ sprintf(str, fmt, va_alist)
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(siprintf, (char *, const char *, ...)
-       _ATTRIBUTE ((__alias__("sprintf"))));
+siprintf (char *, const char *, ...)
+       _ATTRIBUTE ((__alias__("sprintf")));
 #endif
 #endif

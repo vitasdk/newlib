@@ -5,14 +5,9 @@ FUNCTION
 INDEX
 	div
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
 	div_t div(int <[n]>, int <[d]>);
-
-TRAD_SYNOPSIS
-	#include <stdlib.h>
-	div_t div(<[n]>, <[d]>)
-	int <[n]>, <[d]>;
 
 DESCRIPTION
 Divide
@@ -61,11 +56,7 @@ No supporting OS subroutines are required.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -86,8 +77,7 @@ No supporting OS subroutines are required.
 #include <stdlib.h>		/* div_t */
 
 div_t
-_DEFUN (div, (num, denom),
-	int num _AND
+div (int num,
 	int denom)
 {
 	div_t r;

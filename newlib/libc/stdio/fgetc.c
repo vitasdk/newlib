@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -28,7 +28,7 @@ INDEX
 INDEX
 	_fgetc_unlocked_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int fgetc(FILE *<[fp]>);
 
@@ -42,27 +42,6 @@ ANSI_SYNOPSIS
 	#define _BSD_SOURCE
 	#include <stdio.h>
 	int _fgetc_unlocked_r(struct _reent *<[ptr]>, FILE *<[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int fgetc(<[fp]>)
-	FILE *<[fp]>;
-
-	#define _BSD_SOURCE
-	#include <stdio.h>
-	int fgetc_unlocked(<[fp]>)
-	FILE *<[fp]>;
-
-	#include <stdio.h>
-	int _fgetc_r(<[ptr]>, <[fp]>)
-	struct _reent *<[ptr]>;
-	FILE *<[fp]>;
-
-	#define _BSD_SOURCE
-	#include <stdio.h>
-	int _fgetc_unlocked_r(<[ptr]>, <[fp]>)
-	struct _reent *<[ptr]>;
-	FILE *<[fp]>;
 
 DESCRIPTION
 Use <<fgetc>> to get the next single character from the file or stream
@@ -106,8 +85,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include "local.h"
 
 int
-_DEFUN(_fgetc_r, (ptr, fp),
-       struct _reent * ptr _AND
+_fgetc_r (struct _reent * ptr,
        FILE * fp)
 {
   int result;
@@ -121,8 +99,7 @@ _DEFUN(_fgetc_r, (ptr, fp),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(fgetc, (fp),
-       FILE * fp)
+fgetc (FILE * fp)
 {
 #if !defined(PREFER_SIZE_OVER_SPEED) && !defined(__OPTIMIZE_SIZE__)
   int result;
