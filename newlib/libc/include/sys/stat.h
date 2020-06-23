@@ -38,6 +38,12 @@ struct	stat
   time_t	st_atime;
   time_t	st_mtime;
   time_t	st_ctime;
+#elif defined(__vita__)
+  time_t	st_atime;
+  time_t	st_mtime;
+  time_t	st_ctime;
+  long    st_blksize;
+  long	  st_blocks;
 #else
   struct timespec st_atim;
   struct timespec st_mtim;
@@ -50,7 +56,7 @@ struct	stat
 #endif
 };
 
-#if !(defined(__svr4__) && !defined(__PPC__) && !defined(__sun__)) && !defined(__cris__)
+#if !(defined(__svr4__) && !defined(__PPC__) && !defined(__sun__)) && !defined(__cris__) && !defined(__vita__)
 #define st_atime st_atim.tv_sec
 #define st_ctime st_ctim.tv_sec
 #define st_mtime st_mtim.tv_sec

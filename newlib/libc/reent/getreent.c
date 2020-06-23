@@ -21,3 +21,4 @@ __getreent (void)
 }
 
 #endif
+#endif

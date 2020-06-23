@@ -223,7 +223,9 @@ int sigaltstack (const stack_t *__restrict, stack_t *__restrict);
 #endif
 
 #if __POSIX_VISIBLE >= 199506
+# if _POSIX_THREADS
 int pthread_kill (pthread_t, int);
+# endif
 #endif
 
 #if __POSIX_VISIBLE >= 199309
