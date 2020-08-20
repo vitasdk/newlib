@@ -208,6 +208,11 @@ int	listen(int s, int backlog)
 		return -1;
 	}
 
+	// Vita's Berkeley sockets implementation rejects a backlog of 0.
+	// However, most other OSes allow this, so force it to 1 for compat.
+	if (backlog < 1)
+		backlog = 1;
+
 	int res = sceNetListen(fdmap->sce_uid, backlog);
 
 	__vita_fd_drop(fdmap);
