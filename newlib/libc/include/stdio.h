@@ -693,7 +693,7 @@ _ELIDABLE_INLINE int __sputc_r(struct _reent *_ptr, int _c, FILE *_p) {
 #endif /* __BSD_VISIBLE */
 #endif /* _REENT_SMALL */
 
-#if 0 /*ndef __STRICT_ANSI__ - FIXME: must initialize stdio first, use fn */
+#ifndef __STRICT_ANSI__
 #define	fileno(p)	__sfileno(p)
 #endif
 

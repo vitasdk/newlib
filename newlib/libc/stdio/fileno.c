@@ -72,6 +72,8 @@ Supporting OS subroutines required: none.
 #include <errno.h>
 #include "local.h"
 
+#undef fileno
+
 int
 _DEFUN(fileno, (f),
        FILE * f)
