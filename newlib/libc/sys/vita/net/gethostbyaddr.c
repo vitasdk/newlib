@@ -8,10 +8,10 @@
 #define SCE_ERRNO_MASK 0xFF
 
 struct hostent *gethostbyaddr(const void *__addr, socklen_t __len, int __type) {
-    static struct hostent ent;
+    struct hostent ent;
     char name[NI_MAXHOST];
-    static char sname[NI_MAXHOST] = "";
-    static char *addrlist[2] = { NULL, NULL };
+    char sname[NI_MAXHOST] = "";
+    char *addrlist[2] = { NULL, NULL };
 
     if (__type != SCE_NET_AF_INET) {
         errno = SCE_NET_ERROR_RESOLVER_ENOSUPPORT;
