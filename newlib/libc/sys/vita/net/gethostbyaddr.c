@@ -3,7 +3,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <sys/socket.h>
-#include <psp2/net.h>
+#include <psp2/net/net.h>
 
 #define SCE_ERRNO_MASK 0xFF
 
