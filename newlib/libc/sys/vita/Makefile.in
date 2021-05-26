@@ -69,7 +69,7 @@ LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_DEPENDENCIES = $(SOCKET_OBJS) $(NET_OBJS) $(DIRENT_OBJS)
-am__objects_1 = lib_a-gethostbyname.$(OBJEXT) \
+am__objects_1 = lib_a-gethostbyaddr.$(OBJEXT) lib_a-gethostbyname.$(OBJEXT) \
 	lib_a-getaddrinfo.$(OBJEXT) lib_a-freeaddrinfo.$(OBJEXT) \
 	lib_a-getservbyname.$(OBJEXT) lib_a-inet_ntop.$(OBJEXT) \
 	lib_a-inet_ntoa.$(OBJEXT) lib_a-inet_netof.$(OBJEXT) \
@@ -208,9 +208,9 @@ INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 AM_CCASFLAGS = $(INCLUDES)
 noinst_LIBRARIES = lib.a
 SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o error.o
-NET_OBJS = gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
+NET_OBJS = gethostbyaddr.o gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
-NET_SOURCES = net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
+NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
 lib_a_SOURCES = syscalls.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c sleep.c usleep.c ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
@@ -352,6 +352,12 @@ lib_a-usleep.o: usleep.c
 
 lib_a-usleep.obj: usleep.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-usleep.obj `if test -f 'usleep.c'; then $(CYGPATH_W) 'usleep.c'; else $(CYGPATH_W) '$(srcdir)/usleep.c'; fi`
+
+lib_a-gethostbyaddr.o: net/gethostbyaddr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.o `test -f 'net/gethostbyaddr.c' || echo '$(srcdir)/'`net/gethostbyaddr.c
+
+lib_a-gethostbyaddr.obj: net/gethostbyaddr.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.obj `if test -f 'net/gethostbyaddr.c'; then $(CYGPATH_W) 'net/gethostbyaddr.c'; else $(CYGPATH_W) '$(srcdir)/net/gethostbyaddr.c'; fi`
 
 lib_a-gethostbyname.o: net/gethostbyname.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyname.o `test -f 'net/gethostbyname.c' || echo '$(srcdir)/'`net/gethostbyname.c
@@ -619,7 +625,7 @@ all-local: crt0.o
 $(SOCKET_OBJS): socket.c error.c
 	$(COMPILE) -DF_$* $< -c -o $@
 
-$(NET_OBJS): net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
+$(NET_OBJS): net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
 	$(COMPILE) -DF_$* $< -c -o $@
 
 $(DIRENT_OBJS): dirent.c
