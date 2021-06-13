@@ -59,6 +59,15 @@ typedef	quad_t *	qaddr_t;
 #ifndef __need_inttypes
 
 #define _SYS_TYPES_H
+
+#ifdef __vita__
+// enable file sizes >2 GiB on Vita using fseeko() and ftello()
+typedef __int64_t _off_t;
+#define __off_t_defined 1
+typedef __int64_t _fpos_t;
+#define __fpos_t_defined 1
+#endif
+
 #include <sys/_types.h>
 #include <sys/_stdint.h>
 
