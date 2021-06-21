@@ -56,9 +56,6 @@ _close_r(struct _reent *reent, int fildes)
 	return -1;
 }
 
-char *__env[1] = { 0 };
-char **environ = __env;
-
 int
 _execve_r(struct _reent *reent, const char *name, char * const *argv,
 		char * const *env)
@@ -124,7 +121,7 @@ _lseek_r(struct _reent *reent, int file, _off_t ptr, int dir)
 }
 
 int
-_open(struct _reent *reent, char *file, int flags, int mode)
+_open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	reent->_errno = ENOSYS;
 	return -1;

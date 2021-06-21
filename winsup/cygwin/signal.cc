@@ -1,8 +1,5 @@
 /* signal.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
    Written by Steve Chamberlain of Cygnus Support, sac@cygnus.com
    Significant changes by Sergey Okhapkin <sos@prospect.com.ru>
 
@@ -15,6 +12,7 @@ details. */
 #include "winsup.h"
 #include <stdlib.h>
 #include <sys/cygwin.h>
+#include <sys/signalfd.h>
 #include "pinfo.h"
 #include "sigproc.h"
 #include "cygtls.h"
@@ -23,6 +21,7 @@ details. */
 #include "dtable.h"
 #include "cygheap.h"
 #include "cygwait.h"
+#include "posix_timer.h"
 
 #define _SA_NORESTART	0x8000
 
@@ -37,7 +36,7 @@ signal (int sig, _sig_func_ptr func)
   _sig_func_ptr prev;
 
   /* check that sig is in right range */
-  if (sig < 0 || sig >= NSIG || sig == SIGKILL || sig == SIGSTOP)
+  if (sig <= 0 || sig >= _NSIG || sig == SIGKILL || sig == SIGSTOP)
     {
       set_errno (EINVAL);
       syscall_printf ("SIG_ERR = signal (%d, %p)", sig, func);
@@ -68,8 +67,16 @@ clock_nanosleep (clockid_t clk_id, int flags, const struct timespec *rqtp,
   sig_dispatch_pending ();
   pthread_testcancel ();
 
-  if (rqtp->tv_sec < 0 || rqtp->tv_nsec < 0 || rqtp->tv_nsec > 999999999L)
-    return EINVAL;
+  __try
+    {
+      if (!valid_timespec (*rqtp))
+	return EINVAL;
+    }
+  __except (NO_ERROR)
+    {
+      return EFAULT;
+    }
+  __endtry
 
   /* Explicitly disallowed by POSIX. Needs to be checked first to avoid
      being caught by the following test. */
@@ -79,21 +86,15 @@ clock_nanosleep (clockid_t clk_id, int flags, const struct timespec *rqtp,
   /* support for CPU-time clocks is optional */
   if (CLOCKID_IS_PROCESS (clk_id) || CLOCKID_IS_THREAD (clk_id))
     return ENOTSUP;
-
-  switch (clk_id)
-    {
-    case CLOCK_REALTIME:
-    case CLOCK_MONOTONIC:
-      break;
-    default:
-      /* unknown or illegal clock ID */
-      return EINVAL;
-    }
+  /* All other valid clocks are valid */
+  if (clk_id >= MAX_CLOCKS)
+    return EINVAL;
 
   LARGE_INTEGER timeout;
 
-  timeout.QuadPart = (LONGLONG) rqtp->tv_sec * NSPERSEC
-		     + ((LONGLONG) rqtp->tv_nsec + 99LL) / 100LL;
+  timeout.QuadPart = (LONGLONG) rqtp->tv_sec * NS100PERSEC
+		     + ((LONGLONG) rqtp->tv_nsec + (NSPERSEC/NS100PERSEC) - 1)
+		       / (NSPERSEC/NS100PERSEC);
 
   if (abstime)
     {
@@ -105,13 +106,18 @@ clock_nanosleep (clockid_t clk_id, int flags, const struct timespec *rqtp,
 	  || (tp.tv_sec == rqtp->tv_sec && tp.tv_nsec > rqtp->tv_nsec))
 	return 0;
 
-      if (clk_id == CLOCK_REALTIME)
-	timeout.QuadPart += FACTOR;
-      else
+      switch (clk_id)
 	{
+	case CLOCK_REALTIME_COARSE:
+	case CLOCK_REALTIME:
+	  timeout.QuadPart += FACTOR;
+	  break;
+	default:
 	  /* other clocks need to be handled with a relative timeout */
-	  timeout.QuadPart -= tp.tv_sec * NSPERSEC + tp.tv_nsec / 100LL;
+	  timeout.QuadPart -= tp.tv_sec * NS100PERSEC
+			      + tp.tv_nsec / (NSPERSEC/NS100PERSEC);
 	  timeout.QuadPart *= -1LL;
+	  break;
 	}
     }
   else /* !abstime */
@@ -126,8 +132,17 @@ clock_nanosleep (clockid_t clk_id, int flags, const struct timespec *rqtp,
   /* according to POSIX, rmtp is used only if !abstime */
   if (rmtp && !abstime)
     {
-      rmtp->tv_sec = (time_t) (timeout.QuadPart / NSPERSEC);
-      rmtp->tv_nsec = (long) ((timeout.QuadPart % NSPERSEC) * 100LL);
+      __try
+	{
+	  rmtp->tv_sec = (time_t) (timeout.QuadPart / NS100PERSEC);
+	  rmtp->tv_nsec = (long) ((timeout.QuadPart % NS100PERSEC)
+				  * (NSPERSEC/NS100PERSEC));
+	}
+      __except (NO_ERROR)
+	{
+	  res = EFAULT;
+	}
+      __endtry
     }
 
   syscall_printf ("%d = clock_nanosleep(%lu, %d, %ld.%09ld, %ld.%09.ld)",
@@ -163,8 +178,8 @@ extern "C" unsigned int
 usleep (useconds_t useconds)
 {
   struct timespec req;
-  req.tv_sec = useconds / 1000000;
-  req.tv_nsec = (useconds % 1000000) * 1000;
+  req.tv_sec = useconds / USPERSEC;
+  req.tv_nsec = (useconds % USPERSEC) * (NSPERSEC/USPERSEC);
   int res = clock_nanosleep (CLOCK_REALTIME, 0, &req, NULL);
   if (res != 0)
     {
@@ -249,7 +264,7 @@ _pinfo::kill (siginfo_t& si)
 
       if (si.si_signo == 0)
 	res = 0;
-      else if ((res = sig_send (this, si)))
+      else if ((res = (int) sig_send (this, si)))
 	{
 	  sigproc_printf ("%d = sig_send, %E ", res);
 	  res = -1;
@@ -263,7 +278,7 @@ _pinfo::kill (siginfo_t& si)
 	}
       this_pid = pid;
     }
-  else if (si.si_signo == 0 && this && process_state == PID_EXITED)
+  else if (process_state == PID_EXITED)
     {
       this_process_state = process_state;
       this_pid = pid;
@@ -282,10 +297,13 @@ _pinfo::kill (siginfo_t& si)
   return res;
 }
 
-int
+extern "C" int
 raise (int sig)
 {
-  return kill (myself->pid, sig);
+  pthread *thread = _my_tls.tid;
+  if (!thread)
+    return kill (myself->pid, sig);
+  return pthread_kill (thread, sig);
 }
 
 static int
@@ -293,14 +311,23 @@ kill0 (pid_t pid, siginfo_t& si)
 {
   syscall_printf ("kill (%d, %d)", pid, si.si_signo);
   /* check that sig is in right range */
-  if (si.si_signo < 0 || si.si_signo >= NSIG)
+  if (si.si_signo < 0 || si.si_signo >= _NSIG)
     {
       set_errno (EINVAL);
       syscall_printf ("signal %d out of range", si.si_signo);
       return -1;
     }
-
-  return (pid > 0) ? pinfo (pid)->kill (si) : kill_pgrp (-pid, si);
+  if (pid > 0)
+    {
+      pinfo p (pid);
+      if (!p)
+	{
+	  set_errno (ESRCH);
+	  return -1;
+	}
+      return p->kill (si);
+    }
+  return kill_pgrp (-pid, si);
 }
 
 int
@@ -326,7 +353,7 @@ kill_pgrp (pid_t pid, siginfo_t& si)
     {
       _pinfo *p = pids[i];
 
-      if (!p->exists ())
+      if (!p || !p->exists ())
 	continue;
 
       /* Is it a process we want to kill?  */
@@ -390,7 +417,7 @@ sigaction_worker (int sig, const struct sigaction *newact,
     {
       sig_dispatch_pending ();
       /* check that sig is in right range */
-      if (sig < 0 || sig >= NSIG)
+      if (sig <= 0 || sig >= _NSIG)
 	set_errno (EINVAL);
       else
 	{
@@ -453,7 +480,7 @@ extern "C" int
 sigaddset (sigset_t *set, const int sig)
 {
   /* check that sig is in right range */
-  if (sig <= 0 || sig >= NSIG)
+  if (sig <= 0 || sig >= _NSIG)
     {
       set_errno (EINVAL);
       syscall_printf ("SIG_ERR = sigaddset signal %d out of range", sig);
@@ -468,7 +495,7 @@ extern "C" int
 sigdelset (sigset_t *set, const int sig)
 {
   /* check that sig is in right range */
-  if (sig <= 0 || sig >= NSIG)
+  if (sig <= 0 || sig >= _NSIG)
     {
       set_errno (EINVAL);
       syscall_printf ("SIG_ERR = sigdelset signal %d out of range", sig);
@@ -483,7 +510,7 @@ extern "C" int
 sigismember (const sigset_t *set, int sig)
 {
   /* check that sig is in right range */
-  if (sig <= 0 || sig >= NSIG)
+  if (sig <= 0 || sig >= _NSIG)
     {
       set_errno (EINVAL);
       syscall_printf ("SIG_ERR = sigdelset signal %d out of range", sig);
@@ -527,6 +554,18 @@ sigpause (int signal_mask)
 }
 
 extern "C" int
+__xpg_sigpause (int sig)
+{
+  int res;
+  sigset_t signal_mask;
+  sigprocmask (0, NULL, &signal_mask);
+  sigdelset (&signal_mask, sig);
+  res = handle_sigsuspend (signal_mask);
+  syscall_printf ("%R = __xpg_sigpause(%y)", res, sig);
+  return res;
+}
+
+extern "C" int
 pause (void)
 {
   int res = handle_sigsuspend (_my_tls.sigmask);
@@ -538,33 +577,27 @@ extern "C" int
 siginterrupt (int sig, int flag)
 {
   struct sigaction act;
-  sigaction (sig, NULL, &act);
-  if (flag)
+  int res = sigaction_worker (sig, NULL, &act, false);
+  if (res == 0)
     {
-      act.sa_flags &= ~SA_RESTART;
-      act.sa_flags |= _SA_NORESTART;
+      if (flag)
+	{
+	  act.sa_flags &= ~SA_RESTART;
+	  act.sa_flags |= _SA_NORESTART;
+	}
+      else
+	{
+	  act.sa_flags &= ~_SA_NORESTART;
+	  act.sa_flags |= SA_RESTART;
+	}
+      res = sigaction_worker (sig, &act, NULL, true);
     }
-  else
-    {
-      act.sa_flags &= ~_SA_NORESTART;
-      act.sa_flags |= SA_RESTART;
-    }
-  int res = sigaction_worker (sig, &act, NULL, true);
   syscall_printf ("%R = siginterrupt(%d, %y)", sig, flag);
   return res;
 }
 
-extern "C" int
-sigwait (const sigset_t *set, int *sig_ptr)
-{
-  int sig = sigwaitinfo (set, NULL);
-  if (sig > 0)
-    *sig_ptr = sig;
-  return sig > 0 ? 0 : -1;
-}
-
-extern "C" int
-sigwaitinfo (const sigset_t *set, siginfo_t *info)
+int
+sigwait_common (const sigset_t *set, siginfo_t *info, PLARGE_INTEGER waittime)
 {
   int res = -1;
 
@@ -575,7 +608,8 @@ sigwaitinfo (const sigset_t *set, siginfo_t *info)
       set_signal_mask (_my_tls.sigwait_mask, *set);
       sig_dispatch_pending (true);
 
-      switch (cygwait (NULL, cw_infinite, cw_sig_eintr | cw_cancel | cw_cancel_self))
+      switch (cygwait (NULL, waittime,
+		       cw_sig_eintr | cw_cancel | cw_cancel_self))
 	{
 	case WAIT_SIGNALED:
 	  if (!sigismember (set, _my_tls.infodata.si_signo))
@@ -583,6 +617,12 @@ sigwaitinfo (const sigset_t *set, siginfo_t *info)
 	  else
 	    {
 	      _my_tls.lock ();
+	      if (_my_tls.infodata.si_code == SI_TIMER)
+		{
+		  timer_tracker *tt = (timer_tracker *)
+				      _my_tls.infodata.si_tid;
+		  _my_tls.infodata.si_overrun = tt->disarm_overrun_event ();
+		}
 	      if (info)
 		*info = _my_tls.infodata;
 	      res = _my_tls.infodata.si_signo;
@@ -592,17 +632,65 @@ sigwaitinfo (const sigset_t *set, siginfo_t *info)
 	      _my_tls.unlock ();
 	    }
 	  break;
+	case WAIT_TIMEOUT:
+	  set_errno (EAGAIN);
+	  break;
 	default:
 	  __seterrno ();
 	  break;
 	}
     }
-  __except (EFAULT) {
-    res = -1;
-  }
+  __except (EFAULT)
+    {
+      res = -1;
+    }
   __endtry
   sigproc_printf ("returning signal %d", res);
   return res;
+}
+
+extern "C" int
+sigtimedwait (const sigset_t *set, siginfo_t *info, const timespec *timeout)
+{
+  LARGE_INTEGER waittime;
+
+  if (timeout)
+    {
+      if (!valid_timespec (*timeout))
+	{
+	  set_errno (EINVAL);
+	  return -1;
+	}
+      /* convert timespec to 100ns units */
+      waittime.QuadPart = (LONGLONG) timeout->tv_sec * NS100PERSEC
+                          + ((LONGLONG) timeout->tv_nsec + (NSPERSEC/NS100PERSEC) - 1)
+			    / (NSPERSEC/NS100PERSEC);
+      /* negate waittime to code as duration for NtSetTimer() below cygwait() */
+      waittime.QuadPart = -waittime.QuadPart;
+    }
+
+  return sigwait_common (set, info, timeout ? &waittime : cw_infinite);
+}
+
+extern "C" int
+sigwait (const sigset_t *set, int *sig_ptr)
+{
+  int sig;
+
+  do
+    {
+      sig = sigwait_common (set, NULL, cw_infinite);
+    }
+  while (sig == -1 && get_errno () == EINTR);
+  if (sig > 0)
+    *sig_ptr = sig;
+  return sig > 0 ? 0 : get_errno ();
+}
+
+extern "C" int
+sigwaitinfo (const sigset_t *set, siginfo_t *info)
+{
+  return sigwait_common (set, info, cw_infinite);
 }
 
 /* FIXME: SUSv3 says that this function should block until the signal has
@@ -619,10 +707,17 @@ sigqueue (pid_t pid, int sig, const union sigval value)
       set_errno (ESRCH);
       return -1;
     }
+  if (sig == 0)
+    return 0;
+  if (sig < 0 || sig >= _NSIG)
+    {
+      set_errno (EINVAL);
+      return -1;
+    }
   si.si_signo = sig;
   si.si_code = SI_QUEUE;
   si.si_value = value;
-  return sig_send (dest, si);
+  return (int) sig_send (dest, si);
 }
 
 extern "C" int
@@ -689,4 +784,63 @@ sigaltstack (const stack_t *ss, stack_t *oss)
     }
   __endtry
   return 0;
+}
+
+extern "C" int
+signalfd (int fd_in, const sigset_t *mask, int flags)
+{
+  int ret = -1;
+  fhandler_signalfd *fh;
+
+  debug_printf ("signalfd (%d, %p, %y)", fd_in, mask, flags);
+
+  if ((flags & ~(SFD_NONBLOCK | SFD_CLOEXEC)) != 0)
+    {
+      set_errno (EINVAL);
+      goto done;
+    }
+
+  if (fd_in != -1)
+    {
+      /* Change signal mask. */
+      cygheap_fdget fd (fd_in);
+
+      if (fd < 0)
+	goto done;
+      fh = fd->is_signalfd ();
+      if (!fh)
+	{
+	  set_errno (EINVAL);
+	  goto done;
+	}
+      __try
+        {
+	  if (fh->signalfd (mask, flags) == 0)
+	    ret = fd_in;
+	}
+      __except (EINVAL) {}
+      __endtry
+    }
+  else
+    {
+      /* Create new signalfd descriptor. */
+      cygheap_fdnew fd;
+
+      if (fd < 0)
+	goto done;
+      fh = (fhandler_signalfd *) build_fh_dev (*signalfd_dev);
+      if (fh && fh->signalfd (mask, flags) == 0)
+	{
+	  fd = fh;
+	  if (fd <= 2)
+	    set_std_handle (fd);
+	  ret = fd;
+	}
+      else
+	delete fh;
+    }
+
+done:
+  syscall_printf ("%R = signalfd (%d, %p, %y)", ret, fd_in, mask, flags);
+  return ret;
 }

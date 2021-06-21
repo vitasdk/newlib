@@ -12,13 +12,13 @@
  */
 /*
 FUNCTION
-<<rint>>, <<rintf>>--round to integer
+<<rint>>, <<rintf>>---round to integer
 INDEX
 	rint
 INDEX
 	rintf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double rint(double <[x]>);
 	float rintf(float <[x]>);

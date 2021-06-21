@@ -61,17 +61,18 @@ SCRIPTS  = $(srcdir)/msp430-sim.ld
 SCRIPTS += $(srcdir)/msp430xl-sim.ld
 SCRIPTS += $(srcdir)/intr_vectors.ld
 
-CRT = gcrt0.o crt0.o crt0-minrt.o crtn.o crtn-minrt.o
+CRT = gcrt0.o crt0.o
 SIM_BSP = libsim.a
-LIB_CIO = libcio.a
+LIB_NOSYS = libnosys.a
 LIB_CRT = libcrt.a
 
 SIM_OBJS = syscalls.o \
 	cio.o \
 	write.o \
+	unlink.o \
 	sbrk.o
 
-CIO_OBJS = ciosyscalls.o \
+NOSYS_OBJS = ciosyscalls.o \
 	cio.o \
 	write.o \
 	unlink.o \
@@ -85,24 +86,21 @@ CRT_OBJS = \
 	crt_movedata.o \
 	crt_move_highdata.o \
 	crt_main.o \
-	crt_main_minrt.o \
 	crt_callexit.o \
+	crt_run_init_array.o \
+	crt_run_preinit_array.o \
+	crt_run_fini_array.o \
+	crt_run_array.o \
 	crt_init.o
 
 #### Host specific Makefile fragment comes in here.
 @host_makefile_frag@
 
 
-all: $(CRT) $(SIM_BSP) $(LIB_CIO) $(LIB_CRT) copy_scripts_to_objdir
+all: $(CRT) $(SIM_BSP) $(LIB_NOSYS) $(LIB_CRT) copy_scripts_to_objdir
 
 crt_%.o : crt0.S
 	$(CC) -DL$* -Wa,-gdwarf2 -Wa,-I$(srcdir) $(CFLAGS_FOR_TARGET) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-crt0-minrt.o : crt0.S
-	$(CC) -DL0 -DMINRT -Wa,-gdwarf2 -Wa,-I$(srcdir) $(CFLAGS_FOR_TARGET) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-crtn-minrt.o : crtn.S
-	$(CC) -DL0 -DMINRT -Wa,-gdwarf2 -Wa,-I$(srcdir) $(CFLAGS_FOR_TARGET) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 # Override .S.o rule to pass assembler debugging flags
 .S.o:
@@ -112,7 +110,7 @@ $(SIM_BSP): $(SIM_OBJS)
 	$(AR) $(ARFLAGS) $@ $?
 	$(RANLIB) $@
 
-$(LIB_CIO): $(CIO_OBJS)
+$(LIB_NOSYS): $(NOSYS_OBJS)
 	$(AR) $(ARFLAGS) $@ $?
 	$(RANLIB) $@
 
@@ -153,9 +151,9 @@ unlink.o : $(SDEPS)
 utime.o : $(SDEPS)
 write.o : $(SDEPS)
 
-install: $(CRT) $(SIM_BSP) $(LIB_CIO) $(LIB_CRT) $(SCRIPTS)
+install: $(CRT) $(SIM_BSP) $(LIB_NOSYS) $(LIB_CRT) $(SCRIPTS)
 	mkdir -p $(DESTDIR)$(tooldir)/lib${MULTISUBDIR}
-	for c in $(CRT) $(SIM_BSP) $(LIB_CIO) $(LIB_CRT); do \
+	for c in $(CRT) $(SIM_BSP) $(LIB_NOSYS) $(LIB_CRT); do \
 	  $(INSTALL_DATA) $$c $(DESTDIR)$(tooldir)/lib${MULTISUBDIR}/$$c ;\
 	done
 	for c in $(SCRIPTS); do \

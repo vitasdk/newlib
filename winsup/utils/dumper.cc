@@ -1,14 +1,12 @@
 /* dumper.cc
 
-   Copyright 1999, 2001, 2002, 2004, 2006, 2007, 2011, 2013 Red Hat Inc.
-
    Written by Egor Duda <deo@logos-m.ru>
 
    This file is part of Cygwin.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
+   the Free Software Foundation; either version 3 of the License, or
    (at your option) any later version.
 
    This program is distributed in the hope that it will be useful,
@@ -40,6 +38,20 @@
 #include "dumper.h"
 
 #define NOTE_NAME_SIZE 16
+
+#ifdef bfd_get_section_size
+/* for bfd < 2.34 */
+#define get_section_name(abfd, sect) bfd_get_section_name (abfd, sect)
+#define get_section_size(sect) bfd_get_section_size(sect)
+#define set_section_size(abfd, sect, size) bfd_set_section_size(abfd, sect, size)
+#define set_section_flags(abfd, sect, flags) bfd_set_section_flags(abfd, sect, flags)
+#else
+/* otherwise bfd >= 2.34 */
+#define get_section_name(afbd, sect) bfd_section_name (sect)
+#define get_section_size(sect) bfd_section_size(sect)
+#define set_section_size(abfd, sect, size) bfd_set_section_size(sect, size)
+#define set_section_flags(abfd, sect, flags) bfd_set_section_flags(sect, flags)
+#endif
 
 typedef struct _note_header
   {
@@ -133,7 +145,7 @@ dumper::sane ()
 void
 print_section_name (bfd* abfd, asection* sect, PTR obj)
 {
-  deb_printf (" %s", bfd_get_section_name (abfd, sect));
+  deb_printf (" %s", get_section_name (abfd, sect));
 }
 
 void
@@ -417,7 +429,11 @@ dumper::dump_thread (asection * to, process_thread * thread)
   bfd_putl32 (NOTE_NAME_SIZE, header.elf_note_header.namesz);
   bfd_putl32 (sizeof (thread_pstatus), header.elf_note_header.descsz);
   bfd_putl32 (NT_WIN32PSTATUS, header.elf_note_header.type);
-  strncpy ((char *) &header.elf_note_header.name, "win32thread", NOTE_NAME_SIZE);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Warray-bounds"
+  strncpy (header.elf_note_header.name, "win32thread", NOTE_NAME_SIZE);
+#pragma GCC diagnostic pop
 
   thread_pstatus.data_type = NOTE_INFO_THREAD;
   thread_pstatus.data.thread_info.tid = thread->tid;
@@ -480,7 +496,11 @@ dumper::dump_module (asection * to, process_module * module)
   bfd_putl32 (NOTE_NAME_SIZE, header.elf_note_header.namesz);
   bfd_putl32 (note_length, header.elf_note_header.descsz);
   bfd_putl32 (NT_WIN32PSTATUS, header.elf_note_header.type);
-  strncpy ((char *) &header.elf_note_header.name, "win32module", NOTE_NAME_SIZE);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Warray-bounds"
+  strncpy (header.elf_note_header.name, "win32module", NOTE_NAME_SIZE);
+#pragma GCC diagnostic pop
 
   module_pstatus_ptr->data_type = NOTE_INFO_MODULE;
   module_pstatus_ptr->data.module_info.base_address = module->base_address;
@@ -706,10 +726,10 @@ dumper::prepare_core_dump ()
 
       if (p->type == pr_ent_module && status_section != NULL)
 	{
-	  if (!bfd_set_section_size (core_bfd,
-				     status_section,
-				     (bfd_get_section_size (status_section)
-				      + sect_size)))
+	  if (!set_section_size (core_bfd,
+				 status_section,
+				 (get_section_size (status_section)
+				  + sect_size)))
 	    {
 	      bfd_perror ("resizing status section");
 	      goto failed;
@@ -732,8 +752,8 @@ dumper::prepare_core_dump ()
 	  goto failed;
 	}
 
-      if (!bfd_set_section_flags (core_bfd, new_section, sect_flags) ||
-	  !bfd_set_section_size (core_bfd, new_section, sect_size))
+      if (!set_section_flags (core_bfd, new_section, sect_flags) ||
+	  !set_section_size (core_bfd, new_section, sect_size))
 	{
 	  bfd_perror ("setting section attributes");
 	  goto failed;
@@ -817,7 +837,7 @@ dumper::write_core_dump ()
       deb_printf ("writing section type=%u base=%p size=%p flags=%08x\n",
 		  p->type,
 		  p->section->vma,
-		  bfd_get_section_size (p->section),
+		  get_section_size (p->section),
 		  p->section->flags);
 
       switch (p->type)
@@ -872,7 +892,7 @@ print_version ()
 {
   printf ("dumper (cygwin) %d.%d.%d\n"
 	  "Core Dumper for Cygwin\n"
-	  "Copyright (C) 1999 - %s Red Hat, Inc.\n"
+	  "Copyright (C) 1999 - %s Cygwin Authors\n"
 	  "This is free software; see the source for copying conditions.  There is NO\n"
 	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
 	  CYGWIN_VERSION_DLL_MAJOR / 1000,

@@ -12,13 +12,13 @@
  */
 /*
 FUNCTION
-       <<logb>>, <<logbf>>--get exponent of floating-point number
+       <<logb>>, <<logbf>>---get exponent of floating-point number
 INDEX
 	logb
 INDEX
 	logbf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
         double logb(double <[x]>);
         float logbf(float <[x]>);

@@ -11,9 +11,8 @@ extern int errno;
 #include "warning.h"
 
 int
-_DEFUN (_write, (file, ptr, len),
-        int   file  _AND
-        char *ptr   _AND
+_write (int   file,
+        char *ptr,
         int   len)
 {
   errno = ENOSYS;

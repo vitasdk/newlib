@@ -1,8 +1,5 @@
 /* cygerrno.h: main Cygwin header file.
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2009, 2010, 2011, 2012, 2013,
-   2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -13,6 +10,13 @@ details. */
 #define _CYGERRNO_H
 #include <errno.h>
 #include "regparm.h"
+
+struct errmap_t
+{
+  DWORD w;		 /* windows version of error */
+  const char *s;	 /* text of windows version */
+  int e;		 /* errno version of error */
+};
 
 void __reg3 seterrno_from_win_error (const char *file, int line, DWORD code);
 void __reg3 seterrno_from_nt_status (const char *file, int line, NTSTATUS status);
@@ -36,6 +40,10 @@ __set_errno (const char *fn, int ln, int val)
   return errno = _impure_ptr->_errno = val;
 }
 #define set_errno(val) __set_errno (__PRETTY_FUNCTION__, __LINE__, (val))
+
+int find_winsock_errno (DWORD why);
+void __reg2 __set_winsock_errno (const char *fn, int ln);
+#define set_winsock_errno() __set_winsock_errno (__FUNCTION__, __LINE__)
 
 #define get_errno()  (errno)
 extern "C" void __stdcall set_sig_errno (int e);

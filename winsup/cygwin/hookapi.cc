@@ -1,7 +1,5 @@
 /* hookapi.cc
 
-   Copyright 2005, 2006, 2007, 2008, 2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -44,9 +42,9 @@ PEHeaderFromHModule (HMODULE hModule, bool &is_64bit)
       if (pNTHeader->Signature != IMAGE_NT_SIGNATURE)
 	pNTHeader = NULL;
       else if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
-      	is_64bit = true;
+	is_64bit = true;
       else if (pNTHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386)
-      	is_64bit = false;
+	is_64bit = false;
       else
 	pNTHeader = NULL;
     }
@@ -404,7 +402,7 @@ hook_or_detect_cygwin (const char *name, const void *fn, WORD& subsys, HANDLE h)
     {
       if (!ascii_strcasematch (rva (PSTR, map ?: (char *) hm, pd->Name - delta),
 			       "cygwin1.dll"))
-      	continue;
+	continue;
       if (!fn)
 	{
 	  /* Just checking if executable used cygwin1.dll. */
@@ -428,6 +426,40 @@ hook_or_detect_cygwin (const char *name, const void *fn, WORD& subsys, HANDLE h)
     get_export (fh);
 
   return fh.origfn;
+}
+
+/* Hook a function in any DLL such as kernel32.dll */
+/* The DLL must be loaded in advance. */
+/* Used in fhandler_tty.cc */
+void *hook_api (const char *mname, const char *name, const void *fn)
+{
+  HMODULE hm = GetModuleHandle (mname);
+  PIMAGE_NT_HEADERS pExeNTHdr =
+    rva (PIMAGE_NT_HEADERS, hm, PIMAGE_DOS_HEADER (hm)->e_lfanew);
+  DWORD importRVA = pExeNTHdr->OptionalHeader.DataDirectory
+    [IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+  PIMAGE_IMPORT_DESCRIPTOR pdfirst =
+    rva (PIMAGE_IMPORT_DESCRIPTOR, hm, importRVA);
+  for (PIMAGE_IMPORT_DESCRIPTOR pd = pdfirst; pd->FirstThunk; pd++)
+    {
+      if (pd->OriginalFirstThunk == 0)
+	continue;
+      PIMAGE_THUNK_DATA pt = rva (PIMAGE_THUNK_DATA, hm, pd->FirstThunk);
+      PIMAGE_THUNK_DATA pn =
+	rva (PIMAGE_THUNK_DATA, hm, pd->OriginalFirstThunk);
+      for (PIMAGE_THUNK_DATA pi = pt; pn->u1.Ordinal; pi++, pn++)
+	{
+	  if (IMAGE_SNAP_BY_ORDINAL (pn->u1.Ordinal))
+	    continue;
+	  PIMAGE_IMPORT_BY_NAME pimp =
+	    rva (PIMAGE_IMPORT_BY_NAME, hm, pn->u1.AddressOfData);
+	  if (strcmp (name, (char *) pimp->Name) != 0)
+	    continue;
+	  void *origfn = putmem (pi, fn);
+	  return origfn;
+	}
+    }
+  return NULL;
 }
 
 void

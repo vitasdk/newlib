@@ -11,9 +11,8 @@
  * notice and comment, and (2) distributions including binaries display
  * the following acknowledgement:  ``This product includes software
  * developed by the University of California, Berkeley and its contributors''
- * in the documentation or other materials provided with the distribution
- * and in all advertising materials mentioning features or use of this
- * software. Neither the name of the University nor the names of its
+ * in the documentation or other materials provided with the distribution.
+ * Neither the name of the University nor the names of its
  * contributors may be used to endorse or promote products derived
  * from this software without specific prior written permission.
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
@@ -38,7 +37,7 @@ extern char **environ;
 static char ***p_environ = &environ;
 
 /* _findenv_r is defined in getenv_r.c.  */
-extern char *_findenv_r _PARAMS ((struct _reent *, const char *, int *));
+extern char *_findenv_r (struct _reent *, const char *, int *);
 
 /*
  * _setenv_r --
@@ -49,10 +48,9 @@ extern char *_findenv_r _PARAMS ((struct _reent *, const char *, int *));
  */
 
 int
-_DEFUN (_setenv_r, (reent_ptr, name, value, rewrite),
-        struct _reent *reent_ptr _AND
-	_CONST char *name _AND
-	_CONST char *value _AND
+_setenv_r (struct _reent *reent_ptr,
+	const char *name,
+	const char *value,
 	int rewrite)
 {
   static int alloced;		/* if allocated space before */
@@ -133,9 +131,8 @@ _DEFUN (_setenv_r, (reent_ptr, name, value, rewrite),
  *	Delete environmental variable "name".
  */
 int
-_DEFUN (_unsetenv_r, (reent_ptr, name),
-        struct _reent *reent_ptr _AND
-        _CONST char *name)
+_unsetenv_r (struct _reent *reent_ptr,
+        const char *name)
 {
   register char **P;
   int offset;

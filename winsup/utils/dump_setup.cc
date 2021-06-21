@@ -1,7 +1,5 @@
 /* dump_setup.cc
 
-   Copyright 2001, 2002, 2003, 2004, 2005, 2008, 2010, 2011, 2012 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -50,21 +48,6 @@ find_tar_ext (const char *path)
     return 0;
 }
 
-static char *
-base (const char *s)
-{
-  if (!s)
-    return 0;
-  const char *rv = s;
-  while (*s)
-    {
-      if ((*s == '/' || *s == ':' || *s == '\\') && s[1])
-	rv = s + 1;
-      s++;
-    }
-  return (char *) rv;
-}
-
 /* Parse a filename into package, version, and extension components. */
 int
 parse_filename (const char *in_fn, fileparse& f)
@@ -81,7 +64,7 @@ parse_filename (const char *in_fn, fileparse& f)
   strcpy (f.tail, fn + n);
   fn[n] = '\0';
   f.pkg[0] = f.what[0] = '\0';
-  p = base (fn);
+  p = fn;
   for (ver = p; *ver; ver++)
     if (*ver != '-')
       continue;

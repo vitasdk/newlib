@@ -10,13 +10,13 @@
  */
 /*
 FUNCTION
-<<nearbyint>>, <<nearbyintf>>--round to integer
+<<nearbyint>>, <<nearbyintf>>---round to integer
 INDEX
 	nearbyint
 INDEX
 	nearbyintf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double nearbyint(double <[x]>);
 	float nearbyintf(float <[x]>);

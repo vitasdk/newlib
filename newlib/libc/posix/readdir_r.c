@@ -12,11 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -50,9 +46,8 @@ extern int getdents (int fd, void *dp, int count);
  * get next entry in a directory using supplied dirent structure.
  */
 int
-_DEFUN(readdir_r, (dirp, dp, dpp),
-	register DIR *__restrict dirp _AND
-	struct dirent *__restrict dp _AND
+readdir_r (register DIR *__restrict dirp,
+	struct dirent *__restrict dp,
 	struct dirent **__restrict dpp) {
 
 struct dirent *tmpdp;

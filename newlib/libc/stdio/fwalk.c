@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -28,8 +28,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #include "local.h"
 
 int
-_DEFUN(_fwalk, (ptr, function),
-       struct _reent *ptr _AND
+_fwalk (struct _reent *ptr,
        register int (*function) (FILE *))
 {
   register FILE *fp;
@@ -55,8 +54,7 @@ _DEFUN(_fwalk, (ptr, function),
 /* Special version of __fwalk where the function pointer is a reentrant
    I/O function (e.g. _fclose_r).  */
 int
-_DEFUN(_fwalk_reent, (ptr, reent_function),
-       struct _reent *ptr _AND
+_fwalk_reent (struct _reent *ptr,
        register int (*reent_function) (struct _reent *, FILE *))
 {
   register FILE *fp;

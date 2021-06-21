@@ -10,18 +10,10 @@ INDEX
         powf
 
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double pow(double <[x]>, double <[y]>);
         float pow(float <[x]>, float <[y]>);
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double pow(<[x]>, <[y]>);
-        double <[x]>, <[y]>;
-
-        float pow(<[x]>, <[y]>);
-        float <[x]>, <[y]>;
 
 DESCRIPTION
         <<pow>> and <<powf>> calculate <[x]> raised to the exponent <[y]>.
@@ -38,8 +30,6 @@ RETURNS
         noninteger, and <[y]> is also not an integer, then <<errno>>
         is set to <<EDOM>>.  If <[x]> and <[y]> are both 0, then
         <<pow>> and <<powf>> return <<1>>.
-
-        You can modify error handling for these functions using <<matherr>>.
 
 PORTABILITY
         <<pow>> is ANSI C. <<powf>> is an extension.  */

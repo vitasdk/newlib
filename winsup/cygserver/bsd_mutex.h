@@ -1,7 +1,5 @@
 /* bsd_mutex.h: BSD Mutex helper
 
-   Copyright 2003, 2005 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -32,10 +30,10 @@ struct mtx {
 extern struct mtx Giant;
 
 void mtx_init (mtx *, const char *, const void *, int);
-void _mtx_lock (mtx *, DWORD winpid, const char *, int);
+void _mtx_lock (mtx *, DWORD, const char *, int);
 #define mtx_lock(m) _mtx_lock((m), (td->ipcblk->winpid), __FILE__, __LINE__)
 int mtx_owned (mtx *, DWORD);
-void _mtx_assert(mtx *, int, DWORD winpid, const char *, int);
+void _mtx_assert(mtx *, int, DWORD, const char *, int);
 #define mtx_assert(m,w,p) _mtx_assert((m),(w),(p),__FILE__,__LINE__)
 void _mtx_unlock (mtx *, const char *, int);
 #define mtx_unlock(m) _mtx_unlock((m),__FILE__,__LINE__)

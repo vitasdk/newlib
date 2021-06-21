@@ -1,8 +1,5 @@
 /* fhandler_console.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -18,6 +15,7 @@ details. */
 #include <sys/param.h>
 #include <sys/cygwin.h>
 #include <cygwin/kd.h>
+#include <unistd.h>
 #include "cygerrno.h"
 #include "security.h"
 #include "path.h"
@@ -44,15 +42,45 @@ details. */
 
 #define con (shared_console_info->con)
 #define srTop (con.b.srWindow.Top + con.scroll_region.Top)
-#define srBottom ((con.scroll_region.Bottom < 0) ? con.b.srWindow.Bottom : con.b.srWindow.Top + con.scroll_region.Bottom)
-
-const char *get_nonascii_key (INPUT_RECORD&, char *);
+#define srBottom ((con.scroll_region.Bottom < 0) ? \
+		  con.b.srWindow.Bottom : \
+		  con.b.srWindow.Top + con.scroll_region.Bottom)
+#define con_is_legacy (shared_console_info && con.is_legacy)
 
 const unsigned fhandler_console::MAX_WRITE_CHARS = 16384;
 
 fhandler_console::console_state NO_COPY *fhandler_console::shared_console_info;
 
 bool NO_COPY fhandler_console::invisible_console;
+
+/* con_ra is shared in the same process.
+   Only one console can exist in a process, therefore, static is suitable. */
+static struct fhandler_base::rabuf_t con_ra;
+
+/* Write pending buffer for ESC sequence handling
+   in xterm compatible mode */
+static unsigned char last_char;
+
+/* simple helper class to accumulate output in a buffer
+   and send that to the console on request: */
+static class write_pending_buffer
+{
+private:
+  static const size_t WPBUF_LEN = 256u;
+  unsigned char buf[WPBUF_LEN];
+  size_t ixput;
+public:
+  inline void put (unsigned char x)
+  {
+    if (ixput < WPBUF_LEN)
+      buf[ixput++] = x;
+  }
+  inline void empty () { ixput = 0u; }
+  inline void send (HANDLE &handle, DWORD *wn = NULL)
+  {
+    WriteConsoleA (handle, buf, ixput, wn, 0);
+  }
+} wpbuf;
 
 static void
 beep ()
@@ -142,17 +170,32 @@ fhandler_console::set_unit ()
 		shared_unit : FH_ERROR;
       created = false;
     }
-  else if ((!generic_console && (myself->ctty != -1 && !iscons_dev (myself->ctty)))
+  else if ((!generic_console &&
+	    (myself->ctty != -1 && !iscons_dev (myself->ctty)))
 	   || !(me = GetConsoleWindow ()))
     devset = FH_ERROR;
   else
     {
       created = true;
-      shared_console_info = open_shared_console (me, cygheap->console_h, created);
+      shared_console_info =
+	open_shared_console (me, cygheap->console_h, created);
       ProtectHandleINH (cygheap->console_h);
       if (created)
-	shared_console_info->tty_min_state.setntty (DEV_CONS_MAJOR, console_unit (me));
+	shared_console_info->
+	  tty_min_state.setntty (DEV_CONS_MAJOR, console_unit (me));
       devset = (fh_devices) shared_console_info->tty_min_state.getntty ();
+      if (created)
+	{
+	  con.owner = myself->pid;
+	  con.xterm_mode_input = 0;
+	  con.xterm_mode_output = 0;
+	}
+    }
+  if (!created && shared_console_info)
+    {
+      pinfo p (con.owner);
+      if (!p)
+	con.owner = myself->pid;
     }
 
   dev ().parse (devset);
@@ -160,7 +203,7 @@ fhandler_console::set_unit ()
     pc.file_attributes (FILE_ATTRIBUTE_NORMAL);
   else
     {
-      set_io_handle (NULL);
+      set_handle (NULL);
       set_output_handle (NULL);
       created = false;
     }
@@ -172,32 +215,122 @@ void
 fhandler_console::setup ()
 {
   if (set_unit ())
-      {
-	con.scroll_region.Bottom = -1;
-	con.dwLastCursorPosition.X = -1;
-	con.dwLastCursorPosition.Y = -1;
-	con.dwLastMousePosition.X = -1;
-	con.dwLastMousePosition.Y = -1;
-	con.dwLastButtonState = 0;	/* none pressed */
-	con.last_button_code = 3;	/* released */
-	con.underline_color = FOREGROUND_GREEN | FOREGROUND_BLUE;
-	con.dim_color = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-	con.meta_mask = LEFT_ALT_PRESSED;
-	/* Set the mask that determines if an input keystroke is modified by
-	   META.  We set this based on the keyboard layout language loaded
-	   for the current thread.  The left <ALT> key always generates
-	   META, but the right <ALT> key only generates META if we are using
-	   an English keyboard because many "international" keyboards
-	   replace common shell symbols ('[', '{', etc.) with accented
-	   language-specific characters (umlaut, accent grave, etc.).  On
-	   these keyboards right <ALT> (called AltGr) is used to produce the
-	   shell symbols and should not be interpreted as META. */
-	if (PRIMARYLANGID (LOWORD (GetKeyboardLayout (0))) == LANG_ENGLISH)
-	  con.meta_mask |= RIGHT_ALT_PRESSED;
-	con.set_default_attr ();
-	con.backspace_keycode = CERASE;
-	shared_console_info->tty_min_state.is_console = true;
-      }
+    {
+      con.scroll_region.Bottom = -1;
+      con.dwLastCursorPosition.X = -1;
+      con.dwLastCursorPosition.Y = -1;
+      con.dwLastMousePosition.X = -1;
+      con.dwLastMousePosition.Y = -1;
+      con.savex = con.savey = -1;
+      con.screen_alternated = false;
+      con.dwLastButtonState = 0;	/* none pressed */
+      con.last_button_code = 3;	/* released */
+      con.underline_color = FOREGROUND_GREEN | FOREGROUND_BLUE;
+      con.dim_color = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+      con.meta_mask = LEFT_ALT_PRESSED;
+      /* Set the mask that determines if an input keystroke is modified by
+	 META.  We set this based on the keyboard layout language loaded
+	 for the current thread.  The left <ALT> key always generates
+	 META, but the right <ALT> key only generates META if we are using
+	 an English keyboard because many "international" keyboards
+	 replace common shell symbols ('[', '{', etc.) with accented
+	 language-specific characters (umlaut, accent grave, etc.).  On
+	 these keyboards right <ALT> (called AltGr) is used to produce the
+	 shell symbols and should not be interpreted as META. */
+      if (PRIMARYLANGID (LOWORD (GetKeyboardLayout (0))) == LANG_ENGLISH)
+	con.meta_mask |= RIGHT_ALT_PRESSED;
+      con.set_default_attr ();
+      con.backspace_keycode = CERASE;
+      con.cons_rapoi = NULL;
+      shared_console_info->tty_min_state.is_console = true;
+      con.cursor_key_app_mode = false;
+    }
+}
+
+char *&
+fhandler_console::rabuf ()
+{
+  return con_ra.rabuf;
+}
+
+size_t &
+fhandler_console::ralen ()
+{
+  return con_ra.ralen;
+}
+
+size_t &
+fhandler_console::raixget ()
+{
+  return con_ra.raixget;
+}
+
+size_t &
+fhandler_console::raixput ()
+{
+  return con_ra.raixput;
+}
+
+size_t &
+fhandler_console::rabuflen ()
+{
+  return con_ra.rabuflen;
+}
+
+void
+fhandler_console::request_xterm_mode_input (bool req)
+{
+  if (con_is_legacy)
+    return;
+  if (req)
+    {
+      if (InterlockedExchange (&con.xterm_mode_input, 1) == 0)
+	{
+	  DWORD dwMode;
+	  GetConsoleMode (get_handle (), &dwMode);
+	  dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+	  SetConsoleMode (get_handle (), dwMode);
+	  if (con.cursor_key_app_mode) /* Restore DECCKM */
+	    WriteConsoleA (get_output_handle (), "\033[?1h", 5, NULL, 0);
+	}
+    }
+  else
+    {
+      if (InterlockedExchange (&con.xterm_mode_input, 0) == 1)
+	{
+	  DWORD dwMode;
+	  GetConsoleMode (get_handle (), &dwMode);
+	  dwMode &= ~ENABLE_VIRTUAL_TERMINAL_INPUT;
+	  SetConsoleMode (get_handle (), dwMode);
+	}
+    }
+}
+
+void
+fhandler_console::request_xterm_mode_output (bool req)
+{
+  if (con_is_legacy)
+    return;
+  if (req)
+    {
+      if (InterlockedExchange (&con.xterm_mode_output, 1) == 0)
+	{
+	  DWORD dwMode;
+	  GetConsoleMode (get_output_handle (), &dwMode);
+	  dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	  SetConsoleMode (get_output_handle (), dwMode);
+	}
+    }
+  else
+    {
+      if (InterlockedExchange (&con.xterm_mode_output, 0) == 1)
+	{
+	  DWORD dwMode;
+	  GetConsoleMode (get_output_handle (), &dwMode);
+	  dwMode &= ~ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	  SetConsoleMode (get_output_handle (), dwMode);
+	}
+    }
 }
 
 /* Return the tty structure associated with a given tty number.  If the
@@ -215,11 +348,49 @@ tty_list::get_cttyp ()
     return NULL;
 }
 
+void
+fhandler_console::setup_io_mutex (void)
+{
+  char buf[MAX_PATH];
+  DWORD res;
+
+  res = WAIT_FAILED;
+  if (!input_mutex || WAIT_FAILED == (res = acquire_input_mutex (0)))
+    {
+      shared_name (buf, "cygcons.input.mutex", get_minor ());
+      input_mutex = OpenMutex (MAXIMUM_ALLOWED, TRUE, buf);
+      if (!input_mutex)
+	input_mutex = CreateMutex (&sec_none, FALSE, buf);
+      if (!input_mutex)
+	{
+	  __seterrno ();
+	  return;
+	}
+    }
+  if (res == WAIT_OBJECT_0)
+    release_input_mutex ();
+
+  res = WAIT_FAILED;
+  if (!output_mutex || WAIT_FAILED == (res = acquire_output_mutex (0)))
+    {
+      shared_name (buf, "cygcons.output.mutex", get_minor ());
+      output_mutex = OpenMutex (MAXIMUM_ALLOWED, TRUE, buf);
+      if (!output_mutex)
+	output_mutex = CreateMutex (&sec_none, FALSE, buf);
+      if (!output_mutex)
+	{
+	  __seterrno ();
+	  return;
+	}
+    }
+  if (res == WAIT_OBJECT_0)
+    release_output_mutex ();
+}
+
 inline DWORD
 dev_console::con_to_str (char *d, int dlen, WCHAR w)
 {
-  return sys_cp_wcstombs (cygheap->locale.wctomb, cygheap->locale.charset,
-			  d, dlen, &w, 1);
+  return sys_wcstombs (d, dlen, &w, 1);
 }
 
 inline UINT
@@ -230,10 +401,9 @@ dev_console::get_console_cp ()
 }
 
 inline DWORD
-dev_console::str_to_con (mbtowc_p f_mbtowc, const char *charset,
-			 PWCHAR d, const char *s, DWORD sz)
+dev_console::str_to_con (mbtowc_p f_mbtowc, PWCHAR d, const char *s, DWORD sz)
 {
-  return sys_cp_mbstowcs (f_mbtowc, charset, d, CONVERT_LIMIT, s, sz);
+  return sys_cp_mbstowcs (f_mbtowc, d, CONVERT_LIMIT, s, sz);
 }
 
 bool
@@ -241,7 +411,8 @@ fhandler_console::set_raw_win32_keyboard_mode (bool new_mode)
 {
   bool old_mode = con.raw_win32_keyboard_mode;
   con.raw_win32_keyboard_mode = new_mode;
-  syscall_printf ("raw keyboard mode %sabled", con.raw_win32_keyboard_mode ? "en" : "dis");
+  syscall_printf ("raw keyboard mode %sabled",
+		  con.raw_win32_keyboard_mode ? "en" : "dis");
   return old_mode;
 };
 
@@ -249,6 +420,9 @@ void
 fhandler_console::set_cursor_maybe ()
 {
   con.fillin (get_output_handle ());
+  /* Nothing to do for xterm compatible mode. */
+  if (wincap.has_con_24bit_colors () && !con_is_legacy)
+    return;
   if (con.dwLastCursorPosition.X != con.b.dwCursorPosition.X ||
       con.dwLastCursorPosition.Y != con.b.dwCursorPosition.Y)
     {
@@ -257,7 +431,18 @@ fhandler_console::set_cursor_maybe ()
     }
 }
 
+/* Workaround for a bug of windows xterm compatible mode. */
+/* The horizontal tab positions are broken after resize. */
 void
+fhandler_console::fix_tab_position (void)
+{
+  /* Re-setting ENABLE_VIRTUAL_TERMINAL_PROCESSING
+     fixes the tab position. */
+  request_xterm_mode_output (false);
+  request_xterm_mode_output (true);
+}
+
+bool
 fhandler_console::send_winch_maybe ()
 {
   SHORT y = con.dwWinSize.Y;
@@ -268,8 +453,12 @@ fhandler_console::send_winch_maybe ()
     {
       con.scroll_region.Top = 0;
       con.scroll_region.Bottom = -1;
+      if (wincap.has_con_24bit_colors () && !con_is_legacy)
+	fix_tab_position ();
       get_ttyp ()->kill_pgrp (SIGWINCH);
+      return true;
     }
+  return false;
 }
 
 /* Check whether a mouse event is to be reported as an escape sequence */
@@ -289,7 +478,8 @@ fhandler_console::mouse_aware (MOUSE_EVENT_RECORD& mouse_event)
   con.dwMousePosition.X = mouse_event.dwMousePosition.X - now.srWindow.Left;
   con.dwMousePosition.Y = mouse_event.dwMousePosition.Y - now.srWindow.Top;
 
-  return ((mouse_event.dwEventFlags == 0 || mouse_event.dwEventFlags == DOUBLE_CLICK)
+  return ((mouse_event.dwEventFlags == 0
+	   || mouse_event.dwEventFlags == DOUBLE_CLICK)
 	  && mouse_event.dwButtonState != con.dwLastButtonState)
 	 || mouse_event.dwEventFlags == MOUSE_WHEELED
 	 || (mouse_event.dwEventFlags == MOUSE_MOVED
@@ -302,38 +492,33 @@ fhandler_console::mouse_aware (MOUSE_EVENT_RECORD& mouse_event)
 void __reg3
 fhandler_console::read (void *pv, size_t& buflen)
 {
+  termios_printf ("read(%p,%d)", pv, buflen);
+
   push_process_state process_state (PID_TTYIN);
 
-  HANDLE h = get_io_handle ();
-
-#define buf ((char *) pv)
-
-  int ch;
-  set_input_state ();
-
-  int copied_chars = get_readahead_into_buffer (buf, buflen);
-
-  if (copied_chars)
-    {
-      buflen = copied_chars;
-      return;
-    }
+  int copied_chars = 0;
 
   DWORD timeout = is_nonblocking () ? 0 : INFINITE;
-  char tmp[60];
 
-  termios ti = get_ttyp ()->ti;
-  for (;;)
+  set_input_state ();
+
+  /* if system has 24 bit color capability, use xterm compatible mode. */
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_input (true);
+
+  while (!input_ready && !get_cons_readahead_valid ())
     {
       int bgres;
       if ((bgres = bg_check (SIGTTIN)) <= bg_eof)
 	{
 	  buflen = bgres;
+	  if (wincap.has_con_24bit_colors ())
+	    request_xterm_mode_input (false);
 	  return;
 	}
 
-      set_cursor_maybe ();	/* to make cursor appear on the screen immediately */
-      switch (cygwait (h, timeout))
+      set_cursor_maybe (); /* to make cursor appear on the screen immediately */
+      switch (cygwait (get_handle (), timeout))
 	{
 	case WAIT_OBJECT_0:
 	  break;
@@ -346,36 +531,116 @@ fhandler_console::read (void *pv, size_t& buflen)
 	case WAIT_TIMEOUT:
 	  set_sig_errno (EAGAIN);
 	  buflen = (size_t) -1;
+	  if (wincap.has_con_24bit_colors ())
+	    request_xterm_mode_input (false);
 	  return;
 	default:
 	  goto err;
 	}
 
-      DWORD nread;
-      INPUT_RECORD input_rec;
+#define buf ((char *) pv)
+
+      int ret;
+      acquire_input_mutex (INFINITE);
+      ret = process_input_message ();
+      release_input_mutex ();
+      switch (ret)
+	{
+	case input_error:
+	  goto err;
+	case input_processing:
+	  continue;
+	case input_ok: /* input ready */
+	  break;
+	case input_signalled: /* signalled */
+	  goto sig_exit;
+	case input_winch:
+	  continue;
+	default:
+	  /* Should not come here */
+	  goto err;
+	}
+    }
+
+  /* Check console read-ahead buffer filled from terminal requests */
+  acquire_input_mutex (INFINITE);
+  while (con.cons_rapoi && *con.cons_rapoi && buflen)
+    {
+      buf[copied_chars++] = *con.cons_rapoi++;
+      buflen --;
+    }
+
+  copied_chars +=
+    get_readahead_into_buffer (buf + copied_chars, buflen);
+
+  if (!con_ra.ralen)
+    input_ready = false;
+  release_input_mutex ();
+
+#undef buf
+
+  buflen = copied_chars;
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_input (false);
+  return;
+
+err:
+  __seterrno ();
+  buflen = (size_t) -1;
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_input (false);
+  return;
+
+sig_exit:
+  set_sig_errno (EINTR);
+  buflen = (size_t) -1;
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_input (false);
+}
+
+fhandler_console::input_states
+fhandler_console::process_input_message (void)
+{
+  char tmp[60];
+
+  if (!shared_console_info)
+    return input_error;
+
+  termios *ti = &(get_ttyp ()->ti);
+
+  fhandler_console::input_states stat = input_processing;
+  DWORD total_read, i;
+  INPUT_RECORD input_rec[INREC_SIZE];
+
+  if (!PeekConsoleInputW (get_handle (), input_rec, INREC_SIZE, &total_read))
+    {
+      termios_printf ("PeekConsoleInput failed, %E");
+      return input_error;
+    }
+
+  for (i = 0; i < total_read; i ++)
+    {
+      DWORD nread = 1;
       const char *toadd = NULL;
 
-      if (!ReadConsoleInputW (h, &input_rec, 1, &nread))
-	{
-	  syscall_printf ("ReadConsoleInput failed, %E");
-	  goto err;		/* seems to be failure */
-	}
+      const WCHAR &unicode_char =
+	input_rec[i].Event.KeyEvent.uChar.UnicodeChar;
+      const DWORD &ctrl_key_state =
+	input_rec[i].Event.KeyEvent.dwControlKeyState;
 
       /* check the event that occurred */
-      switch (input_rec.EventType)
+      switch (input_rec[i].EventType)
 	{
 	case KEY_EVENT:
-#define virtual_key_code (input_rec.Event.KeyEvent.wVirtualKeyCode)
-#define control_key_state (input_rec.Event.KeyEvent.dwControlKeyState)
 
 	  con.nModifiers = 0;
 
 #ifdef DEBUGGING
 	  /* allow manual switching to/from raw mode via ctrl-alt-scrolllock */
-	  if (input_rec.Event.KeyEvent.bKeyDown &&
-	      virtual_key_code == VK_SCROLL &&
-	      ((control_key_state & (LEFT_ALT_PRESSED | LEFT_CTRL_PRESSED)) == (LEFT_ALT_PRESSED | LEFT_CTRL_PRESSED))
-	    )
+	  if (input_rec[i].Event.KeyEvent.bKeyDown
+	      && input_rec[i].Event.KeyEvent.wVirtualKeyCode == VK_SCROLL
+	      && (ctrl_key_state & (LEFT_ALT_PRESSED | LEFT_CTRL_PRESSED))
+	      == (LEFT_ALT_PRESSED | LEFT_CTRL_PRESSED))
 	    {
 	      set_raw_win32_keyboard_mode (!con.raw_win32_keyboard_mode);
 	      continue;
@@ -385,50 +650,42 @@ fhandler_console::read (void *pv, size_t& buflen)
 	  if (con.raw_win32_keyboard_mode)
 	    {
 	      __small_sprintf (tmp, "\033{%u;%u;%u;%u;%u;%luK",
-				    input_rec.Event.KeyEvent.bKeyDown,
-				    input_rec.Event.KeyEvent.wRepeatCount,
-				    input_rec.Event.KeyEvent.wVirtualKeyCode,
-				    input_rec.Event.KeyEvent.wVirtualScanCode,
-				    input_rec.Event.KeyEvent.uChar.UnicodeChar,
-				    input_rec.Event.KeyEvent.dwControlKeyState);
+			       input_rec[i].Event.KeyEvent.bKeyDown,
+			       input_rec[i].Event.KeyEvent.wRepeatCount,
+			       input_rec[i].Event.KeyEvent.wVirtualKeyCode,
+			       input_rec[i].Event.KeyEvent.wVirtualScanCode,
+			       input_rec[i].Event.KeyEvent.uChar.UnicodeChar,
+			       input_rec[i].Event.KeyEvent.dwControlKeyState);
 	      toadd = tmp;
 	      nread = strlen (toadd);
 	      break;
 	    }
 
-#define ich (input_rec.Event.KeyEvent.uChar.AsciiChar)
-#define wch (input_rec.Event.KeyEvent.uChar.UnicodeChar)
-
-	  /* Ignore key up events, except for left alt events with non-zero character
-	   */
-	  if (!input_rec.Event.KeyEvent.bKeyDown &&
-	      /*
-		Event for left alt, with a non-zero character, comes from
-		"alt + numerics" key sequence.
-		e.g. <left-alt> 0233 => &eacute;
-	      */
-	      !(wch != 0
-		// ?? experimentally determined on an XP system
-		&& virtual_key_code == VK_MENU
-		// left alt -- see http://www.microsoft.com/hwdev/tech/input/Scancode.asp
-		&& input_rec.Event.KeyEvent.wVirtualScanCode == 0x38))
+	  /* Ignore key up events, except for Alt+Numpad events. */
+	  if (!input_rec[i].Event.KeyEvent.bKeyDown &&
+	      !is_alt_numpad_event (&input_rec[i]))
+	    continue;
+	  /* Ignore Alt+Numpad keys.  They are eventually handled below after
+	     releasing the Alt key. */
+	  if (input_rec[i].Event.KeyEvent.bKeyDown
+	      && is_alt_numpad_key (&input_rec[i]))
 	    continue;
 
-	  if (control_key_state & SHIFT_PRESSED)
+	  if (ctrl_key_state & SHIFT_PRESSED)
 	    con.nModifiers |= 1;
-	  if (control_key_state & RIGHT_ALT_PRESSED)
+	  if (ctrl_key_state & RIGHT_ALT_PRESSED)
 	    con.nModifiers |= 2;
-	  if (control_key_state & CTRL_PRESSED)
+	  if (ctrl_key_state & CTRL_PRESSED)
 	    con.nModifiers |= 4;
-	  if (control_key_state & LEFT_ALT_PRESSED)
+	  if (ctrl_key_state & LEFT_ALT_PRESSED)
 	    con.nModifiers |= 8;
 
 	  /* Allow Backspace to emit ^? and escape sequences. */
-	  if (input_rec.Event.KeyEvent.wVirtualKeyCode == VK_BACK)
+	  if (input_rec[i].Event.KeyEvent.wVirtualKeyCode == VK_BACK)
 	    {
 	      char c = con.backspace_keycode;
 	      nread = 0;
-	      if (control_key_state & ALT_PRESSED)
+	      if (ctrl_key_state & ALT_PRESSED)
 		{
 		  if (con.metabit)
 		    c |= 0x80;
@@ -440,15 +697,18 @@ fhandler_console::read (void *pv, size_t& buflen)
 	      toadd = tmp;
 	    }
 	  /* Allow Ctrl-Space to emit ^@ */
-	  else if (input_rec.Event.KeyEvent.wVirtualKeyCode == VK_SPACE
-		   && (control_key_state & CTRL_PRESSED)
-		   && !(control_key_state & ALT_PRESSED))
+	  else if (input_rec[i].Event.KeyEvent.wVirtualKeyCode
+		   == ((wincap.has_con_24bit_colors () && !con_is_legacy) ?
+		       '2' : VK_SPACE)
+		   && (ctrl_key_state & CTRL_PRESSED)
+		   && !(ctrl_key_state & ALT_PRESSED))
 	    toadd = "";
-	  else if (wch == 0
-	      /* arrow/function keys */
-	      || (input_rec.Event.KeyEvent.dwControlKeyState & ENHANCED_KEY))
+	  else if (unicode_char == 0
+		   /* arrow/function keys */
+		   || (input_rec[i].Event.KeyEvent.dwControlKeyState
+		       & ENHANCED_KEY))
 	    {
-	      toadd = get_nonascii_key (input_rec, tmp);
+	      toadd = get_nonascii_key (input_rec[i], tmp);
 	      if (!toadd)
 		{
 		  con.nModifiers = 0;
@@ -458,17 +718,17 @@ fhandler_console::read (void *pv, size_t& buflen)
 	    }
 	  else
 	    {
-	      nread = con.con_to_str (tmp + 1, 59, wch);
+	      nread = con.con_to_str (tmp + 1, 59, unicode_char);
 	      /* Determine if the keystroke is modified by META.  The tricky
 		 part is to distinguish whether the right Alt key should be
 		 recognized as Alt, or as AltGr. */
 	      bool meta =
-		     /* Alt but not AltGr (= left ctrl + right alt)? */
-		     (control_key_state & ALT_PRESSED) != 0
-		     && ((control_key_state & CTRL_PRESSED) == 0
-			    /* but also allow Alt-AltGr: */
-			 || (control_key_state & ALT_PRESSED) == ALT_PRESSED
-			 || (wch <= 0x1f || wch == 0x7f));
+		/* Alt but not AltGr (= left ctrl + right alt)? */
+		(ctrl_key_state & ALT_PRESSED) != 0
+		&& ((ctrl_key_state & CTRL_PRESSED) == 0
+		    /* but also allow Alt-AltGr: */
+		    || (ctrl_key_state & ALT_PRESSED) == ALT_PRESSED
+		    || (unicode_char <= 0x1f || unicode_char == 0x7f));
 	      if (!meta)
 		{
 		  /* Determine if the character is in the current multibyte
@@ -496,183 +756,185 @@ fhandler_console::read (void *pv, size_t& buflen)
 		  con.nModifiers &= ~4;
 		}
 	    }
-#undef ich
-#undef wch
 	  break;
 
 	case MOUSE_EVENT:
 	  send_winch_maybe ();
-	  {
-	    MOUSE_EVENT_RECORD& mouse_event = input_rec.Event.MouseEvent;
-	    /* As a unique guard for mouse report generation,
-	       call mouse_aware() which is common with select(), so the result
-	       of select() and the actual read() will be consistent on the
-	       issue of whether input (i.e. a mouse escape sequence) will
-	       be available or not */
-	    if (mouse_aware (mouse_event))
-	      {
-		/* Note: Reported mouse position was already retrieved by
-		   mouse_aware() and adjusted by window scroll buffer offset */
+	    {
+	      MOUSE_EVENT_RECORD& mouse_event = input_rec[i].Event.MouseEvent;
+	      /* As a unique guard for mouse report generation,
+		 call mouse_aware() which is common with select(), so the result
+		 of select() and the actual read() will be consistent on the
+		 issue of whether input (i.e. a mouse escape sequence) will
+		 be available or not */
+	      if (mouse_aware (mouse_event))
+		{
+		  /* Note: Reported mouse position was already retrieved by
+		     mouse_aware() and adjusted by window scroll buffer offset */
 
-		/* Treat the double-click event like a regular button press */
-		if (mouse_event.dwEventFlags == DOUBLE_CLICK)
-		  {
-		    syscall_printf ("mouse: double-click -> click");
-		    mouse_event.dwEventFlags = 0;
-		  }
+		  /* Treat the double-click event like a regular button press */
+		  if (mouse_event.dwEventFlags == DOUBLE_CLICK)
+		    {
+		      syscall_printf ("mouse: double-click -> click");
+		      mouse_event.dwEventFlags = 0;
+		    }
 
-		/* This code assumes Windows never reports multiple button
-		   events at the same time. */
-		int b = 0;
-		char sz[32];
-		char mode6_term = 'M';
+		  /* This code assumes Windows never reports multiple button
+		     events at the same time. */
+		  int b = 0;
+		  char sz[32];
+		  char mode6_term = 'M';
 
-		if (mouse_event.dwEventFlags == MOUSE_WHEELED)
-		  {
-		    if (mouse_event.dwButtonState & 0xFF800000)
-		      {
-			b = 0x41;
-			strcpy (sz, "wheel down");
-		      }
-		    else
-		      {
-			b = 0x40;
-			strcpy (sz, "wheel up");
-		      }
-		  }
-		else
-		  {
-		    /* Ignore unimportant mouse buttons */
-		    mouse_event.dwButtonState &= 0x7;
+		  if (mouse_event.dwEventFlags == MOUSE_WHEELED)
+		    {
+		      if (mouse_event.dwButtonState & 0xFF800000)
+			{
+			  b = 0x41;
+			  strcpy (sz, "wheel down");
+			}
+		      else
+			{
+			  b = 0x40;
+			  strcpy (sz, "wheel up");
+			}
+		    }
+		  else
+		    {
+		      /* Ignore unimportant mouse buttons */
+		      mouse_event.dwButtonState &= 0x7;
 
-		    if (mouse_event.dwEventFlags == MOUSE_MOVED)
-		      {
-			b = con.last_button_code;
-		      }
-		    else if (mouse_event.dwButtonState < con.dwLastButtonState && !con.ext_mouse_mode6)
-		      {
-			b = 3;
-			strcpy (sz, "btn up");
-		      }
-		    else if ((mouse_event.dwButtonState & 1) != (con.dwLastButtonState & 1))
-		      {
-			b = 0;
-			strcpy (sz, "btn1 down");
-		      }
-		    else if ((mouse_event.dwButtonState & 2) != (con.dwLastButtonState & 2))
-		      {
-			b = 2;
-			strcpy (sz, "btn2 down");
-		      }
-		    else if ((mouse_event.dwButtonState & 4) != (con.dwLastButtonState & 4))
-		      {
-			b = 1;
-			strcpy (sz, "btn3 down");
-		      }
+		      if (mouse_event.dwEventFlags == MOUSE_MOVED)
+			{
+			  b = con.last_button_code;
+			}
+		      else if (mouse_event.dwButtonState < con.dwLastButtonState
+			       && !con.ext_mouse_mode6)
+			{
+			  b = 3;
+			  strcpy (sz, "btn up");
+			}
+		      else if ((mouse_event.dwButtonState & 1)
+			       != (con.dwLastButtonState & 1))
+			{
+			  b = 0;
+			  strcpy (sz, "btn1 down");
+			}
+		      else if ((mouse_event.dwButtonState & 2)
+			       != (con.dwLastButtonState & 2))
+			{
+			  b = 2;
+			  strcpy (sz, "btn2 down");
+			}
+		      else if ((mouse_event.dwButtonState & 4)
+			       != (con.dwLastButtonState & 4))
+			{
+			  b = 1;
+			  strcpy (sz, "btn3 down");
+			}
 
-		    if (con.ext_mouse_mode6 /* distinguish release */
-			&& mouse_event.dwButtonState < con.dwLastButtonState)
+		      if (con.ext_mouse_mode6 /* distinguish release */
+			  && mouse_event.dwButtonState < con.dwLastButtonState)
 			mode6_term = 'm';
 
-		    con.last_button_code = b;
+		      con.last_button_code = b;
 
-		    if (mouse_event.dwEventFlags == MOUSE_MOVED)
-		      {
-			b += 32;
-			strcpy (sz, "move");
-		      }
-		    else
-		      {
-			/* Remember the modified button state */
-			con.dwLastButtonState = mouse_event.dwButtonState;
-		      }
-		  }
+		      if (mouse_event.dwEventFlags == MOUSE_MOVED)
+			{
+			  b += 32;
+			  strcpy (sz, "move");
+			}
+		      else
+			{
+			  /* Remember the modified button state */
+			  con.dwLastButtonState = mouse_event.dwButtonState;
+			}
+		    }
 
-		/* Remember mouse position */
-		con.dwLastMousePosition.X = con.dwMousePosition.X;
-		con.dwLastMousePosition.Y = con.dwMousePosition.Y;
+		  /* Remember mouse position */
+		  con.dwLastMousePosition.X = con.dwMousePosition.X;
+		  con.dwLastMousePosition.Y = con.dwMousePosition.Y;
 
-		/* Remember the modifiers */
-		con.nModifiers = 0;
-		if (mouse_event.dwControlKeyState & SHIFT_PRESSED)
+		  /* Remember the modifiers */
+		  con.nModifiers = 0;
+		  if (mouse_event.dwControlKeyState & SHIFT_PRESSED)
 		    con.nModifiers |= 0x4;
-		if (mouse_event.dwControlKeyState & ALT_PRESSED)
+		  if (mouse_event.dwControlKeyState & ALT_PRESSED)
 		    con.nModifiers |= 0x8;
-		if (mouse_event.dwControlKeyState & CTRL_PRESSED)
+		  if (mouse_event.dwControlKeyState & CTRL_PRESSED)
 		    con.nModifiers |= 0x10;
 
-		/* Indicate the modifiers */
-		b |= con.nModifiers;
+		  /* Indicate the modifiers */
+		  b |= con.nModifiers;
 
-		/* We can now create the code. */
-		if (con.ext_mouse_mode6)
-		  {
-		    __small_sprintf (tmp, "\033[<%d;%d;%d%c", b,
-				     con.dwMousePosition.X + 1,
-				     con.dwMousePosition.Y + 1,
-				     mode6_term);
-		    nread = strlen (tmp);
-		  }
-		else if (con.ext_mouse_mode15)
-		  {
-		    __small_sprintf (tmp, "\033[%d;%d;%dM", b + 32,
-				     con.dwMousePosition.X + 1,
-				     con.dwMousePosition.Y + 1);
-		    nread = strlen (tmp);
-		  }
-		else if (con.ext_mouse_mode5)
-		  {
-		    unsigned int xcode = con.dwMousePosition.X + ' ' + 1;
-		    unsigned int ycode = con.dwMousePosition.Y + ' ' + 1;
+		  /* We can now create the code. */
+		  if (con.ext_mouse_mode6)
+		    {
+		      __small_sprintf (tmp, "\033[<%d;%d;%d%c", b,
+				       con.dwMousePosition.X + 1,
+				       con.dwMousePosition.Y + 1,
+				       mode6_term);
+		      nread = strlen (tmp);
+		    }
+		  else if (con.ext_mouse_mode15)
+		    {
+		      __small_sprintf (tmp, "\033[%d;%d;%dM", b + 32,
+				       con.dwMousePosition.X + 1,
+				       con.dwMousePosition.Y + 1);
+		      nread = strlen (tmp);
+		    }
+		  else if (con.ext_mouse_mode5)
+		    {
+		      unsigned int xcode = con.dwMousePosition.X + ' ' + 1;
+		      unsigned int ycode = con.dwMousePosition.Y + ' ' + 1;
 
-		    __small_sprintf (tmp, "\033[M%c", b + ' ');
-		    nread = 4;
-		    /* the neat nested encoding function of mintty
-		       does not compile in g++, so let's unfold it: */
-		    if (xcode < 0x80)
-		      tmp [nread++] = xcode;
-		    else if (xcode < 0x800)
-		      {
-			tmp [nread++] = 0xC0 + (xcode >> 6);
-			tmp [nread++] = 0x80 + (xcode & 0x3F);
-		      }
-		    else
-		      tmp [nread++] = 0;
-		    if (ycode < 0x80)
-		      tmp [nread++] = ycode;
-		    else if (ycode < 0x800)
-		      {
-			tmp [nread++] = 0xC0 + (ycode >> 6);
-			tmp [nread++] = 0x80 + (ycode & 0x3F);
-		      }
-		    else
-		      tmp [nread++] = 0;
-		  }
-		else
-		  {
-		    unsigned int xcode = con.dwMousePosition.X + ' ' + 1;
-		    unsigned int ycode = con.dwMousePosition.Y + ' ' + 1;
-		    if (xcode >= 256)
-		      xcode = 0;
-		    if (ycode >= 256)
-		      ycode = 0;
-		    __small_sprintf (tmp, "\033[M%c%c%c", b + ' ',
-				     xcode, ycode);
-		    nread = 6;	/* tmp may contain NUL bytes */
-		  }
-		syscall_printf ("mouse: %s at (%d,%d)", sz,
-				con.dwMousePosition.X,
-				con.dwMousePosition.Y);
+		      __small_sprintf (tmp, "\033[M%c", b + ' ');
+		      nread = 4;
+		      /* the neat nested encoding function of mintty
+			 does not compile in g++, so let's unfold it: */
+		      if (xcode < 0x80)
+			tmp [nread++] = xcode;
+		      else if (xcode < 0x800)
+			{
+			  tmp [nread++] = 0xC0 + (xcode >> 6);
+			  tmp [nread++] = 0x80 + (xcode & 0x3F);
+			}
+		      else
+			tmp [nread++] = 0;
+		      if (ycode < 0x80)
+			tmp [nread++] = ycode;
+		      else if (ycode < 0x800)
+			{
+			  tmp [nread++] = 0xC0 + (ycode >> 6);
+			  tmp [nread++] = 0x80 + (ycode & 0x3F);
+			}
+		      else
+			tmp [nread++] = 0;
+		    }
+		  else
+		    {
+		      unsigned int xcode = con.dwMousePosition.X + ' ' + 1;
+		      unsigned int ycode = con.dwMousePosition.Y + ' ' + 1;
+		      if (xcode >= 256)
+			xcode = 0;
+		      if (ycode >= 256)
+			ycode = 0;
+		      __small_sprintf (tmp, "\033[M%c%c%c", b + ' ',
+				       xcode, ycode);
+		      nread = 6;	/* tmp may contain NUL bytes */
+		    }
+		  syscall_printf ("mouse: %s at (%d,%d)", sz,
+				  con.dwMousePosition.X,
+				  con.dwMousePosition.Y);
 
-		toadd = tmp;
-	      }
-	  }
+		  toadd = tmp;
+		}
+	    }
 	  break;
 
 	case FOCUS_EVENT:
 	  if (con.use_focus)
 	    {
-	      if (input_rec.Event.FocusEvent.bSetFocus)
+	      if (input_rec[i].Event.FocusEvent.bSetFocus)
 		__small_sprintf (tmp, "\033[I");
 	      else
 		__small_sprintf (tmp, "\033[O");
@@ -683,7 +945,11 @@ fhandler_console::read (void *pv, size_t& buflen)
 	  break;
 
 	case WINDOW_BUFFER_SIZE_EVENT:
-	  send_winch_maybe ();
+	  if (send_winch_maybe ())
+	    {
+	      stat = input_winch;
+	      goto out;
+	    }
 	  /* fall through */
 	default:
 	  continue;
@@ -691,35 +957,29 @@ fhandler_console::read (void *pv, size_t& buflen)
 
       if (toadd)
 	{
-	  line_edit_status res = line_edit (toadd, nread, ti);
+	  ssize_t ret;
+	  release_input_mutex ();
+	  line_edit_status res = line_edit (toadd, nread, *ti, &ret);
+	  acquire_input_mutex (INFINITE);
 	  if (res == line_edit_signalled)
-	    goto sig_exit;
+	    {
+	      stat = input_signalled;
+	      goto out;
+	    }
 	  else if (res == line_edit_input_done)
-	    break;
+	    {
+	      input_ready = true;
+	      stat = input_ok;
+	      if (ti->c_lflag & ICANON)
+		goto out;
+	    }
 	}
     }
-
-  while (buflen)
-    if ((ch = get_readahead ()) < 0)
-      break;
-    else
-      {
-	buf[copied_chars++] = (unsigned char)(ch & 0xff);
-	buflen--;
-      }
-#undef buf
-
-  buflen = copied_chars;
-  return;
-
-err:
-  __seterrno ();
-  buflen = (size_t) -1;
-  return;
-
-sig_exit:
-  set_sig_errno (EINTR);
-  buflen = (size_t) -1;
+out:
+  /* Discard processed recored. */
+  DWORD dummy;
+  ReadConsoleInputW (get_handle (), input_rec, min (total_read, i+1), &dummy);
+  return stat;
 }
 
 void
@@ -738,10 +998,9 @@ dev_console::fillin (HANDLE h)
     {
       dwWinSize.Y = 1 + b.srWindow.Bottom - b.srWindow.Top;
       dwWinSize.X = 1 + b.srWindow.Right - b.srWindow.Left;
-      if (b.dwSize.Y != b.dwSize.Y || b.dwSize.X != b.dwSize.X)
-	dwEnd.X = dwEnd.Y = 0;
       if (b.dwCursorPosition.Y > dwEnd.Y
-	  || (b.dwCursorPosition.Y >= dwEnd.Y && b.dwCursorPosition.X > dwEnd.X))
+	  || (b.dwCursorPosition.Y >= dwEnd.Y
+	      && b.dwCursorPosition.X > dwEnd.X))
 	dwEnd = b.dwCursorPosition;
     }
   else
@@ -757,7 +1016,8 @@ dev_console::fillin (HANDLE h)
 }
 
 void __reg3
-dev_console::scroll_buffer (HANDLE h, int x1, int y1, int x2, int y2, int xn, int yn)
+dev_console::scroll_buffer (HANDLE h, int x1, int y1, int x2, int y2,
+			    int xn, int yn)
 {
 /* Scroll the screen context.
    x1, y1 - ul corner
@@ -768,7 +1028,7 @@ dev_console::scroll_buffer (HANDLE h, int x1, int y1, int x2, int y2, int xn, in
   SMALL_RECT sr1, sr2;
   CHAR_INFO fill;
   COORD dest;
-  fill.Char.AsciiChar = ' ';
+  fill.Char.UnicodeChar = L' ';
   fill.Attributes = current_win32_attr;
 
   fillin (h);
@@ -778,28 +1038,31 @@ dev_console::scroll_buffer (HANDLE h, int x1, int y1, int x2, int y2, int xn, in
   sr1.Bottom = y2 >= 0 ? y2 : b.srWindow.Bottom;
   sr2.Top = b.srWindow.Top + scroll_region.Top;
   sr2.Left = 0;
-  sr2.Bottom = (scroll_region.Bottom < 0) ? b.srWindow.Bottom : b.srWindow.Top + scroll_region.Bottom;
+  sr2.Bottom = (scroll_region.Bottom < 0) ?
+    b.srWindow.Bottom : b.srWindow.Top + scroll_region.Bottom;
   sr2.Right = dwWinSize.X - 1;
   if (sr1.Bottom > sr2.Bottom && sr1.Top <= sr2.Bottom)
     sr1.Bottom = sr2.Bottom;
   dest.X = xn >= 0 ? xn : dwWinSize.X - 1;
   dest.Y = yn >= 0 ? yn : b.srWindow.Bottom;
-  ScrollConsoleScreenBuffer (h, &sr1, &sr2, dest, &fill);
+  ScrollConsoleScreenBufferW (h, &sr1, &sr2, dest, &fill);
 }
 
 inline void
-fhandler_console::scroll_buffer (int x1, int y1, int x2, int y2, int xn, int yn)
+fhandler_console::scroll_buffer (int x1, int y1, int x2, int y2,
+				 int xn, int yn)
 {
   con.scroll_buffer (get_output_handle (), x1, y1, x2, y2, xn, yn);
 }
 
 inline void
-fhandler_console::scroll_buffer_screen (int x1, int y1, int x2, int y2, int xn, int yn)
+fhandler_console::scroll_buffer_screen (int x1, int y1, int x2, int y2,
+					int xn, int yn)
 {
   if (y1 >= 0)
     y1 += con.b.srWindow.Top;
   if (y2 >= 0)
-    y1 += con.b.srWindow.Top;
+    y2 += con.b.srWindow.Top;
   if (yn >= 0)
     yn += con.b.srWindow.Top;
   con.scroll_buffer (get_output_handle (), x1, y1, x2, y2, xn, yn);
@@ -827,11 +1090,11 @@ fhandler_console::open (int flags, mode_t)
 
   tcinit (false);
 
-  set_io_handle (NULL);
+  set_handle (NULL);
   set_output_handle (NULL);
 
   /* Open the input handle as handle_ */
-  h = CreateFile ("CONIN$", GENERIC_READ | GENERIC_WRITE,
+  h = CreateFileW (L"CONIN$", GENERIC_READ | GENERIC_WRITE,
 		  FILE_SHARE_READ | FILE_SHARE_WRITE, &sec_none,
 		  OPEN_EXISTING, 0, 0);
 
@@ -840,9 +1103,9 @@ fhandler_console::open (int flags, mode_t)
       __seterrno ();
       return 0;
     }
-  set_io_handle (h);
+  set_handle (h);
 
-  h = CreateFile ("CONOUT$", GENERIC_READ | GENERIC_WRITE,
+  h = CreateFileW (L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
 		  FILE_SHARE_READ | FILE_SHARE_WRITE, &sec_none,
 		  OPEN_EXISTING, 0, 0);
 
@@ -852,6 +1115,8 @@ fhandler_console::open (int flags, mode_t)
       return 0;
     }
   set_output_handle (h);
+
+  setup_io_mutex ();
 
   if (con.fillin (get_output_handle ()))
     {
@@ -864,12 +1129,36 @@ fhandler_console::open (int flags, mode_t)
   get_ttyp ()->rstcons (false);
   set_open_status ();
 
-  DWORD cflags;
-  if (GetConsoleMode (get_io_handle (), &cflags))
-    SetConsoleMode (get_io_handle (),
-		    ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT | cflags);
+  if (myself->pid == con.owner && wincap.has_con_24bit_colors ())
+    {
+      bool is_legacy = false;
+      DWORD dwMode;
+      /* Check xterm compatible mode in output */
+      GetConsoleMode (get_output_handle (), &dwMode);
+      if (!SetConsoleMode (get_output_handle (),
+			   dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+	is_legacy = true;
+      SetConsoleMode (get_output_handle (), dwMode);
+      /* Check xterm compatible mode in input */
+      GetConsoleMode (get_handle (), &dwMode);
+      if (!SetConsoleMode (get_handle (),
+			   dwMode | ENABLE_VIRTUAL_TERMINAL_INPUT))
+	is_legacy = true;
+      SetConsoleMode (get_handle (), dwMode);
+      con.is_legacy = is_legacy;
+      extern int sawTERM;
+      if (con_is_legacy && !sawTERM)
+	setenv ("TERM", "cygwin", 1);
+    }
 
-  debug_printf ("opened conin$ %p, conout$ %p", get_io_handle (),
+  DWORD cflags;
+  if (GetConsoleMode (get_handle (), &cflags))
+    SetConsoleMode (get_handle (), ENABLE_WINDOW_INPUT
+		    | ((wincap.has_con_24bit_colors () && !con_is_legacy) ?
+		       0 : ENABLE_MOUSE_INPUT)
+		    | cflags);
+
+  debug_printf ("opened conin$ %p, conout$ %p", get_handle (),
 		get_output_handle ());
 
   return 1;
@@ -887,8 +1176,48 @@ fhandler_console::open_setup (int flags)
 int
 fhandler_console::close ()
 {
-  CloseHandle (get_io_handle ());
+  debug_printf ("closing: %p, %p", get_handle (), get_output_handle ());
+
+  acquire_output_mutex (INFINITE);
+
+  if (shared_console_info && wincap.has_con_24bit_colors ())
+    {
+      /* Restore console mode if this is the last closure. */
+      OBJECT_BASIC_INFORMATION obi;
+      NTSTATUS status;
+      status = NtQueryObject (get_handle (), ObjectBasicInformation,
+			      &obi, sizeof obi, NULL);
+      if ((NT_SUCCESS (status) && obi.HandleCount == 1)
+	  || myself->pid == con.owner)
+	request_xterm_mode_output (false);
+      request_xterm_mode_input (false);
+    }
+
+  release_output_mutex ();
+
+  CloseHandle (input_mutex);
+  input_mutex = NULL;
+  CloseHandle (output_mutex);
+  output_mutex = NULL;
+
+  CloseHandle (get_handle ());
   CloseHandle (get_output_handle ());
+
+  if (con_ra.rabuf)
+    free (con_ra.rabuf);
+
+  /* If already attached to pseudo console, don't call free_console () */
+  cygheap_fdenum cfd (false);
+  while (cfd.next () >= 0)
+    if (cfd->get_major () == DEV_PTYM_MAJOR ||
+	cfd->get_major () == DEV_PTYS_MAJOR)
+      {
+	fhandler_pty_common *t =
+	  (fhandler_pty_common *) (fhandler_base *) cfd;
+	if (get_console_process_id (t->get_helper_process_id (), true))
+	  return 0;
+      }
+
   if (!have_execed)
     free_console ();
   return 0;
@@ -900,6 +1229,7 @@ fhandler_console::ioctl (unsigned int cmd, void *arg)
   int res = fhandler_termios::ioctl (cmd, arg);
   if (res <= 0)
     return res;
+  acquire_output_mutex (INFINITE);
   switch (cmd)
     {
       case TIOCGWINSZ:
@@ -915,20 +1245,25 @@ fhandler_console::ioctl (unsigned int cmd, void *arg)
 	    syscall_printf ("WINSZ: (row=%d,col=%d)",
 			   ((struct winsize *) arg)->ws_row,
 			   ((struct winsize *) arg)->ws_col);
+	    release_output_mutex ();
 	    return 0;
 	  }
 	else
 	  {
 	    syscall_printf ("WINSZ failed");
 	    __seterrno ();
+	    release_output_mutex ();
 	    return -1;
 	  }
+	release_output_mutex ();
 	return 0;
       case TIOCSWINSZ:
 	bg_check (SIGTTOU);
+	release_output_mutex ();
 	return 0;
       case KDGKBMETA:
 	*(int *) arg = (con.metabit) ? K_METABIT : K_ESCPREFIX;
+	release_output_mutex ();
 	return 0;
       case KDSKBMETA:
 	if ((intptr_t) arg == K_METABIT)
@@ -938,39 +1273,72 @@ fhandler_console::ioctl (unsigned int cmd, void *arg)
 	else
 	  {
 	    set_errno (EINVAL);
+	    release_output_mutex ();
 	    return -1;
 	  }
+	release_output_mutex ();
 	return 0;
       case TIOCLINUX:
 	if (*(unsigned char *) arg == 6)
 	  {
 	    *(unsigned char *) arg = (unsigned char) con.nModifiers;
+	    release_output_mutex ();
 	    return 0;
 	  }
 	set_errno (EINVAL);
+	release_output_mutex ();
 	return -1;
       case FIONREAD:
 	{
-	  /* Per MSDN, max size of buffer required is below 64K. */
-#define	  INREC_SIZE	(65536 / sizeof (INPUT_RECORD))
-
 	  DWORD n;
 	  int ret = 0;
 	  INPUT_RECORD inp[INREC_SIZE];
-	  if (!PeekConsoleInputW (get_io_handle (), inp, INREC_SIZE, &n))
+	  if (!PeekConsoleInputW (get_handle (), inp, INREC_SIZE, &n))
 	    {
 	      set_errno (EINVAL);
+	      release_output_mutex ();
 	      return -1;
 	    }
-	  while (n-- > 0)
-	    if (inp[n].EventType == KEY_EVENT && inp[n].Event.KeyEvent.bKeyDown)
-	      ++ret;
-	  *(int *) arg = ret;
+	  bool saw_eol = false;
+	  for (DWORD i=0; i<n; i++)
+	    if (inp[i].EventType == KEY_EVENT &&
+		inp[i].Event.KeyEvent.bKeyDown &&
+		inp[i].Event.KeyEvent.uChar.UnicodeChar)
+	      {
+		WCHAR wc = inp[i].Event.KeyEvent.uChar.UnicodeChar;
+		char mbs[8];
+		int len = con.con_to_str (mbs, sizeof (mbs), wc);
+		if ((get_ttyp ()->ti.c_lflag & ICANON) &&
+		    len == 1 && CCEQ (get_ttyp ()->ti.c_cc[VEOF], mbs[0]))
+		  {
+		    saw_eol = true;
+		    break;
+		  }
+		ret += len;
+		const char eols[] = {
+		  '\n',
+		  '\r',
+		  (char) get_ttyp ()->ti.c_cc[VEOL],
+		  (char) get_ttyp ()->ti.c_cc[VEOL2]
+		};
+		if ((get_ttyp ()->ti.c_lflag & ICANON) &&
+		    len == 1 && memchr (eols, mbs[0], sizeof (eols)))
+		  {
+		    saw_eol = true;
+		    break;
+		  }
+	      }
+	  if ((get_ttyp ()->ti.c_lflag & ICANON) && !saw_eol)
+	    *(int *) arg = 0;
+	  else
+	    *(int *) arg = ret;
+	  release_output_mutex ();
 	  return 0;
 	}
 	break;
     }
 
+  release_output_mutex ();
   return fhandler_base::ioctl (cmd, arg);
 }
 
@@ -981,7 +1349,7 @@ fhandler_console::tcflush (int queue)
   if (queue == TCIFLUSH
       || queue == TCIOFLUSH)
     {
-      if (!FlushConsoleInputBuffer (get_io_handle ()))
+      if (!FlushConsoleInputBuffer (get_handle ()))
 	{
 	  __seterrno ();
 	  res = -1;
@@ -995,11 +1363,15 @@ fhandler_console::output_tcsetattr (int, struct termios const *t)
 {
   /* All the output bits we can ignore */
 
+  acquire_output_mutex (INFINITE);
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_output (false);
   DWORD flags = ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT;
 
   int res = SetConsoleMode (get_output_handle (), flags) ? 0 : -1;
   if (res)
     __seterrno_from_win_error (GetLastError ());
+  release_output_mutex ();
   syscall_printf ("%d = tcsetattr(,%p) (ENABLE FLAGS %y) (lflag %y oflag %y)",
 		  res, t, flags, t->c_lflag, t->c_oflag);
   return res;
@@ -1010,10 +1382,11 @@ fhandler_console::input_tcsetattr (int, struct termios const *t)
 {
   /* Ignore the optional_actions stuff, since all output is emitted
      instantly */
+  acquire_input_mutex (INFINITE);
 
   DWORD oflags;
 
-  if (!GetConsoleMode (get_io_handle (), &oflags))
+  if (!GetConsoleMode (get_handle (), &oflags))
     oflags = 0;
   DWORD flags = 0;
 
@@ -1052,14 +1425,16 @@ fhandler_console::input_tcsetattr (int, struct termios const *t)
       flags |= ENABLE_PROCESSED_INPUT;
     }
 
-  flags |= ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
+  flags |= ENABLE_WINDOW_INPUT |
+    ((wincap.has_con_24bit_colors () && !con_is_legacy) ?
+     0 : ENABLE_MOUSE_INPUT);
 
   int res;
   if (flags == oflags)
     res = 0;
   else
     {
-      res = SetConsoleMode (get_io_handle (), flags) ? 0 : -1;
+      res = SetConsoleMode (get_handle (), flags) ? 0 : -1;
       if (res < 0)
 	__seterrno ();
       syscall_printf ("%d = tcsetattr(,%p) enable flags %y, c_lflag %y iflag %y",
@@ -1067,6 +1442,7 @@ fhandler_console::input_tcsetattr (int, struct termios const *t)
     }
 
   get_ttyp ()->rstcons (false);
+  release_input_mutex ();
   return res;
 }
 
@@ -1089,7 +1465,7 @@ fhandler_console::tcgetattr (struct termios *t)
 
   DWORD flags;
 
-  if (!GetConsoleMode (get_io_handle (), &flags))
+  if (!GetConsoleMode (get_handle (), &flags))
     {
       __seterrno ();
       res = -1;
@@ -1119,7 +1495,8 @@ fhandler_console::tcgetattr (struct termios *t)
 }
 
 fhandler_console::fhandler_console (fh_devices unit) :
-  fhandler_termios ()
+  fhandler_termios (), input_ready (false),
+  input_mutex (NULL), output_mutex (NULL)
 {
   if (unit > 0)
     dev ().parse (unit);
@@ -1215,30 +1592,64 @@ dev_console::scroll_window (HANDLE h, int x1, int y1, int x2, int y2)
     return false;
 
   SMALL_RECT sr;
-  int toscroll = 2 + dwEnd.Y - b.srWindow.Top;
-  int shrink = 1 + toscroll + b.srWindow.Bottom - b.dwSize.Y;
+  int toscroll = dwEnd.Y - b.srWindow.Top + 1;
   sr.Left = sr.Right = dwEnd.X = 0;
-  /* Can't increment dwEnd yet since we may not have space in
-     the buffer.  */
-  SetConsoleCursorPosition (h, dwEnd);
-  if (shrink > 0)
+
+  if (b.srWindow.Bottom + toscroll >= b.dwSize.Y)
     {
-      COORD c = b.dwSize;
-      c.Y = dwEnd.Y - shrink;
-      SetConsoleScreenBufferSize (h, c);
-      SetConsoleScreenBufferSize (h, b.dwSize);
-      dwEnd.Y = 0;
-      fillin (h);
-      toscroll = 2 + dwEnd.Y - b.srWindow.Top;
+      /* So we're at the end of the buffer and scrolling the console window
+	 would move us beyond the buffer.  What we do here is to scroll the
+	 console buffer upward by just as much so that the current last line
+	 becomes the last line just prior to the first window line.  That
+	 keeps the end of the console buffer intact, as desired. */
+      SMALL_RECT br;
+      COORD dest;
+      CHAR_INFO fill;
+
+      br.Left = 0;
+      br.Top = (b.srWindow.Bottom - b.srWindow.Top) + 1
+	       - (b.dwSize.Y - dwEnd.Y - 1);
+      br.Right = b.dwSize.X - 1;
+      br.Bottom = b.dwSize.Y - 1;
+      dest.X = dest.Y = 0;
+      fill.Char.UnicodeChar = L' ';
+      fill.Attributes = current_win32_attr;
+      ScrollConsoleScreenBufferW (h, &br, NULL, dest, &fill);
+      /* Since we're moving the console buffer under the console window
+	 we only have to move the console window if the user scrolled the
+	 window upwards.  The number of lines is the distance to the
+	 buffer bottom. */
+      toscroll = b.dwSize.Y - b.srWindow.Bottom - 1;
+      /* Fix dwEnd to reflect the new cursor line.  Take the above scrolling
+	 into account and subtract 1 to account for the increment below. */
+      dwEnd.Y = b.dwCursorPosition.Y + toscroll - 1;
     }
+  if (toscroll)
+    {
+      /* FIXME: For some reason SetConsoleWindowInfo does not correctly
+	 set the scrollbars.  Calling SetConsoleCursorPosition here is
+	 just a workaround which doesn't cover all cases.  In some scenarios
+	 the scrollbars are still off by one console window size. */
 
-  sr.Top = sr.Bottom = toscroll;
-
-  SetConsoleWindowInfo (h, FALSE, &sr);
-
+      /* The reminder of the console buffer is big enough to simply move
+         the console window.  We have to set the cursor first, otherwise
+	 the scroll bars will not be corrected.  */
+      SetConsoleCursorPosition (h, dwEnd);
+      /* If the user scolled manually, setting the cursor position might scroll
+         the console window so that the cursor is not at the top.  Correct
+	 the action by moving the window down again so the cursor is one line
+	 above the new window position. */
+      GetConsoleScreenBufferInfo (h, &b);
+      if (b.dwCursorPosition.Y >= b.srWindow.Top)
+	toscroll = b.dwCursorPosition.Y - b.srWindow.Top + 1;
+      /* Move the window accordingly. */
+      sr.Top = sr.Bottom = toscroll;
+      SetConsoleWindowInfo (h, FALSE, &sr);
+    }
+  /* Eventually set cursor to new end position at the top of the window. */
   dwEnd.Y++;
   SetConsoleCursorPosition (h, dwEnd);
-
+  /* Fix up console buffer info. */
   fillin (h);
   return true;
 }
@@ -1251,12 +1662,23 @@ void __reg3
 fhandler_console::clear_screen (cltype xc1, cltype yc1, cltype xc2, cltype yc2)
 {
   HANDLE h = get_output_handle ();
+  SHORT oldEndY = con.dwEnd.Y;
+
   con.fillin (h);
 
   int x1 = con.set_cl_x (xc1);
   int y1 = con.set_cl_y (yc1);
   int x2 = con.set_cl_x (xc2);
   int y2 = con.set_cl_y (yc2);
+
+  /* Make correction for the following situation:  The console buffer
+     is only partially used and the user scrolled down into the as yet
+     unused area so far that the cursor is outside the window buffer. */
+  if (oldEndY < con.dwEnd.Y && oldEndY < con.b.srWindow.Top)
+    {
+      con.dwEnd.Y = con.b.dwCursorPosition.Y = oldEndY;
+      y1 = con.b.srWindow.Top;
+    }
 
   /* Detect special case - scroll the screen if we have a buffer in order to
      preserve the buffer. */
@@ -1283,7 +1705,7 @@ dev_console::clear_screen (HANDLE h, int x1, int y1, int x2, int y2)
       tlc.X = x2;
       tlc.Y = y2;
     }
-  FillConsoleOutputCharacterA (h, ' ', num, tlc, &done);
+  FillConsoleOutputCharacterW (h, L' ', num, tlc, &done);
   FillConsoleOutputAttribute (h, current_win32_attr, num, tlc, &done);
 }
 
@@ -1373,8 +1795,8 @@ static const wchar_t __vt100_conv[31] = {
 	0x00B7, /* Middle Dot */
 };
 
-inline
-bool fhandler_console::write_console (PWCHAR buf, DWORD len, DWORD& done)
+inline bool
+fhandler_console::write_console (PWCHAR buf, DWORD len, DWORD& done)
 {
   if (con.iso_2022_G1
 	? con.vt100_graphics_mode_G1
@@ -1566,16 +1988,227 @@ static const char base_chars[256] =
 /*F0 F1 F2 F3 F4 F5 F6 F7 */ NOR, NOR, NOR, NOR, NOR, NOR, NOR, NOR,
 /*F8 F9 FA FB FC FD FE FF */ NOR, NOR, NOR, NOR, NOR, NOR, NOR, NOR };
 
+static const char table256[256] =
+{
+   0, 4, 2, 6, 1, 5, 3, 7, 8,12,10,14, 9,13,11,15,
+   0, 1, 1, 1, 9, 9, 2, 3, 3, 3, 3, 9, 2, 3, 3, 3,
+   3,11, 2, 3, 3, 3,11,11,10, 3, 3,11,11,11,10,10,
+  11,11,11,11, 4, 5, 5, 5, 5, 9, 6, 8, 8, 8, 8, 9,
+   6, 8, 8, 8, 8, 7, 6, 8, 8, 8, 7, 7, 6, 8, 8, 7,
+   7,11,10,10, 7, 7,11,11, 4, 5, 5, 5, 5,13, 6, 8,
+   8, 8, 8, 7, 6, 8, 8, 8, 7, 7, 6, 8, 8, 7, 7, 7,
+   6, 8, 7, 7, 7, 7,14, 7, 7, 7, 7, 7, 4, 5, 5, 5,
+  13,13, 6, 8, 8, 8, 7, 7, 6, 8, 8, 7, 7, 7, 6, 8,
+   7, 7, 7, 7,14, 7, 7, 7, 7, 7,14, 7, 7, 7, 7,15,
+  12, 5, 5,13,13,13, 6, 8, 8, 7, 7,13, 6, 8, 7, 7,
+   7, 7,14, 7, 7, 7, 7, 7,14, 7, 7, 7, 7,15,14,14,
+   7, 7,15,15,12,12,13,13,13,13,12,12, 7, 7,13,13,
+  14, 7, 7, 7, 7, 7,14, 7, 7, 7, 7,15,14,14, 7, 7,
+  15,15,14,14, 7,15,15,15, 0, 0, 0, 0, 0, 0, 8, 8,
+   8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7,15,15
+};
+
 void
 fhandler_console::char_command (char c)
 {
   int x, y, n;
   char buf[40];
+  int r, g, b;
 
+  if (wincap.has_con_24bit_colors () && !con_is_legacy)
+    {
+      /* For xterm compatible mode */
+      switch (c)
+	{
+#if 0 /* These sequences, which are supported by real xterm, are
+	 not supported by xterm compatible mode. Therefore they
+	 were implemented once. However, these are not declared
+	 in terminfo of xterm-256color, therefore, do not appear
+	 to be necessary. */
+	case '`': /* HPA */
+	  if (con.args[0] == 0)
+	    con.args[0] = 1;
+	  cursor_get (&x, &y);
+	  cursor_set (false, con.args[0]-1, y);
+	  break;
+	case 'a': /* HPR */
+	  if (con.args[0] == 0)
+	    con.args[0] = 1;
+	  cursor_rel (con.args[0], 0);
+	  break;
+	case 'e': /* VPR */
+	  if (con.args[0] == 0)
+	    con.args[0] = 1;
+	  cursor_rel (0, con.args[0]);
+	  break;
+#endif
+	case 'b': /* REP */
+	  wpbuf.put (c);
+	  if (wincap.has_con_esc_rep ())
+	    /* Just send the sequence */
+	    wpbuf.send (get_output_handle ());
+	  else if (last_char && last_char != '\n')
+	    for (int i = 0; i < con.args[0]; i++)
+	      WriteConsoleA (get_output_handle (), &last_char, 1, 0, 0);
+	  break;
+	case 'r': /* DECSTBM */
+	  con.scroll_region.Top = con.args[0] ? con.args[0] - 1 : 0;
+	  con.scroll_region.Bottom = con.args[1] ? con.args[1] - 1 : -1;
+	  wpbuf.put (c);
+	  /* Just send the sequence */
+	  wpbuf.send (get_output_handle ());
+	  break;
+	case 'L': /* IL */
+	  if (wincap.has_con_broken_il_dl ())
+	    {
+	      /* Use "CSI Ps T" instead */
+	      cursor_get (&x, &y);
+	      if (y < srTop || y > srBottom)
+		break;
+	      if (y == con.b.srWindow.Top
+		  && srBottom == con.b.srWindow.Bottom)
+		{
+		  /* Erase scroll down area */
+		  n = con.args[0] ? : 1;
+		  __small_sprintf (buf, "\033[%d;1H\033[J\033[%d;%dH",
+				   srBottom - (n-1) - con.b.srWindow.Top + 1,
+				   y + 1 - con.b.srWindow.Top, x + 1);
+		  WriteConsoleA (get_output_handle (),
+				 buf, strlen (buf), 0, 0);
+		}
+	      __small_sprintf (buf, "\033[%d;%dr",
+			       y + 1 - con.b.srWindow.Top,
+			       srBottom + 1 - con.b.srWindow.Top);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	      wpbuf.put ('T');
+	      wpbuf.send (get_output_handle ());
+	      __small_sprintf (buf, "\033[%d;%dr",
+			       srTop + 1 - con.b.srWindow.Top,
+			       srBottom + 1 - con.b.srWindow.Top);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	      __small_sprintf (buf, "\033[%d;%dH",
+			       y + 1 - con.b.srWindow.Top, x + 1);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	    }
+	  else
+	    {
+	      wpbuf.put (c);
+	      /* Just send the sequence */
+	      wpbuf.send (get_output_handle ());
+	    }
+	  break;
+	case 'M': /* DL */
+	  if (wincap.has_con_broken_il_dl ())
+	    {
+	      /* Use "CSI Ps S" instead */
+	      cursor_get (&x, &y);
+	      if (y < srTop || y > srBottom)
+		break;
+	      __small_sprintf (buf, "\033[%d;%dr",
+			       y + 1 - con.b.srWindow.Top,
+			       srBottom + 1 - con.b.srWindow.Top);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	      wpbuf.put ('S');
+	      wpbuf.send (get_output_handle ());
+	      __small_sprintf (buf, "\033[%d;%dr",
+			       srTop + 1 - con.b.srWindow.Top,
+			       srBottom + 1 - con.b.srWindow.Top);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	      __small_sprintf (buf, "\033[%d;%dH",
+			       y + 1 - con.b.srWindow.Top, x + 1);
+	      WriteConsoleA (get_output_handle (), buf, strlen (buf), 0, 0);
+	    }
+	  else
+	    {
+	      wpbuf.put (c);
+	      /* Just send the sequence */
+	      wpbuf.send (get_output_handle ());
+	    }
+	  break;
+	case 'J': /* ED */
+	  wpbuf.put (c);
+	  if (con.args[0] == 3 && con.savey >= 0)
+	    {
+	      con.fillin (get_output_handle ());
+	      con.savey -= con.b.srWindow.Top;
+	    }
+	  if (con.args[0] == 3 && wincap.has_con_broken_csi3j ())
+	    { /* Workaround for broken CSI3J in Win10 1809 */
+	      CONSOLE_SCREEN_BUFFER_INFO sbi;
+	      GetConsoleScreenBufferInfo (get_output_handle (), &sbi);
+	      SMALL_RECT r = {0, sbi.srWindow.Top,
+		(SHORT) (sbi.dwSize.X - 1), (SHORT) (sbi.dwSize.Y - 1)};
+	      CHAR_INFO f = {' ', sbi.wAttributes};
+	      COORD d = {0, 0};
+	      ScrollConsoleScreenBufferA (get_output_handle (),
+					  &r, NULL, d, &f);
+	      SetConsoleCursorPosition (get_output_handle (), d);
+	      d = sbi.dwCursorPosition;
+	      d.Y -= sbi.srWindow.Top;
+	      SetConsoleCursorPosition (get_output_handle (), d);
+	    }
+	  else
+	    /* Just send the sequence */
+	    wpbuf.send (get_output_handle ());
+	  break;
+	case 'h': /* DECSET */
+	case 'l': /* DECRST */
+	  wpbuf.put (c);
+	  /* Just send the sequence */
+	  wpbuf.send (get_output_handle ());
+	  if (con.saw_question_mark)
+	    {
+	      bool need_fix_tab_position = false;
+	      for (int i = 0; i < con.nargs; i++)
+		{
+		  if (con.args[i] == 1049)
+		    {
+		      con.screen_alternated = (c == 'h');
+		      need_fix_tab_position = true;
+		    }
+		  if (con.args[i] == 1) /* DECCKM */
+		    con.cursor_key_app_mode = (c == 'h');
+		}
+	      /* Call fix_tab_position() if screen has been alternated. */
+	      if (need_fix_tab_position)
+		fix_tab_position ();
+	    }
+	  break;
+	case 'p':
+	  if (con.saw_exclamation_mark) /* DECSTR Soft reset */
+	    {
+	      con.scroll_region.Top = 0;
+	      con.scroll_region.Bottom = -1;
+	      con.savex = con.savey = -1;
+	      con.cursor_key_app_mode = false;
+	    }
+	  wpbuf.put (c);
+	  /* Just send the sequence */
+	  wpbuf.send (get_output_handle ());
+	  break;
+	case 'm':
+	  if (con.saw_greater_than_sign)
+	    break; /* Ignore unsupported CSI > Pm m */
+	  /* Text attribute settings */
+	  wpbuf.put (c);
+	  /* Just send the sequence */
+	  wpbuf.send (get_output_handle ());
+	  break;
+	default:
+	  /* Other escape sequences */
+	  wpbuf.put (c);
+	  /* Just send the sequence */
+	  wpbuf.send (get_output_handle ());
+	  break;
+	}
+      return;
+    }
+
+  /* For legacy cygwin treminal */
   switch (c)
     {
     case 'm':   /* Set Graphics Rendition */
-       for (int i = 0; i <= con.nargs; i++)
+       for (int i = 0; i < con.nargs; i++)
 	 switch (con.args[i])
 	   {
 	     case 0:    /* normal color */
@@ -1642,6 +2275,41 @@ fhandler_console::char_command (char c)
 	     case 37:		/* WHITE foreg */
 	       con.fg = FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED;
 	       break;
+	     case 38:
+	       if (con.nargs < i + 2)
+		 /* Sequence error (abort) */
+		 break;
+	       switch (con.args[i + 1])
+		 {
+		 case 2:
+		   if (con.nargs < i + 5)
+		     /* Sequence error (abort) */
+		     break;
+		   r = con.args[i + 2];
+		   g = con.args[i + 3];
+		   b = con.args[i + 4];
+		   r = r < (95 + 1) / 2 ? 0 : r > 255 ? 5 : (r - 55 + 20) / 40;
+		   g = g < (95 + 1) / 2 ? 0 : g > 255 ? 5 : (g - 55 + 20) / 40;
+		   b = b < (95 + 1) / 2 ? 0 : b > 255 ? 5 : (b - 55 + 20) / 40;
+		   con.fg = table256[16 + r*36 + g*6 + b];
+		   i += 4;
+		   break;
+		 case 5:
+		   if (con.nargs < i + 3)
+		     /* Sequence error (abort) */
+		     break;
+		   {
+		     int idx = con.args[i + 2];
+		     if (idx < 0)
+		       idx = 0;
+		     if (idx > 255)
+		       idx = 255;
+		     con.fg = table256[idx];
+		     i += 2;
+		   }
+		   break;
+		 }
+	       break;
 	     case 39:
 	       con.fg = con.default_color & FOREGROUND_ATTR_MASK;
 	       break;
@@ -1669,6 +2337,41 @@ fhandler_console::char_command (char c)
 	     case 47:    /* WHITE background */
 	       con.bg = BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED;
 	       break;
+	     case 48:
+	       if (con.nargs < i + 2)
+		 /* Sequence error (abort) */
+		 break;
+	       switch (con.args[i + 1])
+		 {
+		 case 2:
+		   if (con.nargs < i + 5)
+		     /* Sequence error (abort) */
+		     break;
+		   r = con.args[i + 2];
+		   g = con.args[i + 3];
+		   b = con.args[i + 4];
+		   r = r < (95 + 1) / 2 ? 0 : r > 255 ? 5 : (r - 55 + 20) / 40;
+		   g = g < (95 + 1) / 2 ? 0 : g > 255 ? 5 : (g - 55 + 20) / 40;
+		   b = b < (95 + 1) / 2 ? 0 : b > 255 ? 5 : (b - 55 + 20) / 40;
+		   con.bg = table256[16 + r*36 + g*6 + b] << 4;
+		   i += 4;
+		   break;
+		 case 5:
+		   if (con.nargs < i + 3)
+		     /* Sequence error (abort) */
+		     break;
+		   {
+		     int idx = con.args[i + 2];
+		     if (idx < 0)
+		       idx = 0;
+		     if (idx > 255)
+		       idx = 255;
+		     con.bg = table256[idx] << 4;
+		     i += 2;
+		   }
+		   break;
+		 }
+	       break;
 	     case 49:
 	       con.bg = con.default_color & BACKGROUND_ATTR_MASK;
 	       break;
@@ -1686,16 +2389,19 @@ fhandler_console::char_command (char c)
 		case 1: /* blinking block (default) */
 		case 2: /* steady block */
 		  console_cursor_info.dwSize = 100;
-		  SetConsoleCursorInfo (get_output_handle (), &console_cursor_info);
+		  SetConsoleCursorInfo (get_output_handle (),
+					&console_cursor_info);
 		  break;
 		case 3: /* blinking underline */
 		case 4: /* steady underline */
-		  console_cursor_info.dwSize = 10;	/* or Windows default 25? */
-		  SetConsoleCursorInfo (get_output_handle (), &console_cursor_info);
+		  console_cursor_info.dwSize = 10; /* or Windows default 25? */
+		  SetConsoleCursorInfo (get_output_handle (),
+					&console_cursor_info);
 		  break;
 		default: /* use value as percentage */
 		  console_cursor_info.dwSize = con.args[0];
-		  SetConsoleCursorInfo (get_output_handle (), &console_cursor_info);
+		  SetConsoleCursorInfo (get_output_handle (),
+					&console_cursor_info);
 		  break;
 	      }
 	}
@@ -1708,7 +2414,8 @@ fhandler_console::char_command (char c)
 	    {
 	    case 4:    /* Insert mode */
 	      con.insert_mode = (c == 'h') ? true : false;
-	      syscall_printf ("insert mode %sabled", con.insert_mode ? "en" : "dis");
+	      syscall_printf ("insert mode %sabled",
+			      con.insert_mode ? "en" : "dis");
 	      break;
 	    }
 	  break;
@@ -1895,13 +2602,22 @@ fhandler_console::char_command (char c)
 	/* Generate Secondary Device Attribute report, using 67 = ASCII 'C'
 	   to indicate Cygwin (convention used by Rxvt, Urxvt, Screen, Mintty),
 	   and cygwin version for terminal version. */
-	__small_sprintf (buf, "\033[>67;%d%02d;0c", CYGWIN_VERSION_DLL_MAJOR, CYGWIN_VERSION_DLL_MINOR);
+	__small_sprintf (buf, "\033[>67;%d%02d;0c",
+			 CYGWIN_VERSION_DLL_MAJOR, CYGWIN_VERSION_DLL_MINOR);
       else
 	strcpy (buf, "\033[?6c");
       /* The generated report needs to be injected for read-ahead into the
 	 fhandler_console object associated with standard input.
-	 The current call does not work. */
-      puts_readahead (buf);
+	 So puts_readahead does not work.
+	 Use a common console read-ahead buffer instead. */
+      acquire_input_mutex (INFINITE);
+      con.cons_rapoi = NULL;
+      strcpy (con.cons_rabuf, buf);
+      con.cons_rapoi = con.cons_rabuf;
+      release_input_mutex ();
+      /* Wake up read() or select() by sending a message
+	 which has no effect */
+      PostMessageW (GetConsoleWindow (), WM_SETFOCUS, 0, 0);
       break;
     case 'n':
       switch (con.args[0])
@@ -1911,9 +2627,16 @@ fhandler_console::char_command (char c)
 	  y -= con.b.srWindow.Top;
 	  /* x -= con.b.srWindow.Left;		// not available yet */
 	  __small_sprintf (buf, "\033[%d;%dR", y + 1, x + 1);
-	  puts_readahead (buf);
+	  acquire_input_mutex (INFINITE);
+	  con.cons_rapoi = NULL;
+	  strcpy (con.cons_rabuf, buf);
+	  con.cons_rapoi = con.cons_rabuf;
+	  release_input_mutex ();
+	  /* Wake up read() or select() by sending a message
+	     which has no effect */
+	  PostMessageW (GetConsoleWindow (), WM_SETFOCUS, 0, 0);
 	  break;
-      default:
+	default:
 	  goto bad_escape;
 	}
       break;
@@ -1930,15 +2653,108 @@ bad_escape:
     }
 }
 
-/* This gets called when we found an invalid input character.  We just
-   print a half filled square (UTF 0x2592).  We have no chance to figure
-   out the "meaning" of the input char anyway. */
+#define NUM_REPLACEMENT_CHARS	3
+
+static const wchar_t replacement_char[NUM_REPLACEMENT_CHARS] =
+{
+  0xfffd, /* REPLACEMENT CHARACTER */
+  0x25a1, /* WHITE SQUARE */
+  0x2592  /* MEDIUM SHADE */
+};
+/* nFont member is always 0 so we have to use the facename. */
+static WCHAR cons_facename[LF_FACESIZE];
+static WCHAR rp_char;
+static NO_COPY HDC cdc;
+
+static int CALLBACK
+enum_proc (const LOGFONTW *lf, const TEXTMETRICW *tm,
+	   DWORD FontType, LPARAM lParam)
+{
+  int *done = (int *) lParam;
+  *done = 1;
+  return 0;
+}
+
+static void
+check_font (HANDLE hdl)
+{
+  CONSOLE_FONT_INFOEX cfi;
+  LOGFONTW lf;
+
+  cfi.cbSize = sizeof cfi;
+  if (!GetCurrentConsoleFontEx (hdl, 0, &cfi))
+    return;
+  /* Switched font? */
+  if (wcscmp (cons_facename, cfi.FaceName) == 0)
+    return;
+  if (!cdc && !(cdc = GetDC (GetConsoleWindow ())))
+    return;
+  /* Some FaceNames like DejaVu Sans Mono are sometimes returned with stray
+     trailing chars.  Fix it. */
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfPitchAndFamily = FIXED_PITCH | FF_DONTCARE;
+  wchar_t *cp = wcpcpy (lf.lfFaceName, cfi.FaceName) - 1;
+  int done = 0;
+  do
+    {
+      EnumFontFamiliesExW (cdc, &lf, enum_proc, (LPARAM) &done, 0);
+      if (!done)
+	*cp-- = L'\0';
+    }
+  while (!done && cp >= lf.lfFaceName);
+  /* What, really?  No recognizable font? */
+  if (!done)
+    {
+      rp_char = L'?';
+      return;
+    }
+  /* Yes.  Check for the best replacement char. */
+  HFONT f = CreateFontW (0, 0, 0, 0,
+			 cfi.FontWeight, FALSE, FALSE, FALSE,
+			 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+			 CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+			 FIXED_PITCH | FF_DONTCARE, lf.lfFaceName);
+  if (!f)
+    return;
+
+  HFONT old_f = (HFONT) SelectObject(cdc, f);
+  if (old_f)
+    {
+      WORD glyph_idx[NUM_REPLACEMENT_CHARS];
+
+      if (GetGlyphIndicesW (cdc, replacement_char,
+			    NUM_REPLACEMENT_CHARS, glyph_idx,
+			    GGI_MARK_NONEXISTING_GLYPHS) != GDI_ERROR)
+	{
+	  int i;
+
+	  for (i = 0; i < NUM_REPLACEMENT_CHARS; ++i)
+	    if (glyph_idx[i] != 0xffff)
+	      break;
+	  if (i == NUM_REPLACEMENT_CHARS)
+	    i = 0;
+	  rp_char = replacement_char[i];
+	  /* Note that we copy the original name returned by
+	     GetCurrentConsoleFontEx, even if it was broken.
+	     This allows an early return, rather than to store
+	     the fixed name and then having to enum font families
+	     all over again. */
+	  wcscpy (cons_facename, cfi.FaceName);
+	}
+      SelectObject (cdc, old_f);
+    }
+  DeleteObject (f);
+}
+
+/* This gets called when we found an invalid input character.
+   Print one of the above Unicode chars as replacement char. */
 inline void
 fhandler_console::write_replacement_char ()
 {
-  static const wchar_t replacement_char = 0x2592; /* Half filled square */
+  check_font (get_output_handle ());
+
   DWORD done;
-  WriteConsoleW (get_output_handle (), &replacement_char, 1, &done, 0);
+  WriteConsoleW (get_output_handle (), &rp_char, 1, &done, 0);
 }
 
 const unsigned char *
@@ -1951,21 +2767,12 @@ fhandler_console::write_normal (const unsigned char *src,
   const unsigned char *found = src;
   size_t ret;
   mbstate_t ps;
-  UINT cp = con.get_console_cp ();
-  const char *charset;
   mbtowc_p f_mbtowc;
 
-  if (cp)
-    {
-      /* The alternate charset is always 437, just as in the Linux console. */
-      f_mbtowc = __cp_mbtowc;
-      charset = "CP437";
-    }
-  else
-    {
-      f_mbtowc = cygheap->locale.mbtowc;
-      charset = cygheap->locale.charset;
-    }
+  /* The alternate charset is always 437, just as in the Linux console. */
+  f_mbtowc = con.get_console_cp () ? __cp_mbtowc (437) : __MBTOWC;
+  if (f_mbtowc == __ascii_mbtowc)
+    f_mbtowc = __utf8_mbtowc;
 
   /* First check if we have cached lead bytes of a former try to write
      a truncated multibyte sequence.  If so, process it. */
@@ -1976,7 +2783,7 @@ fhandler_console::write_normal (const unsigned char *src,
       memcpy (trunc_buf.buf + trunc_buf.len, src, cp_len);
       memset (&ps, 0, sizeof ps);
       switch (ret = f_mbtowc (_REENT, NULL, (const char *) trunc_buf.buf,
-			       trunc_buf.len + cp_len, charset, &ps))
+			       trunc_buf.len + cp_len, &ps))
 	{
 	case -2:
 	  /* Still truncated multibyte sequence?  Keep in trunc_buf. */
@@ -2001,12 +2808,13 @@ fhandler_console::write_normal (const unsigned char *src,
       /* Valid multibyte sequence?  Process. */
       if (nfound)
 	{
-	  buf_len = con.str_to_con (f_mbtowc, charset, write_buf,
-					   (const char *) trunc_buf.buf,
-					   nfound - trunc_buf.buf);
+	  buf_len = con.str_to_con (f_mbtowc, write_buf,
+				    (const char *) trunc_buf.buf,
+				    nfound - trunc_buf.buf);
 	  if (!write_console (write_buf, buf_len, done))
 	    {
-	      debug_printf ("multibyte sequence write failed, handle %p", get_output_handle ());
+	      debug_printf ("multibyte sequence write failed, handle %p",
+			    get_output_handle ());
 	      return 0;
 	    }
 	  found = src + (nfound - trunc_buf.buf - trunc_buf.len);
@@ -2018,13 +2826,18 @@ fhandler_console::write_normal (const unsigned char *src,
   /* Loop over src buffer as long as we have just simple characters.  Stop
      as soon as we reach the conversion limit, or if we encounter a control
      character or a truncated or invalid mutibyte sequence. */
+  /* If system has 24 bit color capability, just write all control
+     sequences to console since xterm compatible mode is enabled. */
   memset (&ps, 0, sizeof ps);
   while (found < end
 	 && found - src < CONVERT_LIMIT
-	 && base_chars[*found] == NOR)
+	 && base_chars[*found] != IGN
+	 && base_chars[*found] != ESC
+	 && ((wincap.has_con_24bit_colors () && !con_is_legacy)
+	     || base_chars[*found] == NOR))
     {
       switch (ret = f_mbtowc (_REENT, NULL, (const char *) found,
-			       end - found, charset, &ps))
+			       end - found, &ps))
 	{
 	case -2: /* Truncated multibyte sequence.  Store for next write. */
 	  trunc_buf.len = end - found;
@@ -2037,6 +2850,7 @@ fhandler_console::write_normal (const unsigned char *src,
 	  break;
 	default:
 	  found += ret;
+	  last_char = *(found - 1);
 	  break;
 	}
     }
@@ -2047,8 +2861,7 @@ do_print:
   if (found != src)
     {
       DWORD len = found - src;
-      buf_len = con.str_to_con (f_mbtowc, charset, write_buf,
-				       (const char *) src, len);
+      buf_len = con.str_to_con (f_mbtowc, write_buf, (const char *) src, len);
       if (!buf_len)
 	{
 	  debug_printf ("conversion error, handle %p",
@@ -2092,6 +2905,7 @@ do_print:
 	  break;
 	case ESC:
 	  con.state = gotesc;
+	  wpbuf.put (*found);
 	  break;
 	case DWN:
 	  cursor_get (&x, &y);
@@ -2105,13 +2919,16 @@ do_print:
 		  y--;
 		}
 	    }
-	  cursor_set (false, ((get_ttyp ()->ti.c_oflag & ONLCR) ? 0 : x), y + 1);
+	  cursor_set (false,
+		      ((get_ttyp ()->ti.c_oflag & ONLCR) ? 0 : x), y + 1);
 	  break;
 	case BAK:
 	  cursor_rel (-1, 0);
 	  break;
 	case IGN:
-	  cursor_rel (1, 0);
+	 /* Up to release 3.1.3 we called cursor_rel (1, 0); to move the cursor
+	    one step to the right.  However, that neither matches the terminfo
+	    for the cygwin terminal, nor the one for the xterm terminal. */
 	  break;
 	case CR:
 	  cursor_get (&x, &y);
@@ -2127,7 +2944,7 @@ do_print:
 	      if (found + 1 < end)
 		{
 		  ret = __utf8_mbtowc (_REENT, NULL, (const char *) found + 1,
-				       end - found - 1, NULL, &ps);
+				       end - found - 1, &ps);
 		  if (ret != (size_t) -1)
 		    while (ret-- > 0)
 		      {
@@ -2159,6 +2976,22 @@ fhandler_console::write (const void *vsrc, size_t len)
     return (ssize_t) bg;
 
   push_process_state process_state (PID_TTYOU);
+  acquire_output_mutex (INFINITE);
+
+  /* If system has 24 bit color capability, use xterm compatible mode. */
+  if (wincap.has_con_24bit_colors ())
+    request_xterm_mode_output (true);
+  if (wincap.has_con_24bit_colors () && !con_is_legacy)
+    {
+      DWORD dwMode;
+      GetConsoleMode (get_output_handle (), &dwMode);
+      if (!(get_ttyp ()->ti.c_oflag & OPOST) ||
+	  !(get_ttyp ()->ti.c_oflag & ONLCR))
+	dwMode |= DISABLE_NEWLINE_AUTO_RETURN;
+      else
+	dwMode &= ~DISABLE_NEWLINE_AUTO_RETURN;
+      SetConsoleMode (get_output_handle (), dwMode);
+    }
 
   /* Run and check for ansi sequences */
   unsigned const char *src = (unsigned char *) vsrc;
@@ -2179,31 +3012,112 @@ fhandler_console::write (const void *vsrc, size_t len)
 	case normal:
 	  src = write_normal (src, end);
 	  if (!src) /* write_normal failed */
-	    return -1;
+	    {
+	      release_output_mutex ();
+	      return -1;
+	    }
 	  break;
 	case gotesc:
 	  if (*src == '[')		/* CSI Control Sequence Introducer */
 	    {
+	      wpbuf.put (*src);
 	      con.state = gotsquare;
+	      memset (con.args, 0, sizeof con.args);
+	      con.nargs = 0;
 	      con.saw_question_mark = false;
 	      con.saw_greater_than_sign = false;
 	      con.saw_space = false;
-	      for (con.nargs = 0; con.nargs < MAXARGS; con.nargs++)
-		con.args[con.nargs] = 0;
-	      con.nargs = 0;
+	      con.saw_exclamation_mark = false;
+	    }
+	  else if (*src == '8')		/* DECRC Restore cursor position */
+	    {
+	      if (con.screen_alternated)
+		{
+		  /* For xterm mode only */
+		  /* Just send the sequence */
+		  wpbuf.put (*src);
+		  wpbuf.send (get_output_handle ());
+		}
+	      else if (con.savex >= 0 && con.savey >= 0)
+		cursor_set (false, con.savex, con.savey);
+	      con.state = normal;
+	      wpbuf.empty();
+	    }
+	  else if (*src == '7')		/* DECSC Save cursor position */
+	    {
+	      if (con.screen_alternated)
+		{
+		  /* For xterm mode only */
+		  /* Just send the sequence */
+		  wpbuf.put (*src);
+		  wpbuf.send (get_output_handle ());
+		}
+	      else
+		cursor_get (&con.savex, &con.savey);
+	      con.state = normal;
+	      wpbuf.empty();
+	    }
+	  else if (wincap.has_con_24bit_colors () && !con_is_legacy
+		   && wincap.has_con_broken_il_dl () && *src == 'M')
+	    { /* Reverse Index (scroll down) */
+	      int x, y;
+	      cursor_get (&x, &y);
+	      if (y == srTop)
+		{
+		  if (y == con.b.srWindow.Top
+		      && srBottom == con.b.srWindow.Bottom)
+		    {
+		      /* Erase scroll down area */
+		      char buf[] = "\033[32768;1H\033[J\033[32768;32768";
+		      __small_sprintf (buf, "\033[%d;1H\033[J\033[%d;%dH",
+				       srBottom - con.b.srWindow.Top + 1,
+				       y + 1 - con.b.srWindow.Top, x + 1);
+		      WriteConsoleA (get_output_handle (),
+				     buf, strlen (buf), 0, 0);
+		    }
+		  /* Substitute "CSI Ps T" */
+		  wpbuf.put ('[');
+		  wpbuf.put ('T');
+		}
+	      else
+		wpbuf.put (*src);
+	      wpbuf.send (get_output_handle ());
+	      con.state = normal;
+	      wpbuf.empty();
 	    }
 	  else if (*src == ']')		/* OSC Operating System Command */
 	    {
+	      wpbuf.put (*src);
 	      con.rarg = 0;
 	      con.my_title_buf[0] = '\0';
 	      con.state = gotrsquare;
 	    }
+	  else if (wincap.has_con_24bit_colors () && !con_is_legacy)
+	    {
+	      if (*src == 'c') /* RIS Full reset */
+		{
+		  con.scroll_region.Top = 0;
+		  con.scroll_region.Bottom = -1;
+		  con.savex = con.savey = -1;
+		  con.cursor_key_app_mode = false;
+		}
+	      /* ESC sequences below (e.g. OSC, etc) are left to xterm
+		 emulation in xterm compatible mode, therefore, are not
+		 handled and just sent them. */
+	      wpbuf.put (*src);
+	      /* Just send the sequence */
+	      wpbuf.send (get_output_handle ());
+	      con.state = normal;
+	      wpbuf.empty();
+	    }
 	  else if (*src == '(')		/* Designate G0 character set */
 	    {
+	      wpbuf.put (*src);
 	      con.state = gotparen;
 	    }
 	  else if (*src == ')')		/* Designate G1 character set */
 	    {
+	      wpbuf.put (*src);
 	      con.state = gotrparen;
 	    }
 	  else if (*src == 'M')		/* Reverse Index (scroll down) */
@@ -2211,6 +3125,7 @@ fhandler_console::write (const void *vsrc, size_t len)
 	      con.fillin (get_output_handle ());
 	      scroll_buffer_screen (0, 0, -1, -1, 0, 1);
 	      con.state = normal;
+	      wpbuf.empty();
 	    }
 	  else if (*src == 'c')		/* RIS Full Reset */
 	    {
@@ -2221,40 +3136,38 @@ fhandler_console::write (const void *vsrc, size_t len)
 	      cursor_set (false, 0, 0);
 	      clear_screen (cl_buf_beg, cl_buf_beg, cl_buf_end, cl_buf_end);
 	      con.state = normal;
-	    }
-	  else if (*src == '8')		/* DECRC Restore cursor position */
-	    {
-	      cursor_set (false, con.savex, con.savey);
-	      con.state = normal;
-	    }
-	  else if (*src == '7')		/* DECSC Save cursor position */
-	    {
-	      cursor_get (&con.savex, &con.savey);
-	      con.state = normal;
+	      wpbuf.empty();
 	    }
 	  else if (*src == 'R')		/* ? */
+	    {
 	      con.state = normal;
+	      wpbuf.empty();
+	    }
 	  else
 	    {
 	      con.state = normal;
+	      wpbuf.empty();
 	    }
 	  src++;
 	  break;
 	case gotarg1:
 	  if (isdigit (*src))
 	    {
-	      con.args[con.nargs] = con.args[con.nargs] * 10 + *src - '0';
+	      if (con.nargs < MAXARGS)
+		con.args[con.nargs] = con.args[con.nargs] * 10 + *src - '0';
+	      wpbuf.put (*src);
 	      src++;
 	    }
 	  else if (*src == ';')
 	    {
+	      wpbuf.put (*src);
 	      src++;
-	      con.nargs++;
-	      if (con.nargs >= MAXARGS)
-		con.nargs--;
+	      if (con.nargs < MAXARGS)
+		con.nargs++;
 	    }
 	  else if (*src == ' ')
 	    {
+	      wpbuf.put (*src);
 	      src++;
 	      con.saw_space = true;
 	      con.state = gotcommand;
@@ -2263,27 +3176,38 @@ fhandler_console::write (const void *vsrc, size_t len)
 	    con.state = gotcommand;
 	  break;
 	case gotcommand:
+	  if (con.nargs < MAXARGS)
+	    con.nargs++;
 	  char_command (*src++);
 	  con.state = normal;
+	  wpbuf.empty();
 	  break;
 	case gotrsquare:
 	  if (isdigit (*src))
 	    con.rarg = con.rarg * 10 + (*src - '0');
 	  else if (*src == ';' && (con.rarg == 2 || con.rarg == 0))
 	    con.state = gettitle;
+	  else if (*src == ';' && (con.rarg == 4 || con.rarg == 104
+				   || (con.rarg >= 10 && con.rarg <= 19)))
+	    con.state = eatpalette;
 	  else
 	    con.state = eattitle;
+	  wpbuf.put (*src);
 	  src++;
 	  break;
 	case eattitle:
 	case gettitle:
 	  {
+	    wpbuf.put (*src);
 	    int n = strlen (con.my_title_buf);
 	    if (*src < ' ')
 	      {
-		if (*src == '\007' && con.state == gettitle)
+		if (wincap.has_con_24bit_colors () && !con_is_legacy)
+		  wpbuf.send (get_output_handle ());
+		else if (*src == '\007' && con.state == gettitle)
 		  set_console_title (con.my_title_buf);
 		con.state = normal;
+		wpbuf.empty();
 	      }
 	    else if (n < TITLESIZE)
 	      {
@@ -2293,11 +3217,46 @@ fhandler_console::write (const void *vsrc, size_t len)
 	    src++;
 	    break;
 	  }
+	case eatpalette:
+	  wpbuf.put (*src);
+	  if (*src == '?')
+	    con.saw_question_mark = true;
+	  else if (*src == '\033')
+	    con.state = endpalette;
+	  else if (*src == '\a')
+	    {
+	      /* Send OSC Ps; Pt BEL other than OSC Ps; ? BEL */
+	      if (wincap.has_con_24bit_colors () && !con_is_legacy
+		  && !con.saw_question_mark)
+		wpbuf.send (get_output_handle ());
+	      con.state = normal;
+	      wpbuf.empty();
+	    }
+	  src++;
+	  break;
+	case endpalette:
+	  wpbuf.put (*src);
+	  if (*src == '\\')
+	    {
+	      /* Send OSC Ps; Pt ST other than OSC Ps; ? ST */
+	      if (wincap.has_con_24bit_colors () && !con_is_legacy
+		  && !con.saw_question_mark)
+		wpbuf.send (get_output_handle ());
+	      con.state = normal;
+	    }
+	  else
+	    /* Sequence error (abort) */
+	    con.state = normal;
+	  wpbuf.empty();
+	  src++;
+	  break;
 	case gotsquare:
 	  if (*src == ';')
 	    {
 	      con.state = gotarg1;
-	      con.nargs++;
+	      wpbuf.put (*src);
+	      if (con.nargs < MAXARGS)
+		con.nargs++;
 	      src++;
 	    }
 	  else if (isalpha (*src))
@@ -2308,6 +3267,9 @@ fhandler_console::write (const void *vsrc, size_t len)
 		con.saw_question_mark = true;
 	      else if (*src == '>')
 		con.saw_greater_than_sign = true;
+	      else if (*src == '!')
+		con.saw_exclamation_mark = true;
+	      wpbuf.put (*src);
 	      /* ignore any extra chars between [ and first arg or command */
 	      src++;
 	    }
@@ -2320,6 +3282,7 @@ fhandler_console::write (const void *vsrc, size_t len)
 	  else
 	    con.vt100_graphics_mode_G0 = false;
 	  con.state = normal;
+	  wpbuf.empty();
 	  src++;
 	  break;
 	case gotrparen:	/* Designate G1 Character Set (ISO 2022) */
@@ -2328,10 +3291,12 @@ fhandler_console::write (const void *vsrc, size_t len)
 	  else
 	    con.vt100_graphics_mode_G1 = false;
 	  con.state = normal;
+	  wpbuf.empty();
 	  src++;
 	  break;
 	}
     }
+  release_output_mutex ();
 
   syscall_printf ("%ld = fhandler_console::write(...)", len);
 
@@ -2378,7 +3343,7 @@ static const struct {
 };
 
 const char *
-get_nonascii_key (INPUT_RECORD& input_rec, char *tmp)
+fhandler_console::get_nonascii_key (INPUT_RECORD& input_rec, char *tmp)
 {
 #define NORMAL  0
 #define SHIFT	1
@@ -2459,6 +3424,7 @@ void
 fhandler_console::fixup_after_fork_exec (bool execing)
 {
   set_unit ();
+  setup_io_mutex ();
 }
 
 // #define WINSTA_ACCESS (WINSTA_READATTRIBUTES | STANDARD_RIGHTS_READ | STANDARD_RIGHTS_WRITE | WINSTA_CREATEDESKTOP | WINSTA_EXITWINDOWS)
@@ -2535,20 +3501,23 @@ fhandler_console::create_invisible_console_workaround ()
 	  STARTUPINFOW si = {};
 	  PROCESS_INFORMATION pi;
 	  size_t len = helper.get_wide_win32_path_len ();
-	  WCHAR cmd[len + (2 * strlen (" 0xffffffff")) + 1];
+	  WCHAR cmd[len + 1];
+	  WCHAR args[len + 1 + (2 * sizeof (" 0xffffffffffffffff")) + 1];
 	  WCHAR title[] = L"invisible cygwin console";
 
+	  /* Create a new hidden process.  Use the two event handles as
+	     argv[1] and argv[2]. */
+
 	  helper.get_wide_win32_path (cmd);
-	  __small_swprintf (cmd + len, L" %p %p", hello, goodbye);
+	  __small_swprintf (args, L"\"%W\" %p %p", cmd, hello, goodbye);
 
 	  si.cb = sizeof (si);
 	  si.dwFlags = STARTF_USESHOWWINDOW;
 	  si.wShowWindow = SW_HIDE;
 	  si.lpTitle = title;
 
-	  /* Create a new hidden process.  Use the two event handles as
-	     argv[1] and argv[2]. */
-	  BOOL x = CreateProcessW (NULL, cmd, &sec_none_nih, &sec_none_nih, true,
+	  BOOL x = CreateProcessW (cmd, args,
+				   &sec_none_nih, &sec_none_nih, true,
 				   CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
 	  if (x)
 	    {
@@ -2640,4 +3609,89 @@ fhandler_console::need_invisible ()
 
   debug_printf ("invisible_console %d", invisible_console);
   return b;
+}
+
+DWORD
+fhandler_console::get_console_process_id (DWORD pid, bool match)
+{
+  DWORD tmp;
+  DWORD num, num_req;
+  num = 1;
+  num_req = GetConsoleProcessList (&tmp, num);
+  DWORD *list;
+  while (true)
+    {
+      list = (DWORD *)
+	HeapAlloc (GetProcessHeap (), 0, num_req * sizeof (DWORD));
+      num = num_req;
+      num_req = GetConsoleProcessList (list, num);
+      if (num_req > num)
+	HeapFree (GetProcessHeap (), 0, list);
+      else
+	break;
+    }
+  num = num_req;
+
+  tmp = 0;
+  for (DWORD i=0; i<num; i++)
+    if ((match && list[i] == pid) || (!match && list[i] != pid))
+      /* Last one is the oldest. */
+      /* https://github.com/microsoft/terminal/issues/95 */
+      tmp = list[i];
+  HeapFree (GetProcessHeap (), 0, list);
+  return tmp;
+}
+
+DWORD
+fhandler_console::__acquire_input_mutex (const char *fn, int ln, DWORD ms)
+{
+#ifdef DEBUGGING
+  strace.prntf (_STRACE_TERMIOS, fn, "(%d): trying to get input_mutex", ln);
+#endif
+  DWORD res = WaitForSingleObject (input_mutex, ms);
+  if (res != WAIT_OBJECT_0)
+    strace.prntf (_STRACE_TERMIOS, fn,
+		  "(%d): Failed to acquire input_mutex %08x",
+		  ln, GetLastError ());
+#ifdef DEBUGGING
+  else
+    strace.prntf (_STRACE_TERMIOS, fn, "(%d): got input_mutex", ln);
+#endif
+  return res;
+}
+
+void
+fhandler_console::__release_input_mutex (const char *fn, int ln)
+{
+  ReleaseMutex (input_mutex);
+#ifdef DEBUGGING
+  strace.prntf (_STRACE_TERMIOS, fn, "(%d): release input_mutex", ln);
+#endif
+}
+
+DWORD
+fhandler_console::__acquire_output_mutex (const char *fn, int ln, DWORD ms)
+{
+#ifdef DEBUGGING
+  strace.prntf (_STRACE_TERMIOS, fn, "(%d): trying to get output_mutex", ln);
+#endif
+  DWORD res = WaitForSingleObject (output_mutex, ms);
+  if (res != WAIT_OBJECT_0)
+    strace.prntf (_STRACE_TERMIOS, fn,
+		  "(%d): Failed to acquire output_mutex %08x",
+		  ln, GetLastError ());
+#ifdef DEBUGGING
+  else
+    strace.prntf (_STRACE_TERMIOS, fn, "(%d): got output_mutex", ln);
+#endif
+  return res;
+}
+
+void
+fhandler_console::__release_output_mutex (const char *fn, int ln)
+{
+  ReleaseMutex (output_mutex);
+#ifdef DEBUGGING
+  strace.prntf (_STRACE_TERMIOS, fn, "(%d): release output_mutex", ln);
+#endif
 }

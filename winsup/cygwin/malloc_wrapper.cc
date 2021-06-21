@@ -1,8 +1,5 @@
 /* malloc_wrapper.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -18,9 +15,7 @@ details. */
 #include "perprocess.h"
 #include "miscfuncs.h"
 #include "cygmalloc.h"
-#ifndef MALLOC_DEBUG
 #include <malloc.h>
-#endif
 extern "C" struct mallinfo dlmallinfo ();
 
 /* we provide these stubs to call into a user's
@@ -79,7 +74,7 @@ realloc (void *p, size_t size)
       __malloc_unlock ();
     }
   malloc_printf ("(%p, %ld) = %p, called by %p", p, size, res,
-  						 caller_return_address ());
+						 caller_return_address ());
   return res;
 }
 
@@ -126,8 +121,7 @@ posix_memalign (void **memptr, size_t alignment, size_t bytes)
   __malloc_unlock ();
   if (!res)
     return ENOMEM;
-  if (memptr)
-    *memptr = res;
+  *memptr = res;
   return 0;
 }
 
@@ -282,7 +276,6 @@ malloc_init ()
 {
   mallock.init ("mallock");
 
-#ifndef MALLOC_DEBUG
   /* Check if malloc is provided by application. If so, redirect all
      calls to malloc/free/realloc to application provided. This may
      happen if some other dll calls cygwin's malloc, but main code provides
@@ -297,7 +290,6 @@ malloc_init ()
       malloc_printf ("using %s malloc", use_internal ? "internal" : "external");
       internal_malloc_determined = true;
     }
-#endif
 }
 
 extern "C" void

@@ -1,8 +1,5 @@
 /* winsup.h: main Cygwin header file.
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -17,7 +14,11 @@ details. */
 #define NO_COPY __attribute__((nocommon)) __attribute__((section(".data_cygwin_nocopy")))
 #define NO_COPY_INIT __attribute__((section(".data_cygwin_nocopy")))
 
+#ifdef __cplusplus
 #define EXPORT_ALIAS(sym,symalias) extern "C" __typeof (sym) symalias __attribute__ ((alias(#sym)));
+#else
+#define EXPORT_ALIAS(sym,symalias) __typeof (sym) symalias __attribute__ ((alias(#sym)));
+#endif
 
 #define _WIN32_WINNT 0x0a00
 #define WINVER 0x0a00
@@ -31,6 +32,7 @@ details. */
 
 #include <sys/types.h>
 #include <sys/strace.h>
+#include <sys/smallprint.h>
 
 /* Declarations for functions used in C and C++ code. */
 #ifdef __cplusplus
@@ -88,9 +90,7 @@ extern const unsigned char case_folded_lower[];
 extern const unsigned char case_folded_upper[];
 #define cyg_toupper(c) ((char) case_folded_upper[(unsigned char)(c)])
 
-#ifndef MALLOC_DEBUG
 #define cfree newlib_cfree_dont_use
-#endif
 
 /* Used as type by sys_wcstombs_alloc and sys_mbstowcs_alloc.  For a
    description see there. */
@@ -165,10 +165,10 @@ extern "C" PVOID dll_dllcrt0 (HMODULE, per_process *);
 
 extern "C" void _pei386_runtime_relocator (per_process *);
 
-#ifndef __x86_64__
+#ifdef __i386__
 /* dynamically loaded dll initialization for non-cygwin apps */
 extern "C" int dll_noncygwin_dllcrt0 (HMODULE, per_process *);
-#endif /* !__x86_64__ */
+#endif /* __i386__ */
 
 void __reg1 do_exit (int) __attribute__ ((noreturn));
 
@@ -183,13 +183,15 @@ extern struct per_process_cxx_malloc default_cygwin_cxx_malloc;
 /* various events */
 void events_init ();
 
-void __stdcall close_all_files (bool = false);
+int chmod_device (class path_conv& pc, mode_t mode);
+void close_all_files (bool = false);
 
 /* debug_on_trap support. see exceptions.cc:try_to_debug() */
 extern "C" void error_start_init (const char*);
 extern "C" int try_to_debug (bool waitloop = 1);
 
 void ld_preload ();
+void fixup_hooks_after_fork ();
 const char *find_first_notloaded_dll (class path_conv &);
 
 /**************************** Miscellaneous ******************************/
@@ -203,37 +205,34 @@ ino_t __reg2 hash_path_name (ino_t hash, const char *name);
 void __reg2 nofinalslash (const char *src, char *dst);
 
 void __reg3 *hook_or_detect_cygwin (const char *, const void *, WORD&, HANDLE h = NULL);
+void __reg3 *hook_api (const char *mname, const char *name, const void *fn);
 
 /* Time related */
-ULONGLONG GetTickCount_ns ();
 void __stdcall totimeval (struct timeval *, PLARGE_INTEGER, int, int);
 time_t __stdcall to_time_t (PLARGE_INTEGER);
 void __stdcall to_timestruc_t (PLARGE_INTEGER, timestruc_t *);
 void __stdcall time_as_timestruc_t (timestruc_t *);
 void __stdcall timeval_to_filetime (const struct timeval *, PLARGE_INTEGER);
 void __stdcall timespec_to_filetime (const struct timespec *, PLARGE_INTEGER);
+bool timeval_to_ms (const struct timeval *, DWORD &);
 
 /* Console related */
 void __stdcall set_console_title (char *);
 void init_console_handler (bool);
 
-void __reg2 __set_winsock_errno (const char *fn, int ln);
-#define set_winsock_errno() __set_winsock_errno (__FUNCTION__, __LINE__)
-
 extern bool wsock_started;
+
+/* PTY related */
+void set_ishybrid_and_switch_to_pcon (HANDLE h);
 
 /* Printf type functions */
 extern "C" void vapi_fatal (const char *, va_list ap) __attribute__ ((noreturn));
 extern "C" void api_fatal (const char *, ...) __attribute__ ((noreturn));
-int __small_sprintf (char *dst, const char *fmt, ...);
-int __small_vsprintf (char *dst, const char *fmt, va_list ap);
 int __small_swprintf (PWCHAR dst, const WCHAR *fmt, ...);
 int __small_vswprintf (PWCHAR dst, const WCHAR *fmt, va_list ap);
 void multiple_cygwin_problem (const char *, uintptr_t, uintptr_t);
 
-extern "C" void vklog (int priority, const char *message, va_list ap);
-extern "C" void klog (int priority, const char *message, ...);
-bool child_copy (HANDLE, bool, ...);
+bool child_copy (HANDLE, bool, bool, ...);
 
 class path_conv;
 
@@ -259,14 +258,6 @@ extern inline bool flush_file_buffers (HANDLE h)
 
 /* Make sure that regular ExitThread is never called */
 #define ExitThread exit_thread
-
-/**************************** Exports ******************************/
-
-extern "C" {
-int cygwin_select (int , fd_set *, fd_set *, fd_set *,
-		   struct timeval *to);
-int cygwin_gethostname (char *__name, size_t __len);
-};
 
 /*************************** Unsorted ******************************/
 

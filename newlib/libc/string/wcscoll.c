@@ -5,15 +5,9 @@ FUNCTION
 INDEX
 	wcscoll
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <wchar.h>
 	int wcscoll(const wchar_t *<[stra]>, const wchar_t * <[strb]>);
-
-TRAD_SYNOPSIS
-	#include <wchar.h>
-	int wcscoll(<[stra]>, <[strb]>)
-	wchar_t *<[stra]>;
-	wchar_t *<[strb]>;
 
 DESCRIPTION
 	<<wcscoll>> compares the wide-character string pointed to by
@@ -21,8 +15,8 @@ DESCRIPTION
 	using an interpretation appropriate to the current <<LC_COLLATE>>
 	state.
 
-	The current implementation of <<wcscoll>> simply uses <<wcscmp>>
-	and does not support any language-specific sorting.
+	(NOT Cygwin:) The current implementation of <<wcscoll>> simply
+	uses <<wcscmp>> and does not support any language-specific sorting.
 
 RETURNS
 	If the first string is greater than the second string,
@@ -39,9 +33,8 @@ PORTABILITY
 #include <wchar.h>
 
 int
-_DEFUN (wcscoll, (a, b),
-	_CONST wchar_t *a _AND
-	_CONST wchar_t *b)
+wcscoll (const wchar_t *a,
+	const wchar_t *b)
 
 {
   return wcscmp (a, b);

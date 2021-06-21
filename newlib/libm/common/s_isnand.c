@@ -27,29 +27,14 @@ INDEX
 INDEX
 	finitef
 
-ANSI_SYNOPSIS
-	#include <ieeefp.h>
+SYNOPSIS
+	#include <math.h>
 	int isnan(double <[arg]>);
 	int isinf(double <[arg]>);
 	int finite(double <[arg]>);
 	int isnanf(float <[arg]>);
 	int isinff(float <[arg]>);
 	int finitef(float <[arg]>);
-
-TRAD_SYNOPSIS
-	#include <ieeefp.h>
-	int isnan(<[arg]>)
-	double <[arg]>;
-	int isinf(<[arg]>)
-	double <[arg]>;
-	int finite(<[arg]>);
-	double <[arg]>;
-	int isnanf(<[arg]>);
-	float <[arg]>;
-	int isinff(<[arg]>);
-	float <[arg]>;
-	int finitef(<[arg]>);
-	float <[arg]>;
 
 
 DESCRIPTION
@@ -77,8 +62,8 @@ DESCRIPTION
 
 	Note that by the C99 standard, <<isnan>> and <<isinf>> are macros
 	taking any type of floating-point and are declared in
-	<<math.h>>.  Newlib has chosen to declare these as macros in
-	<<math.h>> and as functions in <<ieeefp.h>>.
+	<<math.h>>.  Newlib has chosen to declare these both as functions
+	and as macros in <<math.h>>.
 	
 	The <<isnanf>>, <<isinff>> and <<finitef>> functions perform the same
 	operations as their <<isnan>>, <<isinf>> and <<finite>>
@@ -108,8 +93,7 @@ QUICKREF
 #ifndef _DOUBLE_IS_32BITS
 
 int
-_DEFUN (__isnand, (x),
-	double x)
+__isnand (double x)
 {
 	__int32_t hx,lx;
 	EXTRACT_WORDS(hx,lx,x);

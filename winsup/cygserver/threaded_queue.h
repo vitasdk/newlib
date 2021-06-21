@@ -1,7 +1,5 @@
 /* threaded_queue.h
 
-   Copyright 2001, 2002, 2003, 2012 Red Hat Inc.
-
    Written by Robert Collins <rbtcollins@hotmail.com>
 
 This file is part of Cygwin.
@@ -51,6 +49,7 @@ public:
 
 private:
   LONG _workers_count;
+  LONG _workers_busy;
   bool _running;
 
   queue_submission_loop *_submitters_head;

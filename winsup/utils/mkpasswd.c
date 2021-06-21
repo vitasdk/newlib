@@ -1,15 +1,12 @@
 /* mkpasswd.c:
 
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2008, 2009,
-   2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
    This file is part of Cygwin.
 
    This software is a copyrighted work licensed under the terms of the
    Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
    details. */
 
-#define _WIN32_WINNT 0x0600
+#define _WIN32_WINNT 0x0a00
 #include <errno.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -315,10 +312,12 @@ enum_users (domlist_t *mach, const char *sep, const char *passed_home_path,
 	  else if (acc_type == SidTypeDomain)
 	    {
 	      WCHAR domname[MAX_DOMAIN_NAME_LEN + UNLEN + 2];
+	      PWCHAR p;
 
-	      wcscpy (domname, machine);
-	      wcscat (domname, L"\\");
-	      wcscat (domname, buffer[i].usri3_name);
+	      p = wcpcpy (domname, machine);
+	      p = wcpcpy (p, L"\\");
+	      p = wcpncpy (p, buffer[i].usri3_name, UNLEN);
+	      *p = L'\0';
 	      sid_length = SECURITY_MAX_SID_SIZE;
 	      domname_len = sizeof (domname);
 	      if (!LookupAccountNameW (machine, domname, psid,
@@ -431,7 +430,7 @@ print_version ()
 {
   printf ("mkpasswd (cygwin) %d.%d.%d\n"
 	  "Passwd File Generator\n"
-	  "Copyright (C) 1997 - %s Red Hat, Inc.\n"
+	  "Copyright (C) 1997 - %s Cygwin Authors\n"
 	  "This is free software; see the source for copying conditions.  There is NO\n"
 	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
 	  CYGWIN_VERSION_DLL_MAJOR / 1000,

@@ -26,7 +26,7 @@
 #include <_ansi.h>
 #include "svc.h"
 
-void _exit _PARAMS ((int));
+void _exit (int);
 
 __attribute__ ((noreturn)) void
 _exit (int status)
@@ -36,6 +36,12 @@ _exit (int status)
       param_block_t block[2];
       block[0] = ADP_Stopped_ApplicationExit;
       block[1] = status;
-      do_AngelSVC (AngelSVC_Reason_ReportException, block);
+
+#if SEMIHOST_V2
+      if (_has_ext_exit_extended ())
+	 do_AngelSVC (AngelSVC_Reason_ReportExceptionExtended, block);
+      else
+#endif
+	 do_AngelSVC (AngelSVC_Reason_ReportException, block);
     }
 }

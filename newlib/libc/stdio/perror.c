@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,20 +24,11 @@ INDEX
 INDEX
 	_perror_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	void perror(char *<[prefix]>);
 
 	void _perror_r(struct _reent *<[reent]>, char *<[prefix]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	void perror(<[prefix]>)
-	char *<[prefix]>;
-
-	void _perror_r(<[reent]>, <[prefix]>)
-	struct _reent *<[reent]>;
-	char *<[prefix]>;
 
 DESCRIPTION
 Use <<perror>> to print (on standard error) an error message
@@ -67,32 +58,54 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <string.h>
 #include "local.h"
 
-_VOID
-_DEFUN(_perror_r, (ptr, s),
-       struct _reent *ptr _AND
-       _CONST char *s)
+#define WRITE_STR(str) \
+{ \
+  const char *p = (str); \
+  size_t len = strlen (p); \
+  while (len) \
+    { \
+      ssize_t len1 = _write_r (ptr, fileno (fp), p, len); \
+      if (len1 < 0) \
+	break; \
+      len -= len1; \
+      p += len1; \
+    } \
+}
+
+void
+_perror_r (struct _reent *ptr,
+       const char *s)
 {
   char *error;
   int dummy;
+  FILE *fp = _stderr_r (ptr);
 
-  _REENT_SMALL_CHECK_INIT (ptr);
+  CHECK_INIT (ptr, fp);
+
+  _newlib_flockfile_start(fp);
+  _fflush_r (ptr, fp);
   if (s != NULL && *s != '\0')
     {
-      fputs (s, _stderr_r (ptr));
-      fputs (": ", _stderr_r (ptr));
+      WRITE_STR (s);
+      WRITE_STR (": ");
     }
 
   if ((error = _strerror_r (ptr, ptr->_errno, 1, &dummy)) != NULL)
-    fputs (error, _stderr_r (ptr));
+    WRITE_STR (error);
 
-  fputc ('\n', _stderr_r (ptr));
+#ifdef __SCLE
+  WRITE_STR ((fp->_flags & __SCLE) ? "\r\n" : "\n");
+#else
+  WRITE_STR ("\n");
+#endif
+  fp->_flags &= ~__SOFF;
+  _newlib_flockfile_end(fp);
 }
 
 #ifndef _REENT_ONLY
 
-_VOID
-_DEFUN(perror, (s),
-       _CONST char *s)
+void
+perror (const char *s)
 {
   _perror_r (_REENT, s);
 }

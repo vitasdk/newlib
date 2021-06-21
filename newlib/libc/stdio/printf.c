@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -23,9 +23,8 @@
 #include "local.h"
 
 int
-_DEFUN(_printf_r, (ptr, fmt),
-       struct _reent *ptr _AND
-       const char *__restrict fmt _DOTS)
+_printf_r (struct _reent *ptr,
+       const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -39,15 +38,14 @@ _DEFUN(_printf_r, (ptr, fmt),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(_iprintf_r, (struct _reent *, const char *, ...)
-       _ATTRIBUTE ((__alias__("_printf_r"))));
+_iprintf_r (struct _reent *, const char *, ...)
+       _ATTRIBUTE ((__alias__("_printf_r")));
 #endif
 
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(printf, (fmt),
-       const char *__restrict fmt _DOTS)
+printf (const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -62,7 +60,7 @@ _DEFUN(printf, (fmt),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(iprintf, (const char *, ...)
-       _ATTRIBUTE ((__alias__("printf"))));
+iprintf (const char *, ...)
+       _ATTRIBUTE ((__alias__("printf")));
 #endif
 #endif /* ! _REENT_ONLY */

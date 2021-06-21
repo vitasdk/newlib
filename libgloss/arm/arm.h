@@ -29,25 +29,27 @@
 #ifndef _LIBGLOSS_ARM_H
 #define _LIBGLOSS_ARM_H
 
-/* __thumb2__ stands for thumb on armva7(A/R/M/EM) architectures,
-   __ARM_ARCH_6M__ stands for armv6-M(thumb only) architecture,
-   __ARM_ARCH_7M__ stands for armv7-M(thumb only) architecture.
-   __ARM_ARCH_7EM__ stands for armv7e-M(thumb only) architecture.
-   There are some macro combinations used many times in libgloss/arm,
-   like (__thumb2__ || (__thumb__ && __ARM_ARCH_6M__)), so factor
-   it out and use THUMB_V7_V6M instead, which stands for thumb on
-   v6-m/v7 arch as the combination does.  */
-#if defined(__thumb2__) || (defined(__thumb__) && defined(__ARM_ARCH_6M__))
-# define THUMB_V7_V6M
+#include "acle-compat.h"
+
+/* Checking for targets supporting only Thumb instructions (eg. ARMv6-M) or
+   supporting Thumb-2 instructions, whether ARM instructions are available or
+   not, is done many times in libgloss/arm.  So factor it out and use
+   PREFER_THUMB instead.  */
+#if __thumb2__ || (__thumb__ && !__ARM_ARCH_ISA_ARM)
+# define PREFER_THUMB
 #endif
 
-/* The (__ARM_ARCH_7EM__ || __ARM_ARCH_7M__ || __ARM_ARCH_6M__) combination
-   stands for cortex-M profile architectures, which don't support ARM state.
-   Factor it out and use THUMB_V7M_V6M instead.  */
-#if defined(__ARM_ARCH_7M__)     \
-    || defined(__ARM_ARCH_7EM__) \
-    || defined(__ARM_ARCH_6M__)
-# define THUMB_V7M_V6M
+/* Processor only capable of executing Thumb-1 instructions.  */
+#if __ARM_ARCH_ISA_THUMB == 1 && !__ARM_ARCH_ISA_ARM
+# define THUMB1_ONLY
+#endif
+
+/* M profile architectures.  This is a different set of architectures than
+   those not having ARM ISA because it does not contain ARMv7.  This macro is
+   necessary to test which architectures use bkpt as semihosting interface from
+   architectures using svc.  */
+#if !__ARM_ARCH_ISA_ARM && !__ARM_ARCH_7__
+# define THUMB_VXM
 #endif
 
 /* Defined if this target supports the BLX Rm instruction.  */
@@ -58,5 +60,31 @@
   && !defined(__ARM_ARCH_4T__)
 # define HAVE_CALL_INDIRECT
 #endif
+
+/* A and R profiles (and legacy Arm).
+	Current Program Status Register (CPSR)
+	M[4:0]		Mode bits. M[4] is always 1 for 32-bit modes.
+	T[5]			1: Thumb, 0: ARM instruction set
+	F[6]			1: disables FIQ
+	I[7]			1: disables IRQ
+	A[8]			1: disables imprecise aborts
+	E[9]			0: Little-endian, 1: Big-endian
+	J[24]			1: Jazelle instruction set
+ */
+#define CPSR_M_USR			0x00	/* User mode.  */
+#define CPSR_M_FIQ			0x01	/* Fast Interrupt mode.  */
+#define CPSR_M_IRQ			0x02	/* Interrupt mode.  */
+#define CPSR_M_SVR			0x03	/* Supervisor mode.  */
+#define CPSR_M_MON			0x06	/* Monitor mode.  */
+#define CPSR_M_ABT			0x07	/* Abort mode.  */
+#define CPSR_M_HYP			0x0A	/* Hypervisor mode.  */
+#define CPSR_M_UND			0x0B	/* Undefined mode.  */
+#define CPSR_M_SYS			0x0F	/* System mode.  */
+#define CPSR_M_32BIT		0x10	/* 32-bit mode.  */
+#define CPSR_T_BIT			0x20	/* Thumb bit.  */
+#define CPSR_F_MASK			0x40	/* FIQ bit.  */
+#define CPSR_I_MASK			0x80	/* IRQ bit.  */
+
+#define CPSR_M_MASK			0x0F	/* Mode mask except M[4].  */
 
 #endif /* _LIBGLOSS_ARM_H */

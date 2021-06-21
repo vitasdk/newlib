@@ -87,7 +87,7 @@ INDEX
 INDEX
 	_vasnprintf_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	#include <stdarg.h>
 	int vprintf(const char *<[fmt]>, va_list <[list]>);
@@ -172,10 +172,9 @@ static char *rcsid = "$Id$";
    and vfwprintf.  */
 #ifdef STRING_ONLY
 int
-_DEFUN(__ssputs_r, (ptr, fp, buf, len),
-       struct _reent *ptr _AND
-       FILE *fp _AND
-       _CONST char *buf _AND
+__ssputs_r (struct _reent *ptr,
+       FILE *fp,
+       const char *buf,
        size_t len)
 {
   register int w;
@@ -229,7 +228,7 @@ _DEFUN(__ssputs_r, (ptr, fp, buf, len),
   if (len < w)
     w = len;
 
-  (void)memmove ((_PTR) fp->_p, (_PTR) buf, (size_t) (w));
+  (void)memmove ((void *) fp->_p, (void *) buf, (size_t) (w));
   fp->_w -= w;
   fp->_p += w;
   return 0;
@@ -243,15 +242,14 @@ err:
    char output, but __ssprint_r cannot be discarded because it is used
    by a serial of functions like svfwprintf for wide char output.  */
 int
-_DEFUN(__ssprint_r, (ptr, fp, uio),
-       struct _reent *ptr _AND
-       FILE *fp _AND
+__ssprint_r (struct _reent *ptr,
+       FILE *fp,
        register struct __suio *uio)
 {
   register size_t len;
   register int w;
   register struct __siov *iov;
-  register _CONST char *p = NULL;
+  register const char *p = NULL;
 
   iov = uio->uio_iov;
   len = 0;
@@ -321,7 +319,7 @@ _DEFUN(__ssprint_r, (ptr, fp, uio),
       if (len < w)
 	w = len;
 
-      (void)memmove ((_PTR) fp->_p, (_PTR) p, (size_t) (w));
+      (void)memmove ((void *) fp->_p, (void *) p, (size_t) (w));
       fp->_w -= w;
       fp->_p += w;
       /* Pretend we copied all.  */
@@ -347,9 +345,8 @@ err:
 /* Flush out all the vectors defined by the given uio,
    then reset it so that it can be reused.  */
 int
-_DEFUN(__sprint_r, (ptr, fp, uio),
-       struct _reent *ptr _AND
-       FILE *fp _AND
+__sprint_r (struct _reent *ptr,
+       FILE *fp,
        register struct __suio *uio)
 {
   register int err = 0;
@@ -392,9 +389,8 @@ out:
 }
 
 _NOINLINE_STATIC int
-_DEFUN(__sfputc_r, (ptr, c, fp),
-       struct _reent *ptr _AND
-       int c _AND
+__sfputc_r (struct _reent *ptr,
+       int c,
        FILE *fp)
 {
   if (--fp->_w >= 0 || (fp->_w >= fp->_lbfsize && (char)c != '\n'))
@@ -404,10 +400,9 @@ _DEFUN(__sfputc_r, (ptr, c, fp),
 }
 
 int
-_DEFUN(__sfputs_r, (ptr, fp, buf, len),
-       struct _reent *ptr _AND
-       FILE *fp _AND
-       _CONST char *buf _AND
+__sfputs_r (struct _reent *ptr,
+       FILE *fp,
+       const char *buf,
        size_t len)
 {
   register int i;
@@ -438,13 +433,12 @@ _DEFUN(__sfputs_r, (ptr, fp, buf, len),
 }
 #endif /* STRING_ONLY.  */
 
-int _EXFUN(_VFPRINTF_R, (struct _reent *, FILE *, _CONST char *, va_list));
+int _VFPRINTF_R (struct _reent *, FILE *, const char *, va_list);
 
 #ifndef STRING_ONLY
 int
-_DEFUN(VFPRINTF, (fp, fmt0, ap),
-       FILE * fp         _AND
-       _CONST char *fmt0 _AND
+VFPRINTF (FILE * fp,
+       const char *fmt0,
        va_list ap)
 {
   int result;
@@ -453,8 +447,8 @@ _DEFUN(VFPRINTF, (fp, fmt0, ap),
 }
 
 int
-_EXFUN(vfiprintf, (FILE *, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("vfprintf"))));
+vfiprintf (FILE *, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("vfprintf")));
 #endif
 
 #ifdef STRING_ONLY
@@ -471,10 +465,9 @@ _EXFUN(vfiprintf, (FILE *, const char *, __VALIST)
 #endif
 
 int
-_DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
-       struct _reent *data _AND
-       FILE * fp           _AND
-       _CONST char *fmt0   _AND
+_VFPRINTF_R (struct _reent *data,
+       FILE * fp,
+       const char *fmt0,
        va_list ap)
 {
   register char *fmt;	/* Format string.  */
@@ -482,9 +475,10 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
   register char *cp;	/* Handy char pointer (short term usage).  */
   const char *flag_chars;
   struct _prt_data_t prt_data;	/* All data for decoding format string.  */
+  va_list ap_copy;
 
   /* Output function pointer.  */
-  int (*pfunc)(struct _reent *, FILE *, _CONST char *, size_t len);
+  int (*pfunc)(struct _reent *, FILE *, const char *, size_t len);
 
   pfunc = __SPRINT;
 
@@ -518,6 +512,9 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
   prt_data.ret = 0;
   prt_data.blank = ' ';
   prt_data.zero = '0';
+
+  /* GCC PR 14577 at https://gcc.gnu.org/bugzilla/show_bug.cgi?id=14557 */
+  va_copy (ap_copy, ap);
 
   /* Scan the format for conversions (`%' character).  */
   for (;;)
@@ -574,7 +571,7 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
 	   *	-- ANSI X3J11
 	   * They don't exclude field widths read from args.
 	   */
-	  prt_data.width = GET_ARG (n, ap, int);
+	  prt_data.width = GET_ARG (n, ap_copy, int);
 	  if (prt_data.width < 0)
 	    {
 	      prt_data.width = -prt_data.width;
@@ -595,7 +592,7 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
 	  if (*fmt == '*')
 	    {
 	      fmt++;
-	      prt_data.prec = GET_ARG (n, ap, int);
+	      prt_data.prec = GET_ARG (n, ap_copy, int);
 	      if (prt_data.prec < 0)
 		prt_data.prec = -1;
 	    }
@@ -627,18 +624,16 @@ _DEFUN(_VFPRINTF_R, (data, fp, fmt0, ap),
 	  if (_printf_float == NULL)
 	    {
 	      if (prt_data.flags & LONGDBL)
-		GET_ARG (N, ap, _LONG_DOUBLE);
+		GET_ARG (N, ap_copy, _LONG_DOUBLE);
 	      else
-		GET_ARG (N, ap, double);
+		GET_ARG (N, ap_copy, double);
 	    }
 	  else
-	    {
-	      n = _printf_float (data, &prt_data, fp, pfunc, &ap);
-	    }
+            n = _printf_float (data, &prt_data, fp, pfunc, &ap_copy);
 	}
       else
 #endif
-	n = _printf_i (data, &prt_data, fp, pfunc, &ap);
+	n = _printf_i (data, &prt_data, fp, pfunc, &ap_copy);
 
       if (n == -1)
 	goto error;
@@ -651,15 +646,16 @@ error:
 #ifndef STRING_ONLY
   _newlib_flockfile_end (fp);
 #endif
+  va_end (ap_copy);
   return (__sferror (fp) ? EOF : prt_data.ret);
 }
 
 #ifdef STRING_ONLY
 int
-_EXFUN(_svfiprintf_r, (struct _reent *, FILE *, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("_svfprintf_r"))));
+_svfiprintf_r (struct _reent *, FILE *, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("_svfprintf_r")));
 #else
 int
-_EXFUN(_vfiprintf_r, (struct _reent *, FILE *, const char *, __VALIST)
-       _ATTRIBUTE ((__alias__("_vfprintf_r"))));
+_vfiprintf_r (struct _reent *, FILE *, const char *, __VALIST)
+       _ATTRIBUTE ((__alias__("_vfprintf_r")));
 #endif

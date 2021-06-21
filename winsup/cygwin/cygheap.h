@@ -1,15 +1,12 @@
 /* cygheap.h: Cygwin heap manager.
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
 Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
 
-#include "hires.h"
+#include "clock.h"
 #include "cygheap_malloc.h"
 #include "pwdgrp.h"
 
@@ -104,12 +101,11 @@ public:
   gid_t real_gid;       /* Ditto */
   user_groups groups;   /* Primary and supp SIDs */
 
-  /* token is needed if set(e)uid should be called. It can be set by a call
-     to `set_impersonation_token()'. */
-  HANDLE external_token;
-  HANDLE internal_token;
-  HANDLE curr_primary_token;
-  HANDLE curr_imp_token;
+  HANDLE external_token;	 /* token from set_impersonation_token call */
+  HANDLE internal_token;	 /* password-less token fetched in seteuid32 */
+  HANDLE curr_primary_token;	 /* Just a copy of external or internal token */
+  HANDLE curr_imp_token;	 /* impersonation token derived from primary
+				    token */
   bool ext_token_is_restricted;  /* external_token is restricted token */
   bool curr_token_is_restricted; /* curr_primary_token is restricted token */
   bool setuid_to_restricted;     /* switch to restricted token by setuid () */
@@ -181,10 +177,6 @@ public:
   {
     if (curr_imp_token != NO_IMPERSONATION)
       CloseHandle (curr_imp_token);
-    if (curr_primary_token != NO_IMPERSONATION
-	&& curr_primary_token != external_token
-	&& curr_primary_token != internal_token)
-      CloseHandle (curr_primary_token);
     if (external_token != NO_IMPERSONATION)
       CloseHandle (external_token);
     if (internal_token != NO_IMPERSONATION)
@@ -210,17 +202,16 @@ enum fcwd_version_t {
   FCWD_W8
 };
 
-/* This class is used to store the CWD starting with Windows Vista.
-   The CWD storage in the RTL_USER_PROCESS_PARAMETERS block is only
-   an afterthought now.  The actual CWD storage is a FAST_CWD structure
-   which is allocated on the process heap.  The new method only requires
-   minimal locking and it's much more multi-thread friendly.  Presumably
-   it minimizes contention when accessing the CWD.
+/* This class is used to store the CWD.  The CWD storage in the
+   RTL_USER_PROCESS_PARAMETERS block is only an afterthought now.  The actual
+   CWD storage is a FAST_CWD structure which is allocated on the process heap.
+   The new method only requires minimal locking and it's much more multi-thread
+   friendly.  Presumably it minimizes contention when accessing the CWD.
    The class fcwd_access_t is supposed to encapsulate the gory implementation
    details depending on OS version from the calling functions.
    The layout of all structures has been tested on 32 and 64 bit. */
 class fcwd_access_t {
-  /* This is the layout used in Windows 8. */
+  /* This is the layout used in Windows 8 and later. */
   struct FAST_CWD_8 {
     LONG           ReferenceCount;	/* Only release when this is 0. */
     HANDLE         DirectoryHandle;
@@ -350,8 +341,6 @@ struct cygheap_debug
 struct cygheap_locale
 {
   mbtowc_p mbtowc;
-  wctomb_p wctomb;
-  char charset[ENCODING_LEN + 1];
 };
 
 struct user_heap_info
@@ -508,6 +497,13 @@ class cygheap_ugid_cache
 	  return _map[i].cyg_id;
       return (uint32_t) -1;
     }
+    uint32_t reverse_get (uint32_t id) const
+    {
+      for (uint32_t i = 0; i < _cnt; ++i)
+	if (_map[i].cyg_id == id)
+	  return _map[i].nfs_id;
+      return (uint32_t) -1;
+    }
     void add (uint32_t nfs_id, uint32_t cyg_id)
     {
       if (_cnt >= _max)
@@ -523,6 +519,8 @@ class cygheap_ugid_cache
 public:
   uid_t get_uid (uid_t uid) const { return uids.get (uid); }
   gid_t get_gid (gid_t gid) const { return gids.get (gid); }
+  uid_t reverse_get_uid (uid_t uid) const { return uids.reverse_get (uid); }
+  gid_t reverse_get_gid (gid_t gid) const { return gids.reverse_get (gid); }
   void add_uid (uid_t nfs_uid, uid_t cyg_uid) { uids.add (nfs_uid, cyg_uid); }
   void add_gid (gid_t nfs_gid, gid_t cyg_gid) { gids.add (nfs_gid, cyg_gid); }
 };
@@ -554,9 +552,10 @@ struct init_cygheap: public mini_cygheap
   _cmalloc_entry *chain;
   unsigned bucket_val[NBUCKETS];
   char *buckets[NBUCKETS];
-  WCHAR installation_root[PATH_MAX];
-  WCHAR installation_dir[PATH_MAX];
-  size_t installation_dir_len;
+  UNICODE_STRING installation_root;
+  WCHAR installation_root_buf[PATH_MAX];
+  UNICODE_STRING installation_dir;
+  WCHAR installation_dir_buf[PATH_MAX];
   UNICODE_STRING installation_key;
   WCHAR installation_key_buf[18];
   cygheap_root root;

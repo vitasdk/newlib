@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,20 +24,11 @@ INDEX
 INDEX
 	_putchar_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int putchar(int <[ch]>);
 
 	int _putchar_r(struct _reent *<[reent]>, int <[ch]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int putchar(<[ch]>)
-	int <[ch]>;
-
-	int _putchar_r(<[reent]>, <[ch]>)
-	struct _reent *<[reent]>;
-	int <[ch]>;
 
 DESCRIPTION
 <<putchar>> is a macro, defined in <<stdio.h>>.  <<putchar>>
@@ -76,8 +67,7 @@ static char sccsid[] = "%W% (Berkeley) %G%";
 #undef putchar
 
 int
-_DEFUN(_putchar_r, (ptr, c),
-       struct _reent *ptr _AND
+_putchar_r (struct _reent *ptr,
        int c)
 {
   _REENT_SMALL_CHECK_INIT (ptr);
@@ -87,8 +77,7 @@ _DEFUN(_putchar_r, (ptr, c),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(putchar, (c),
-       int c)
+putchar (int c)
 {
   struct _reent *reent = _REENT;
 

@@ -1,7 +1,5 @@
 /* bsd_log.cc
 
-   Copyright 2003, 2004, 2012 Red Hat Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -13,11 +11,15 @@ details. */
 #define __BSD_VISIBLE 1
 #include <stdio.h>
 #include <stdlib.h>
+#include <libgen.h>
 
 int32_t log_level = 8; /* Illegal value.  Don't change! */
 tun_bool_t log_debug = TUN_UNDEF;
 tun_bool_t log_syslog = TUN_UNDEF;
 tun_bool_t log_stderr = TUN_UNDEF;
+
+static CRITICAL_SECTION cs;
+static bool cs_inited;
 
 void
 loginit (tun_bool_t opt_stderr, tun_bool_t opt_syslog)
@@ -45,6 +47,8 @@ loginit (tun_bool_t opt_stderr, tun_bool_t opt_syslog)
     TUNABLE_INT_FETCH ("kern.log.level", &log_level);
   if (log_level == 8)
     log_level = 6;
+  InitializeCriticalSection (&cs);
+  cs_inited = true;
 }
 
 void
@@ -59,14 +63,22 @@ _vlog (const char *file, int line, int level,
     return;
   pos = stpcpy (buf, "cygserver: ");
   if (file && log_debug == TUN_TRUE)
-    pos += snprintf (pos, 16384 - (pos - buf), "%s, line %d: ", file, line);
+    pos += snprintf (pos, 16384 - (pos - buf), "%s, line %d: ",
+		     basename ((char *) file), line);
   vsnprintf (pos, 16384 - (pos - buf), fmt, ap);
   if (log_syslog == TUN_TRUE && level != LOG_DEBUG)
     syslog (level, buf);
   if (log_stderr == TUN_TRUE || level == LOG_DEBUG)
     {
+      if (!cs_inited)	/* Only occurs in --help scenario */
+	{
+	  InitializeCriticalSection (&cs);
+	  cs_inited = true;
+	}
+      EnterCriticalSection (&cs);
       fputs (buf, stderr);
       fputc ('\n', stderr);
+      LeaveCriticalSection (&cs);
     }
 }
 
@@ -81,7 +93,7 @@ _log (const char *file, int line, int level, const char *fmt, ...)
 void
 _vpanic (const char *file, int line, const char *fmt, va_list ap)
 {
-  _vlog (file, line, LOG_CRIT, fmt, ap);
+  _vlog (file, line, LOG_EMERG, fmt, ap);
   exit (1);
 }
 

@@ -30,9 +30,8 @@ This is, of course, just an example.  For the recognized settings of the
 
 <para>
 Locale support is controlled by the <envar>LANG</envar> and
-<envar>LC_xxx</envar> environment variables.  Since Cygwin 1.7.2, all of
-them are honored and have a meaning.  For a more detailed description see
-<xref linkend="setup-locale"></xref>.
+<envar>LC_xxx</envar> environment variables.  For a more detailed description
+see <xref linkend="setup-locale"></xref>.
 </para>
 
 <para>
@@ -71,9 +70,16 @@ first starts.  Most Cygwin applications do not make use of the
 <function>dlopen ()</function> call and do not need this variable.
 </para>
 
+<para>The <envar>GMON_OUT_PREFIX</envar> environment variable is helpful
+in some situations when profiling Cygwin programs.  For more information,
+see <xref linkend="gprof-fork"></xref>.  Only software developers with a
+need to profile their programs have a use for this variable.
+</para>
+
 <para>
 In addition to <envar>PATH</envar>, <envar>HOME</envar>,
-and <envar>LD_LIBRARY_PATH</envar>, there are three other environment
+<envar>LD_LIBRARY_PATH</envar>, and <envar>GMON_OUT_PREFIX</envar>,
+there are three other environment
 variables which, if they exist in the Windows environment, are
 converted to UNIX format: <envar>TMPDIR</envar>, <envar>TMP</envar>,
 and <envar>TEMP</envar>.  The first is not set by default in the

@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,9 +24,8 @@
 #include "local.h"
 
 int
-_DEFUN(_wprintf_r, (ptr, fmt),
-       struct _reent *ptr _AND
-       const wchar_t *fmt _DOTS)
+_wprintf_r (struct _reent *ptr,
+       const wchar_t *fmt, ...)
 {
   int ret;
   va_list ap;
@@ -41,8 +40,7 @@ _DEFUN(_wprintf_r, (ptr, fmt),
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(wprintf, (fmt),
-       const wchar_t *__restrict fmt _DOTS)
+wprintf (const wchar_t *__restrict fmt, ...)
 {
   int ret;
   va_list ap;

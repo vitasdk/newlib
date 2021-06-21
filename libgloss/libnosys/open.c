@@ -11,9 +11,8 @@ extern int errno;
 #include "warning.h"
 
 int
-_DEFUN (_open, (file, flags, mode),
-        char *file  _AND
-        int   flags _AND
+_open (char *file,
+        int   flags,
         int   mode)
 {
   errno = ENOSYS;

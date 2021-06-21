@@ -44,6 +44,7 @@
 	.thumb
 	.syntax unified
 def_fn strcmp
+	.cfi_sections .debug_frame
 	.cfi_startproc
 	eor	tmp1, src1, src2
 	tst	tmp1, #3
@@ -105,7 +106,7 @@ def_fn strcmp
 	lsrs	result, result, #24
 	subs	result, result, data2
 #endif
-	RETURN
+	bx	lr
 
 
 #if 0
@@ -355,7 +356,7 @@ def_fn strcmp
 	ldmfd	sp!, {r5}
 	.cfi_restore 5
 	.cfi_def_cfa_offset 0
-	RETURN
+	bx	lr
 
 .Lstrcmp_tail:
 	.cfi_restore_state
@@ -372,6 +373,6 @@ def_fn strcmp
 	ldmfd	sp!, {r5}
 	.cfi_restore 5
 	.cfi_def_cfa_offset 0
-	RETURN
+	bx	lr
 	.cfi_endproc
 	.size strcmp, . - strcmp

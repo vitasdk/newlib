@@ -215,8 +215,8 @@ typedef int fp_rnd;
 #define FP_RP 2		/* Round up 			*/
 #define FP_RZ 3		/* Round to zero (trunate) 	*/
 
-fp_rnd _EXFUN(fpgetround,(void));
-fp_rnd _EXFUN(fpsetround, (fp_rnd));
+fp_rnd fpgetround (void);
+fp_rnd fpsetround (fp_rnd);
 
 /* EXCEPTIONS */
 
@@ -227,10 +227,10 @@ typedef int fp_except;
 #define FP_X_UFL 0x02	/* Underflow exception		*/
 #define FP_X_IMP 0x01	/* imprecise exception		*/
 
-fp_except _EXFUN(fpgetmask,(void));
-fp_except _EXFUN(fpsetmask,(fp_except));
-fp_except _EXFUN(fpgetsticky,(void));
-fp_except _EXFUN(fpsetsticky, (fp_except));
+fp_except fpgetmask (void);
+fp_except fpsetmask (fp_except);
+fp_except fpgetsticky (void);
+fp_except fpsetsticky (fp_except);
 
 /* INTEGER ROUNDING */
 
@@ -238,21 +238,8 @@ typedef int fp_rdi;
 #define FP_RDI_TOZ 0	/* Round to Zero 		*/
 #define FP_RDI_RD  1	/* Follow float mode		*/
 
-fp_rdi _EXFUN(fpgetroundtoi,(void));
-fp_rdi _EXFUN(fpsetroundtoi,(fp_rdi));
-
-#undef isnan
-#undef isinf
-
-int _EXFUN(isnan, (double));
-int _EXFUN(isinf, (double));
-int _EXFUN(finite, (double));
-
-
-
-int _EXFUN(isnanf, (float));
-int _EXFUN(isinff, (float));
-int _EXFUN(finitef, (float));
+fp_rdi fpgetroundtoi (void);
+fp_rdi fpsetroundtoi (fp_rdi);
 
 #define __IEEE_DBL_EXPBIAS 1023
 #define __IEEE_FLT_EXPBIAS 127
@@ -270,22 +257,17 @@ int _EXFUN(finitef, (float));
 #define __IEEE_DBL_NAN_EXP 0x7ff
 #define __IEEE_FLT_NAN_EXP 0xff
 
-#ifndef __ieeefp_isnanf
-#define __ieeefp_isnanf(x) (((*(long *)&(x) & 0x7f800000L)==0x7f800000L) && \
-			    ((*(long *)&(x) & 0x007fffffL)!=0000000000L))
-#endif
+#ifdef __ieeefp_isnanf
 #define isnanf(x)	__ieeefp_isnanf(x)
-
-#ifndef __ieeefp_isinff
-#define __ieeefp_isinff(x) (((*(long *)&(x) & 0x7f800000L)==0x7f800000L) && \
-			    ((*(long *)&(x) & 0x007fffffL)==0000000000L))
 #endif
+
+#ifdef __ieeefp_isinff
 #define isinff(x)	__ieeefp_isinff(x)
-
-#ifndef __ieeefp_finitef
-#define __ieeefp_finitef(x) (((*(long *)&(x) & 0x7f800000L)!=0x7f800000L))
 #endif
+
+#ifdef __ieeefp_finitef
 #define finitef(x)	__ieeefp_finitef(x)
+#endif
 
 #ifdef _DOUBLE_IS_32BITS
 #undef __IEEE_DBL_EXPBIAS

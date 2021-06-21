@@ -1,8 +1,5 @@
 /* shared_info.h: shared info for cygwin
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -14,6 +11,7 @@ details. */
 #include "mtinfo.h"
 #include "limits.h"
 #include "mount.h"
+#include "loadavg.h"
 
 #define CURR_USER_MAGIC 0xab1fcce8U
 
@@ -35,7 +33,7 @@ public:
 /* Data accessible to all tasks */
 
 
-#define CURR_SHARED_MAGIC 0x8fe4d9eeU
+#define CURR_SHARED_MAGIC 0x9f33cc5dU
 
 #define USER_VERSION   1
 
@@ -51,6 +49,9 @@ class shared_info
   LONG last_used_bindresvport;
   DWORD obcaseinsensitive;
   mtinfo mt;
+  loadavginfo loadavg;
+  LONG pid_src;
+  LONG forkable_hardlink_support;
 
   void initialize ();
   void init_obcaseinsensitive ();

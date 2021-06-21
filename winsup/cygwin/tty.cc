@@ -1,8 +1,5 @@
 /* tty.cc
 
-   Copyright 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009,
-   2010, 2011, 2012, 2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -237,7 +234,20 @@ tty::init ()
   was_opened = false;
   master_pid = 0;
   is_console = false;
+  attach_pcon_in_fork = false;
+  h_pseudo_console = NULL;
   column = 0;
+  switch_to_pcon_in = false;
+  switch_to_pcon_out = false;
+  screen_alternated = false;
+  mask_switch_to_pcon_in = false;
+  pcon_pid = 0;
+  term_code_page = 0;
+  need_redraw_screen = true;
+  pcon_last_time = 0;
+  pcon_in_empty = true;
+  req_transfer_input_to_pcon = false;
+  req_flush_pcon_input = false;
 }
 
 HANDLE
@@ -280,5 +290,34 @@ tty_min::ttyname ()
 {
   device d;
   d.parse (ntty);
-  return d.name;
+  return d.name ();
+}
+
+void
+tty::set_switch_to_pcon_out (bool v)
+{
+  if (switch_to_pcon_out != v)
+    {
+      wait_pcon_fwd ();
+      switch_to_pcon_out = v;
+    }
+}
+
+void
+tty::wait_pcon_fwd (void)
+{
+  /* The forwarding in pseudo console sometimes stops for
+     16-32 msec even if it already has data to transfer.
+     If the time without transfer exceeds 32 msec, the
+     forwarding is supposed to be finished. pcon_last_time
+     is reset to GetTickCount() in pty master forwarding
+     thread when the last data is transfered. */
+  const int sleep_in_pcon = 16;
+  const int time_to_wait = sleep_in_pcon * 2 + 1/* margine */;
+  pcon_last_time = GetTickCount ();
+  while (GetTickCount () - pcon_last_time < time_to_wait)
+    {
+      int tw = time_to_wait - (GetTickCount () - pcon_last_time);
+      cygwait (tw);
+    }
 }

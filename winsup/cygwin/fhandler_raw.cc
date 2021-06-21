@@ -1,8 +1,5 @@
 /* fhandler_raw.cc.  See fhandler.h for a description of the fhandler classes.
 
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2011,
-   2012, 2013 Red Hat, Inc.
-
    This file is part of Cygwin.
 
    This software is a copyrighted work licensed under the terms of the
@@ -41,7 +38,7 @@ fhandler_dev_raw::fstat (struct stat *buf)
   debug_printf ("here");
 
   fhandler_base::fstat (buf);
-  if (is_auto_device ())
+  if (!dev ().isfs ())
     {
       if (get_major () == DEV_TAPE_MAJOR)
 	buf->st_mode = S_IFCHR | STD_RBITS | STD_WBITS | S_IWGRP | S_IWOTH;

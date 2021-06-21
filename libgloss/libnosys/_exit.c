@@ -5,9 +5,8 @@
 #include <_ansi.h>
 #include <_syslist.h>
 
-_VOID
-_DEFUN (_exit, (rc),
-	int rc)
+void
+_exit (int rc)
 {
   /* Default stub just causes a divide by 0 exception.  */
   int x = rc / INT_MAX;

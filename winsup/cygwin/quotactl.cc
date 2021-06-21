@@ -1,7 +1,5 @@
 /* quotactl.cc: code for manipulating disk quotas
 
-   Copyright 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -91,7 +89,7 @@ quotactl (int cmd, const char *special, int id, caddr_t addr)
       return -1;
     }
   /* Check path */
-  pc.check (special, PC_SYM_FOLLOW | PC_NOWARN, stat_suffixes);
+  pc.check (special, PC_SYM_FOLLOW, stat_suffixes);
   if (pc.error)
     {
       set_errno (pc.error);
@@ -102,15 +100,15 @@ quotactl (int cmd, const char *special, int id, caddr_t addr)
       set_errno (ENOENT);
       return -1;
     }
-  if (!S_ISBLK (pc.dev.mode))
+  if (!S_ISBLK (pc.dev.mode ()))
     {
       set_errno (ENOTBLK);
       return -1;
     }
   pc.get_object_attr (attr, sec_none_nih);
-  /* For the following functions to work, we must attach the virtual path to 
+  /* For the following functions to work, we must attach the virtual path to
      the quota file to the device path.
-     
+
      FIXME: Note that this is NTFS-specific.  Adding ReFS in another step. */
   tp.u_get (&path);
   RtlCopyUnicodeString (&path, attr.ObjectName);
@@ -125,7 +123,7 @@ quotactl (int cmd, const char *special, int id, caddr_t addr)
       case Q_SYNC:
 	/* No sync, just report success. */
 	status = STATUS_SUCCESS;
-      	break;
+	break;
       case Q_QUOTAON:
       case Q_QUOTAOFF:
 	/* Ignore filename in addr. */
@@ -143,7 +141,7 @@ quotactl (int cmd, const char *special, int id, caddr_t addr)
 					     FileFsControlInformation);
 	break;
       case Q_GETFMT:
-      	__try
+	__try
 	  {
 	    uint32_t *retval = (uint32_t *) addr;
 
@@ -178,7 +176,7 @@ quotactl (int cmd, const char *special, int id, caddr_t addr)
       case Q_SETINFO:
 	/* No settings possible, just report success. */
 	status = STATUS_SUCCESS;
-      	break;
+	break;
       case Q_GETQUOTA:
 	/* Windows feature: Default limits.  Get or set them with id == -1. */
 	if (id == -1)

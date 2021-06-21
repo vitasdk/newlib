@@ -1,7 +1,5 @@
 /* cygserver_pwdgrp.h: Request account information
 
-   Copyright 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -31,7 +29,7 @@ private:
       fetch_user_arg_type_t type;
       union
       {
-      	BYTE sid[40];
+	BYTE sid[40];
 	char name[UNLEN + 1];
 	uint32_t id;
       } arg;

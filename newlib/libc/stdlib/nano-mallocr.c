@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <malloc.h>
 
 #if DEBUG
 #include <assert.h>
@@ -46,6 +47,8 @@
 #define MAX(a,b) ((a) >= (b) ? (a) : (b))
 #endif
 
+#define _SBRK_R(X) _sbrk_r(X)
+
 #ifdef INTERNAL_NEWLIB
 
 #include <sys/config.h>
@@ -56,9 +59,8 @@
 #define RCALL reent_ptr,
 #define RONECALL reent_ptr
 
-/* Disable MALLOC_LOCK so far. So it won't be thread safe */
-#define MALLOC_LOCK /*__malloc_lock(reent_ptr) */
-#define MALLOC_UNLOCK /*__malloc_unlock(reent_ptr) */
+#define MALLOC_LOCK __malloc_lock(reent_ptr)
+#define MALLOC_UNLOCK __malloc_unlock(reent_ptr)
 
 #define RERRNO reent_ptr->_errno
 
@@ -122,19 +124,24 @@ typedef size_t malloc_size_t;
 
 typedef struct malloc_chunk
 {
-    /*          ------------------
-     *   chunk->| size (4 bytes) |
-     *          ------------------
-     *          | Padding for    |
-     *          | alignment      |
-     *          | holding neg    |
-     *          | offset to size |
-     *          ------------------
-     * mem_ptr->| point to next  |
-     *          | free when freed|
-     *          | or data load   |
-     *          | when allocated |
-     *          ------------------
+    /*          --------------------------------------
+     *   chunk->| size                               |
+     *          --------------------------------------
+     *          | Padding for alignment              |
+     *          | This includes padding inserted by  |
+     *          | the compiler (to align fields) and |
+     *          | explicit padding inserted by this  |
+     *          | implementation. If any explicit    |
+     *          | padding is being used then the     |
+     *          | sizeof (size) bytes at             |
+     *          | mem_ptr - CHUNK_OFFSET must be     |
+     *          | initialized with the negative      |
+     *          | offset to size.                    |
+     *          --------------------------------------
+     * mem_ptr->| When allocated: data               |
+     *          | When freed: pointer to next free   |
+     *          | chunk                              |
+     *          --------------------------------------
      */
     /* size of the allocated payload area, including size before
        CHUNK_OFFSET */
@@ -144,20 +151,6 @@ typedef struct malloc_chunk
     struct malloc_chunk * next;
 }chunk;
 
-/* Copied from malloc.h */
-struct mallinfo
-{
-  size_t arena;    /* total space allocated from system */
-  size_t ordblks;  /* number of non-inuse chunks */
-  size_t smblks;   /* unused -- always zero */
-  size_t hblks;    /* number of mmapped regions */
-  size_t hblkhd;   /* total space in mmapped regions */
-  size_t usmblks;  /* unused -- always zero */
-  size_t fsmblks;  /* unused -- always zero */
-  size_t uordblks; /* total allocated space */
-  size_t fordblks; /* total non-inuse space */
-  size_t keepcost; /* top-most, releasable (via malloc_trim) space */
-};
 
 #define CHUNK_OFFSET ((malloc_size_t)(&(((struct malloc_chunk *)0)->next)))
 
@@ -175,7 +168,6 @@ extern void * nano_malloc(RARG malloc_size_t);
 extern void nano_free (RARG void * free_p);
 extern void nano_cfree(RARG void * ptr);
 extern void * nano_calloc(RARG malloc_size_t n, malloc_size_t elem);
-extern struct mallinfo nano_mallinfo(RONEARG);
 extern void nano_malloc_stats(RONEARG);
 extern malloc_size_t nano_malloc_usable_size(RARG void * ptr);
 extern void * nano_realloc(RARG void * ptr, malloc_size_t size);
@@ -186,8 +178,13 @@ extern void * nano_pvalloc(RARG size_t s);
 
 static inline chunk * get_chunk_from_ptr(void * ptr)
 {
+    /* Assume that there is no explicit padding in the
+       chunk, and that the chunk starts at ptr - CHUNK_OFFSET.  */
     chunk * c = (chunk *)((char *)ptr - CHUNK_OFFSET);
-    /* Skip the padding area */
+
+    /* c->size being negative indicates that there is explicit padding in
+       the chunk. In which case, c->size is currently the negative offset to
+       the true size.  */
     if (c->size < 0) c = (chunk *)((char *)c + c->size);
     return c;
 }
@@ -209,9 +206,9 @@ static void* sbrk_aligned(RARG malloc_size_t s)
 {
     char *p, *align_p;
 
-    if (sbrk_start == NULL) sbrk_start = _sbrk_r(RCALL 0);
+    if (sbrk_start == NULL) sbrk_start = _SBRK_R(RCALL 0);
 
-    p = _sbrk_r(RCALL s);
+    p = _SBRK_R(RCALL s);
 
     /* sbrk returns -1 if fail to allocate */
     if (p == (void *)-1)
@@ -222,7 +219,7 @@ static void* sbrk_aligned(RARG malloc_size_t s)
     {
         /* p is not aligned, ask for a few more bytes so that we have s
          * bytes reserved from align_p. */
-        p = _sbrk_r(RCALL align_p - p);
+        p = _SBRK_R(RCALL align_p - p);
         if (p == (void *)-1)
             return p;
     }
@@ -313,7 +310,20 @@ void * nano_malloc(RARG malloc_size_t s)
 
     if (offset)
     {
-        *(int *)((char *)r + offset) = -offset;
+        /* Initialize sizeof (malloc_chunk.size) bytes at
+           align_ptr - CHUNK_OFFSET with negative offset to the
+           size field (at the start of the chunk).
+
+           The negative offset to size from align_ptr - CHUNK_OFFSET is
+           the size of any remaining padding minus CHUNK_OFFSET.  This is
+           equivalent to the total size of the padding, because the size of
+           any remaining padding is the total size of the padding minus
+           CHUNK_OFFSET.
+
+           Note that the size of the padding must be at least CHUNK_OFFSET.
+
+           The rest of the padding is not initialized.  */
+        *(long *)((char *)r + offset) = -offset;
     }
 
     assert(align_ptr + size <= (char *)r + alloc_size);
@@ -486,7 +496,7 @@ struct mallinfo nano_mallinfo(RONEARG)
 
     if (sbrk_start == NULL) total_size = 0;
     else {
-        sbrk_now = _sbrk_r(RCALL 0);
+        sbrk_now = _SBRK_R(RCALL 0);
 
         if (sbrk_now == (void *)-1)
             total_size = (size_t)-1;
@@ -586,7 +596,7 @@ void * nano_memalign(RARG size_t align, size_t s)
             /* Padding is used. Need to set a jump offset for aligned pointer
             * to get back to chunk head */
             assert(offset >= sizeof(int));
-            *(int *)((char *)chunk_p + offset) = -offset;
+            *(long *)((char *)chunk_p + offset) = -offset;
         }
     }
 

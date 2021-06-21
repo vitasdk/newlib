@@ -9,7 +9,7 @@ INDEX
 INDEX
 	vsscanf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	#include <stdarg.h>
 	int vscanf(const char *restrict <[fmt]>, va_list <[list]>);
@@ -22,40 +22,6 @@ ANSI_SYNOPSIS
                        va_list <[list]>);
 	int _vsscanf_r(void *<[reent]>, const char *restrict <[str]>, const char *restrict <[fmt]>, 
                        va_list <[list]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	#include <varargs.h>
-	int vscanf( <[fmt]>, <[ist]>)
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int vfscanf( <[fp]>, <[fmt]>, <[list]>)
-	FILE *<[fp]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-	
-	int vsscanf( <[str]>, <[fmt]>, <[list]>)
-	char *<[str]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vscanf_r( <[reent]>, <[fmt]>, <[ist]>)
-	char *<[reent]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-
-	int _vfscanf_r( <[reent]>, <[fp]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	FILE *<[fp]>;
-	char *<[fmt]>;
-	va_list <[list]>;
-	
-	int _vsscanf_r( <[reent]>, <[str]>, <[fmt]>, <[list]>)
-	char *<[reent]>;
-	char *<[str]>;
-	char *<[fmt]>;
-	va_list <[list]>;
 
 DESCRIPTION
 <<vscanf>>, <<vfscanf>>, and <<vsscanf>> are (respectively) variants
@@ -92,7 +58,7 @@ Supporting OS subroutines required:
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -111,11 +77,7 @@ Supporting OS subroutines required:
 #include <limits.h>
 #include <wchar.h>
 #include <string.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef	NO_FLOATING_POINT
@@ -131,7 +93,6 @@ Supporting OS subroutines required:
 #define _NO_LONGDBL
 #if defined _WANT_IO_LONG_DOUBLE && (LDBL_MANT_DIG > DBL_MANT_DIG)
 #undef _NO_LONGDBL
-extern _LONG_DOUBLE _strtold _PARAMS((char *s, char **sptr));
 #endif
 
 #define _NO_LONGLONG
@@ -217,9 +178,8 @@ typedef union
 #ifndef _REENT_ONLY
 
 int
-_DEFUN (vfscanf, (fp, fmt, ap), 
-    register FILE *__restrict fp _AND 
-    _CONST char *__restrict fmt _AND 
+vfscanf (register FILE *__restrict fp,
+    const char *__restrict fmt,
     va_list ap)
 {
   CHECK_INIT(_REENT, fp);
@@ -229,7 +189,7 @@ _DEFUN (vfscanf, (fp, fmt, ap),
 int
 __svfscanf (fp, fmt0, ap)
      register FILE *fp;
-     char _CONST *fmt0;
+     char const *fmt0;
      va_list ap;
 {
   return __svfscanf_r (_REENT, fp, fmt0, ap);
@@ -238,10 +198,9 @@ __svfscanf (fp, fmt0, ap)
 #endif /* !_REENT_ONLY */
 
 int
-_DEFUN (_vfscanf_r, (data, fp, fmt, ap),
-    struct _reent *data _AND 
-    register FILE *__restrict fp _AND 
-    _CONST char *__restrict fmt _AND 
+_vfscanf_r (struct _reent *data,
+    register FILE *__restrict fp,
+    const char *__restrict fmt,
     va_list ap)
 {
   return __svfscanf_r (data, fp, fmt, ap);
@@ -252,7 +211,7 @@ int
 __svfscanf_r (rptr, fp, fmt0, ap)
      struct _reent *rptr;
      register FILE *fp;
-     char _CONST *fmt0;
+     char const *fmt0;
      va_list ap;
 {
   register u_char *fmt = (u_char *) fmt0;
@@ -297,7 +256,7 @@ __svfscanf_r (rptr, fp, fmt0, ap)
 #endif
 
   /* `basefix' is used to avoid `if' tests in the integer scanner */
-  static _CONST short basefix[17] =
+  static const short basefix[17] =
     {10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
   nassigned = 0;
@@ -947,7 +906,7 @@ __svfscanf_r (rptr, fp, fmt0, ap)
 	  if (flags & NDIGITS)
 	    {
 	      if (p > buf)
-		_CAST_VOID ungetc (*(u_char *)-- p, fp);
+		(void) ungetc (*(u_char *)-- p, fp);
 	      goto match_failure;
 	    }
 	  c = ((u_char *) p)[-1];
@@ -963,7 +922,7 @@ __svfscanf_r (rptr, fp, fmt0, ap)
 	      *p = 0;
 	      res = (*ccfn) (rptr, buf, (char **) NULL, base);
 	      if ((flags & POINTER) && !(flags & VECTOR))
-		*(va_arg (ap, _PTR *)) = (_PTR) (unsigned _POINTER_INT) res;
+		*(va_arg (ap, void **)) = (void *) (unsigned _POINTER_INT) res;
 	      else if (flags & SHORT)
 		{
 		  if (!(flags & VECTOR))
@@ -1147,11 +1106,11 @@ __svfscanf_r (rptr, fp, fmt0, ap)
               --nread;
 	      if (c != 'e' && c != 'E')
 		{
-		  _CAST_VOID ungetc (c, fp);	/* sign */
+		  (void) ungetc (c, fp);	/* sign */
 		  c = *(u_char *)-- p;
                   --nread;
 		}
-	      _CAST_VOID ungetc (c, fp);
+	      (void) ungetc (c, fp);
 	    }
 	  if ((flags & SUPPRESS) == 0)
 	    {
@@ -1211,7 +1170,7 @@ __svfscanf_r (rptr, fp, fmt0, ap)
 #ifdef _NO_LONGDBL
 	      res = _strtod_r (rptr, buf, NULL);
 #else  /* !_NO_LONGDBL */
-	      res = _strtold (buf, NULL);
+	      res = _strtold_r (rptr, buf, NULL);
 #endif /* !_NO_LONGDBL */
 	      if (flags & LONG)
 		{

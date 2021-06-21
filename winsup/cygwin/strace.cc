@@ -1,8 +1,5 @@
 /* strace.cc: system/windows tracing
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -85,8 +82,12 @@ strace::dll_info ()
 int
 strace::microseconds ()
 {
-  static hires_ns now;
-  return (int) now.usecs ();
+  static LONGLONG process_start NO_COPY;
+  clk_monotonic_t *clk = (clk_monotonic_t *) get_clock (CLOCK_MONOTONIC);
+
+  if (!process_start)
+    process_start = clk->strace_usecs ();
+  return (int) (clk->strace_usecs () - process_start);
 }
 
 static int __stdcall
@@ -141,7 +142,7 @@ strace::vsprntf (char *buf, const char *func, const char *infmt, va_list ap)
   char fmt[80];
   static NO_COPY bool nonewline = false;
   DWORD err = GetLastError ();
-  const char *tn = cygthread::name ();
+  const char *tn = mythreadname ();
 
   int microsec = microseconds ();
   lmicrosec = microsec;
@@ -263,6 +264,7 @@ strace::vprntf (unsigned category, const char *func, const char *fmt, va_list ap
   if (category & _STRACE_SYSTEM)
     {
       DWORD done;
+      set_ishybrid_and_switch_to_pcon (GetStdHandle (STD_ERROR_HANDLE));
       WriteFile (GetStdHandle (STD_ERROR_HANDLE), buf, len, &done, 0);
       FlushFileBuffers (GetStdHandle (STD_ERROR_HANDLE));
       /* Make sure that the message shows up on the screen, too, since this is
@@ -274,6 +276,7 @@ strace::vprntf (unsigned category, const char *func, const char *fmt, va_list ap
 				 &sec_none, OPEN_EXISTING, 0, 0);
 	  if (h != INVALID_HANDLE_VALUE)
 	    {
+	      set_ishybrid_and_switch_to_pcon (h);
 	      WriteFile (h, buf, len, &done, 0);
 	      CloseHandle (h);
 	    }

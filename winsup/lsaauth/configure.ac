@@ -1,5 +1,4 @@
 dnl Autoconf configure script for Cygwin utilities.
-dnl Copyright 2006, 2008, 2012, 2013, 2014 Red Hat, Inc.
 dnl
 dnl This file is part of Cygwin.
 dnl 
@@ -12,17 +11,16 @@ dnl Changed for lsa subdir by Corinna Vinschen <corinna@vinschen.de>
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_PREREQ(2.59)
-AC_INIT([Cygwin Lsaauth], 0,
-	cygwin@cygwin.com, cygwin, https://cygwin.com)
+AC_PREREQ([2.59])
+AC_INIT([Cygwin Lsaauth],[0],[cygwin@cygwin.com],[cygwin],[https://cygwin.com])
 AC_CONFIG_SRCDIR(Makefile.in)
 
 AC_CONFIG_AUX_DIR(../..)
 
 AC_NO_EXECUTABLES
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_TARGET
 
-LIB_AC_PROG_CC
+AC_PROG_CC
 
 case "$target_cpu" in
 i?86)
@@ -38,4 +36,5 @@ AC_ARG_PROGRAM
 
 AC_PROG_INSTALL
 
-AC_OUTPUT(Makefile cyglsa.def:cyglsa.din)
+AC_CONFIG_FILES([Makefile cyglsa.def:cyglsa.din])
+AC_OUTPUT

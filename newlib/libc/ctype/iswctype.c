@@ -1,30 +1,35 @@
 /*
 FUNCTION
-	<<iswctype>>---extensible wide-character test
+	<<iswctype>>, <<iswctype_l>>---extensible wide-character test
 
 INDEX
 	iswctype
 
-ANSI_SYNOPSIS
+INDEX
+	iswctype_l
+
+SYNOPSIS
 	#include <wctype.h>
 	int iswctype(wint_t <[c]>, wctype_t <[desc]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	int iswctype(<[c]>, <[desc]>)
-	wint_t <[c]>;
-	wctype_t <[desc]>;
+	int iswctype_l(wint_t <[c]>, wctype_t <[desc]>, locale_t <[locale]>);
 
 DESCRIPTION
 <<iswctype>> is a function which classifies wide-character values using the
 wide-character test specified by <[desc]>.
 
+<<iswctype_l>> is like <<iswctype>> but performs the check based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 RETURNS
-<<iswctype>> returns non-zero if and only if <[c]> matches the test specified by <[desc]>.
-If <[desc]> is unknown, zero is returned.
+<<iswctype>>, <<iswctype_l>> return non-zero if and only if <[c]> matches
+the test specified by <[desc]>.  If <[desc]> is unknown, zero is returned.
 
 PORTABILITY
 <<iswctype>> is C99.
+<<iswctype_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -33,7 +38,7 @@ No supporting OS subroutines are required.
 #include "local.h"
 
 int
-_DEFUN(iswctype,(c, desc), wint_t c _AND wctype_t desc)
+iswctype (wint_t c, wctype_t desc)
 {
   switch (desc)
     {
@@ -68,4 +73,3 @@ _DEFUN(iswctype,(c, desc), wint_t c _AND wctype_t desc)
   /* otherwise unknown */
   return 0;
 }
-

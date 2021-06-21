@@ -21,20 +21,10 @@ INDEX
 INDEX
    atan2f
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double atan2(double <[y]>,double <[x]>);
         float atan2f(float <[y]>,float <[x]>);
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double atan2(<[y]>,<[x]>);
-        double <[y]>;
-        double <[x]>;
-
-        float atan2f(<[y]>,<[x]>);
-        float <[y]>;
-        float <[x]>;
 
 DESCRIPTION
 
@@ -59,8 +49,6 @@ RETURNS
 @tex
 $-\pi$ to $\pi$.
 @end tex
-
-You can modify error handling for these functions using <<matherr>>.
 
 PORTABILITY
 <<atan2>> is ANSI C.  <<atan2f>> is an extension.

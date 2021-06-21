@@ -1,8 +1,5 @@
 /* tty.h: shared tty info for cygwin
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2006, 2009, 2010, 2011, 2012, 2013,
-   2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -31,6 +28,8 @@ details. */
 #define MIN_CTRL_C_SLOP 50
 #endif
 
+typedef void *HPCON;
+
 #include <devices.h>
 class tty_min
 {
@@ -45,7 +44,7 @@ public:
   pid_t pgid;
   bool output_stopped;		/* FIXME: Maybe do this with a mutex someday? */
   fh_devices ntty;
-  DWORD last_ctrl_c;		/* tick count of last ctrl-c */
+  ULONGLONG last_ctrl_c;	/* tick count of last ctrl-c */
   bool is_console;
 
   IMPLEMENT_STATUS_FLAG (bool, initialized)
@@ -91,14 +90,33 @@ public:
 
 private:
   HANDLE _from_master;
+  HANDLE _from_master_cyg;
   HANDLE _to_master;
   HANDLE _to_master_cyg;
+  HPCON h_pseudo_console;
+  HANDLE h_helper_process;
+  DWORD helper_process_id;
+  HANDLE h_helper_goodbye;
+  bool attach_pcon_in_fork;
+  bool switch_to_pcon_in;
+  bool switch_to_pcon_out;
+  bool screen_alternated;
+  bool mask_switch_to_pcon_in;
+  pid_t pcon_pid;
+  UINT term_code_page;
+  bool need_redraw_screen;
+  DWORD pcon_last_time;
+  bool pcon_in_empty;
+  bool req_transfer_input_to_pcon;
+  bool req_flush_pcon_input;
 
 public:
-  HANDLE from_master() const { return _from_master; }
-  HANDLE to_master() const { return _to_master; }
-  HANDLE to_master_cyg() const { return _to_master_cyg; }
+  HANDLE from_master () const { return _from_master; }
+  HANDLE from_master_cyg () const { return _from_master_cyg; }
+  HANDLE to_master () const { return _to_master; }
+  HANDLE to_master_cyg () const { return _to_master_cyg; }
   void set_from_master (HANDLE h) { _from_master = h; }
+  void set_from_master_cyg (HANDLE h) { _from_master_cyg = h; }
   void set_to_master (HANDLE h) { _to_master = h; }
   void set_to_master_cyg (HANDLE h) { _to_master_cyg = h; }
 
@@ -120,7 +138,11 @@ public:
   void set_master_ctl_closed () {master_pid = -1;}
   static void __stdcall create_master (int);
   static void __stdcall init_session ();
+  void set_switch_to_pcon_out (bool v);
+  void wait_pcon_fwd (void);
+  friend class fhandler_pty_common;
   friend class fhandler_pty_master;
+  friend class fhandler_pty_slave;
 };
 
 class tty_list

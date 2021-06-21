@@ -1,7 +1,5 @@
 /* ldap.h.
 
-   Copyright 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -37,7 +35,7 @@ class cyg_ldap {
 
 public:
   cyg_ldap () : lh (NULL), def_context (NULL), msg (NULL), entry (NULL),
-		val (NULL), isAD (false), srch_id (NULL), 
+		val (NULL), isAD (false), srch_id (NULL),
 		last_fetched_sid (NO_SID)
   {}
   ~cyg_ldap () { close (); }
@@ -62,8 +60,9 @@ public:
   /* User only */
   gid_t get_primary_gid () { return get_num_attribute (L"primaryGroupID"); }
   gid_t get_unix_uid () { return get_num_attribute (L"uidNumber"); }
-  /* group only */
-  PWCHAR get_group_name ()
+  PWCHAR get_account_name ()
 	    { return get_string_attribute (L"sAMAccountName"); }
   gid_t get_unix_gid () { return get_num_attribute (L"gidNumber"); }
+  PWCHAR get_profile_path ()
+	    { return get_string_attribute (L"profilePath"); }
 };

@@ -1,29 +1,34 @@
-
 /*
 FUNCTION
-	<<iswupper>>---uppercase wide character test
+	<<iswupper>>, <<iswupper_l>>---uppercase wide character test
 
 INDEX
 	iswupper
 
-ANSI_SYNOPSIS
+INDEX
+	iswupper_l
+
+SYNOPSIS
 	#include <wctype.h>
 	int iswupper(wint_t <[c]>);
 
-TRAD_SYNOPSIS
 	#include <wctype.h>
-	int iswupper(<[c]>)
-	wint_t <[c]>;
+	int iswupper_l(wint_t <[c]>, locale_t <[locale]>);
 
 DESCRIPTION
 <<iswupper>> is a function which classifies wide-character values that
-have uppercase translations.
+are categorized as uppercase.
+
+<<iswupper_l>> is like <<iswupper>> but performs the check based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
 
 RETURNS
-<<iswupper>> returns non-zero if <[c]> is a uppercase wide character.
+<<iswupper>>, <<iswupper_l>> return non-zero if <[c]> is an uppercase wide character.
 
 PORTABILITY
 <<iswupper>> is C99.
+<<iswupper_l>> is POSIX-1.2008.
 
 No supporting OS subroutines are required.
 */
@@ -31,8 +36,7 @@ No supporting OS subroutines are required.
 #include <wctype.h>
 
 int
-_DEFUN(iswupper,(c),wint_t c)
+iswupper (wint_t c)
 {
-  return (towlower (c) != c);
+  return iswupper_l (c, 0);
 }
-

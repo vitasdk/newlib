@@ -1,7 +1,5 @@
 /* path.h
 
-   Copyright 2001, 2002, 2003, 2006, 2008, 2009 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -19,7 +17,7 @@ char *cygpath (const char *s, ...);
 char *cygpath_rel (const char *cwd, const char *s, ...);
 bool is_exe (HANDLE);
 bool is_symlink (HANDLE);
-bool readlink (HANDLE, char *, int);
+bool readlink (HANDLE, char *, size_t);
 int get_word (HANDLE, int);
 int get_dword (HANDLE, int);
 bool from_fstab_line (mnt_t *m, char *line, bool user);

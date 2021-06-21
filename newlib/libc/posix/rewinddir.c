@@ -12,11 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,8 +38,7 @@ static char sccsid[] = "@(#)rewinddir.c	5.1 (Berkeley) 5/25/90";
 #include <sys/lock.h>
 
 void
-_DEFUN(rewinddir, (dirp),
-	DIR *dirp)
+rewinddir (DIR *dirp)
 {
 #ifdef HAVE_DD_LOCK
 	__lock_acquire_recursive(dirp->dd_lock);

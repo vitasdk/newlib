@@ -1,8 +1,5 @@
 /* shared.cc: shared data area support.
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -326,11 +323,18 @@ shared_info::initialize ()
   spinlock sversion (version, CURR_SHARED_MAGIC);
   if (!sversion)
     {
+      LUID luid;
+
       cb = sizeof (*this);
       get_session_parent_dir ();	/* Create session dir if first process. */
       init_obcaseinsensitive ();	/* Initialize obcaseinsensitive */
       tty.init ();			/* Initialize tty table  */
       mt.initialize ();			/* Initialize shared tape information */
+      loadavg.initialize ();		/* Initialize loadavg information */
+      NtAllocateLocallyUniqueId (&luid);/* Initialize pid_src to a low    */
+      InterlockedExchange (&pid_src,	/* random value to make start pid */
+		   luid.LowPart % 2048);/* less predictably               */
+      forkable_hardlink_support = 0;    /* 0: Unknown, 1: Yes, -1: No */
       /* Defer debug output printing the installation root and installation key
 	 up to this point.  Debug output except for system_printf requires
 	 the global shared memory to exist. */

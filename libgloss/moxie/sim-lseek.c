@@ -22,9 +22,8 @@
  * an error.
  */
 off_t
-_DEFUN (_lseek, (fd,  offset, whence),
-       int fd _AND
-       off_t offset _AND
+_lseek (int fd,
+       off_t offset,
        int whence)
 {
   /*   errno = ESPIPE; */

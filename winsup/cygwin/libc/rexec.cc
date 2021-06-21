@@ -63,6 +63,7 @@ static char sccsid[] = "@(#)rexec.c	8.1 (Berkeley) 6/4/93";
 extern "C" {
   int cygwin_accept (int, struct sockaddr *, socklen_t *);
   int cygwin_connect (int, const struct sockaddr *, socklen_t);
+  int cygwin_gethostname (char *__name, size_t __len);
   int cygwin_getsockname (int, struct sockaddr *, socklen_t *);
   void cygwin_herror (const char *);
   int cygwin_listen (int, int);
@@ -314,7 +315,7 @@ cygwin_rexec (char **ahost, unsigned short rport, char *name, char *pass,
 {
   struct sockaddr_in sin, sin2, from;
   struct hostent *hp;
-  u_short port = 0;
+  uint16_t port = 0;
   int s, timo = 1, s3;
   char c;
   static char ahostbuf[INTERNET_MAX_HOST_NAME_LENGTH + 1];
@@ -370,7 +371,7 @@ retry:
 		      (void) close(s2);
 		      goto bad;
 	      }
-	      port = ntohs((u_short)sin2.sin_port);
+	      port = ntohs((uint16_t)sin2.sin_port);
 	      (void) sprintf(num, "%u", port);
 	      (void) write(s, num, strlen(num)+1);
 	      { int len = sizeof (from);

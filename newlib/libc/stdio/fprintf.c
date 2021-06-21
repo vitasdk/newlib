@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -22,10 +22,9 @@
 #include <stdarg.h>
 
 int
-_DEFUN(_fprintf_r, (ptr, fp, fmt),
-       struct _reent *ptr _AND
-       FILE *__restrict fp _AND
-       const char *__restrict fmt _DOTS)
+_fprintf_r (struct _reent *ptr,
+       FILE *__restrict fp,
+       const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -38,16 +37,15 @@ _DEFUN(_fprintf_r, (ptr, fp, fmt),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(_fiprintf_r, (struct _reent *, FILE *, const char *, ...)
-       _ATTRIBUTE ((__alias__("_fprintf_r"))));
+_fiprintf_r (struct _reent *, FILE *, const char *, ...)
+       _ATTRIBUTE ((__alias__("_fprintf_r")));
 #endif
 
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(fprintf, (fp, fmt),
-       FILE *__restrict fp _AND
-       const char *__restrict fmt _DOTS)
+fprintf (FILE *__restrict fp,
+       const char *__restrict fmt, ...)
 {
   int ret;
   va_list ap;
@@ -60,7 +58,7 @@ _DEFUN(fprintf, (fp, fmt),
 
 #ifdef _NANO_FORMATTED_IO
 int
-_EXFUN(fiprintf, (FILE *, const char *, ...)
-       _ATTRIBUTE ((__alias__("fprintf"))));
+fiprintf (FILE *, const char *, ...)
+       _ATTRIBUTE ((__alias__("fprintf")));
 #endif
 #endif /* ! _REENT_ONLY */

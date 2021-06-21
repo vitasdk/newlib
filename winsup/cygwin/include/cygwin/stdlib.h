@@ -1,7 +1,5 @@
 /* stdlib.h
 
-   Copyright 2005, 2006, 2007, 2008, 2009, 2011, 2013 Red Hat Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -19,43 +17,41 @@ extern "C"
 {
 #endif
 
-__uint32_t arc4random(void);
-void arc4random_addrandom(unsigned char *, int);
-void arc4random_buf(void *, size_t);
-void arc4random_stir(void);
-__uint32_t arc4random_uniform(__uint32_t);
-
 const char *getprogname (void);
 void	setprogname (const char *);
 
-#ifndef __STRICT_ANSI__
+#if __GNU_VISIBLE
 char *canonicalize_file_name (const char *);
-int unsetenv (const char *);
-#endif /*__STRICT_ANSI__*/
-#if !defined(__STRICT_ANSI__) || (__XSI_VISIBLE >= 500)
-char *initstate (unsigned seed, char *state, size_t size);
-long random (void);
-char *setstate (const char *state);
-void srandom (unsigned);
 #endif
-#ifndef __STRICT_ANSI__
+#if __BSD_VISIBLE || __POSIX_VISIBLE >= 200112
+int unsetenv (const char *);
+#endif
+#if __MISC_VISIBLE
+int clearenv (void);
+#endif
+#if __XSI_VISIBLE
 char *ptsname (int);
-int ptsname_r(int, char *, size_t);
-int getpt (void);
 int grantpt (int);
 int unlockpt (int);
-#endif /*__STRICT_ANSI__*/
+#endif
+#if __GNU_VISIBLE
+int ptsname_r(int, char *, size_t);
+int getpt (void);
+#endif
 
+#if __XSI_VISIBLE >= 600
 int posix_openpt (int);
-int posix_memalign (void **, size_t, size_t);
+#endif
 
 #ifdef _COMPILING_NEWLIB
 #define unsetenv UNUSED_unsetenv
 #define _unsetenv_r UNUSED__unsetenv_r
 #endif
 
-extern _PTR memalign _PARAMS ((size_t, size_t));
-extern _PTR valloc _PARAMS ((size_t));
+extern void *memalign (size_t, size_t);
+#if __BSD_VISIBLE || (__XSI_VISIBLE >= 4 && __POSIX_VISIBLE < 200112)
+extern void *valloc (size_t);
+#endif
 
 #undef _malloc_r
 #define _malloc_r(r, s) malloc (s)
@@ -83,6 +79,10 @@ extern _PTR valloc _PARAMS ((size_t));
 #define _malloc_trim_r(r, s) malloc_trim (s)
 #undef _mstats_r
 #define _mstats_r(r, p) mstats (p)
+
+#if __BSD_VISIBLE
+int getloadavg(double loadavg[], int nelem);
+#endif
 
 #ifdef __cplusplus
 }

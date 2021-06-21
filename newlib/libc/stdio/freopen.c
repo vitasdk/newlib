@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,25 +24,12 @@ INDEX
 INDEX
 	_freopen_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	FILE *freopen(const char *restrict <[file]>, const char *restrict <[mode]>,
 		      FILE *restrict <[fp]>);
 	FILE *_freopen_r(struct _reent *<[ptr]>, const char *restrict <[file]>,
 		      const char *restrict <[mode]>, FILE *restrict <[fp]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	FILE *freopen(<[file]>, <[mode]>, <[fp]>)
-	char *<[file]>;
-	char *<[mode]>;
-	FILE *<[fp]>;
-
-	FILE *_freopen_r(<[ptr]>, <[file]>, <[mode]>, <[fp]>)
-	struct _reent *<[ptr]>;
-	char *<[file]>;
-	char *<[mode]>;
-	FILE *<[fp]>;
 
 DESCRIPTION
 Use this variant of <<fopen>> if you wish to specify a particular file
@@ -88,14 +75,13 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
  */
 
 FILE *
-_DEFUN(_freopen_r, (ptr, file, mode, fp),
-       struct _reent *ptr _AND
-       const char *__restrict file _AND
-       const char *__restrict mode _AND
+_freopen_r (struct _reent *ptr,
+       const char *__restrict file,
+       const char *__restrict mode,
        register FILE *__restrict fp)
 {
   register int f;
-  int flags, oflags;
+  int flags, oflags, oflags2;
   int e = 0;
 
   CHECK_INIT (ptr, fp);
@@ -106,11 +92,14 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
   int __oldcancel;
   pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, &__oldcancel);
 #endif
-  _flockfile (fp);
+  oflags2 = fp->_flags2;
+  if (!(oflags2 & __SNLK))
+    _flockfile (fp);
 
   if ((flags = __sflags (ptr, mode, &oflags)) == 0)
     {
-      _funlockfile (fp);
+      if (!(oflags2 & __SNLK))
+	_funlockfile (fp);
 #ifdef _STDIO_WITH_THREAD_CANCELLATION_SUPPORT
       pthread_setcancelstate (__oldcancel, &__oldcancel);
 #endif
@@ -209,7 +198,7 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
     FREELB (ptr, fp);
   fp->_lb._size = 0;
   fp->_flags &= ~__SORD;
-  fp->_flags2 = 0;
+  fp->_flags2 &= ~__SWID;
   memset (&fp->_mbstate, 0, sizeof (_mbstate_t));
 
   if (f < 0)
@@ -217,7 +206,8 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
       __sfp_lock_acquire ();
       fp->_flags = 0;		/* set it free */
       ptr->_errno = e;		/* restore in case _close clobbered */
-      _funlockfile (fp);
+      if (!(oflags2 & __SNLK))
+	_funlockfile (fp);
 #ifndef __SINGLE_THREAD__
       __lock_close_recursive (fp->_lock);
 #endif
@@ -230,7 +220,7 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
 
   fp->_flags = flags;
   fp->_file = f;
-  fp->_cookie = (_PTR) fp;
+  fp->_cookie = (void *) fp;
   fp->_read = __sread;
   fp->_write = __swrite;
   fp->_seek = __sseek;
@@ -241,7 +231,8 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
     fp->_flags |= __SCLE;
 #endif
 
-  _funlockfile (fp);
+  if (!(oflags2 & __SNLK))
+    _funlockfile (fp);
 #ifdef _STDIO_WITH_THREAD_CANCELLATION_SUPPORT
   pthread_setcancelstate (__oldcancel, &__oldcancel);
 #endif
@@ -251,9 +242,8 @@ _DEFUN(_freopen_r, (ptr, file, mode, fp),
 #ifndef _REENT_ONLY
 
 FILE *
-_DEFUN(freopen, (file, mode, fp),
-       _CONST char *__restrict file _AND
-       _CONST char *__restrict mode _AND
+freopen (const char *__restrict file,
+       const char *__restrict mode,
        register FILE *__restrict fp)
 {
   return _freopen_r (_REENT, file, mode, fp);

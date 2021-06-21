@@ -1,8 +1,5 @@
 /* dir.cc: Posix directory-related routines
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -143,7 +140,7 @@ readdir_worker (DIR *dir, dirent *de)
 
 	  if (is_dot_dot && !(dir->__flags & dirent_isroot))
 	    de->d_ino = readdir_get_ino (((fhandler_base *)
-	    				 dir->__fh)->get_name (),
+					 dir->__fh)->get_name (),
 					 true);
 	  else
 	    {
@@ -308,23 +305,35 @@ mkdir (const char *dir, mode_t mode)
 
   __try
     {
-      /* POSIX says mkdir("symlink-to-missing/") should create the
-	 directory "missing", but Linux rejects it with EEXIST.  Copy
-	 Linux behavior for now.  */
-
       if (!*dir)
 	{
 	  set_errno (ENOENT);
 	  __leave;
 	}
+      /* Following Linux, and intentionally ignoring POSIX, do not
+	 resolve the last component of DIR if it is a symlink, even if
+	 DIR has a trailing slash.  Achieve this by stripping trailing
+	 slashes or backslashes.
+
+	 Exception: If DIR == 'x:' followed by one or more slashes or
+	 backslashes, and if there's at least one backslash, assume
+	 that the user is referring to the root directory of drive x.
+	 Retain one backslash in this case.  */
       if (isdirsep (dir[strlen (dir) - 1]))
 	{
 	  /* This converts // to /, but since both give EEXIST, we're okay.  */
 	  char *buf;
 	  char *p = stpcpy (buf = tp.c_get (), dir) - 1;
+	  bool msdos = false;
 	  dir = buf;
 	  while (p > dir && isdirsep (*p))
-	    *p-- = '\0';
+	    {
+	      if (*p == '\\')
+		msdos = true;
+	      *p-- = '\0';
+	    }
+	  if (msdos && p == dir + 1 && isdrive (dir))
+	    p[1] = '\\';
 	}
       if (!(fh = build_fh_name (dir, PC_SYM_NOFOLLOW)))
 	__leave;   /* errno already set */;
@@ -334,8 +343,10 @@ mkdir (const char *dir, mode_t mode)
 	  debug_printf ("got %d error from build_fh_name", fh->error ());
 	  set_errno (fh->error ());
 	}
+      else if (fh->exists ())
+	set_errno (EEXIST);
       else if (has_dot_last_component (dir, true))
-	set_errno (fh->exists () ? EEXIST : ENOENT);
+	set_errno (ENOENT);
       else if (!fh->mkdir (mode))
 	res = 0;
       delete fh;
@@ -352,9 +363,41 @@ rmdir (const char *dir)
 {
   int res = -1;
   fhandler_base *fh = NULL;
+  tmp_pathbuf tp;
 
   __try
     {
+      if (!*dir)
+	{
+	  set_errno (ENOENT);
+	  __leave;
+	}
+      /* Following Linux, and intentionally ignoring POSIX, do not
+	 resolve the last component of DIR if it is a symlink, even if
+	 DIR has a trailing slash.  Achieve this by stripping trailing
+	 slashes or backslashes.
+
+	 Exception: If DIR == 'x:' followed by one or more slashes or
+	 backslashes, and if there's at least one backslash, assume
+	 that the user is referring to the root directory of drive x.
+	 Retain one backslash in this case.  */
+      if (isdirsep (dir[strlen (dir) - 1]))
+	{
+	  /* This converts // to /, but since both give ENOTEMPTY,
+	     we're okay.  */
+	  char *buf;
+	  char *p = stpcpy (buf = tp.c_get (), dir) - 1;
+	  bool msdos = false;
+	  dir = buf;
+	  while (p > dir && isdirsep (*p))
+	    {
+	      if (*p == '\\')
+		msdos = true;
+	      *p-- = '\0';
+	    }
+	  if (msdos && p == dir + 1 && isdrive (dir))
+	    p[1] = '\\';
+	}
       if (!(fh = build_fh_name (dir, PC_SYM_NOFOLLOW)))
 	__leave;   /* errno already set */;
 

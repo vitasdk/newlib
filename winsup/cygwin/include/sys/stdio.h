@@ -1,7 +1,5 @@
 /* sys/stdio.h
 
-   Copyright 2004, 2005, 2006, 2007, 2008, 2010 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -34,8 +32,8 @@ details. */
 
 __BEGIN_DECLS
 
-ssize_t	_EXFUN(getline, (char **, size_t *, FILE *));
-ssize_t	_EXFUN(getdelim, (char **, size_t *, int, FILE *));
+ssize_t	getline (char **, size_t *, FILE *);
+ssize_t	getdelim (char **, size_t *, int, FILE *);
 
 __END_DECLS
 

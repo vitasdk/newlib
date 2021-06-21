@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -44,7 +44,7 @@ INDEX
 INDEX
 	_vasniprintf_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	#include <stdarg.h>
 	int viprintf(const char *<[fmt]>, va_list <[list]>);
@@ -95,18 +95,13 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <_ansi.h>
 #include <reent.h>
 #include <stdio.h>
-#ifdef _HAVE_STDC
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 #include "local.h"
 
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(viprintf, (fmt, ap),
-       _CONST char *fmt _AND
+viprintf (const char *fmt,
        va_list ap)
 {
   struct _reent *reent = _REENT;
@@ -118,9 +113,8 @@ _DEFUN(viprintf, (fmt, ap),
 #endif /* !_REENT_ONLY */
 
 int
-_DEFUN(_viprintf_r, (ptr, fmt, ap),
-       struct _reent *ptr _AND
-       _CONST char *fmt   _AND
+_viprintf_r (struct _reent *ptr,
+       const char *fmt,
        va_list ap)
 {
   _REENT_SMALL_CHECK_INIT (ptr);

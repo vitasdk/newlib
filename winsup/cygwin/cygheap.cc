@@ -1,8 +1,5 @@
 /* cygheap.cc: Cygwin heap manager.
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012, 2013, 2014 Red Hat, Inc.
-
    This file is part of Cygwin.
 
    This software is a copyrighted work licensed under the terms of the
@@ -31,7 +28,7 @@
 
 static mini_cygheap NO_COPY cygheap_dummy =
 {
-  {__utf8_mbtowc, __utf8_wctomb}
+  {__utf8_mbtowc}
 };
 
 init_cygheap NO_COPY *cygheap = (init_cygheap *) &cygheap_dummy;
@@ -81,7 +78,8 @@ cygheap_fixup_in_child (bool execed)
 {
   cygheap_max = cygheap = (init_cygheap *) _cygheap_start;
   _csbrk ((char *) child_proc_info->cygheap_max - (char *) cygheap);
-  child_copy (child_proc_info->parent, false, "cygheap", cygheap, cygheap_max, NULL);
+  child_copy (child_proc_info->parent, false, child_proc_info->silentfail (),
+	      "cygheap", cygheap, cygheap_max, NULL);
   cygheap_init ();
   debug_fixup_after_fork_exec ();
   if (execed)
@@ -142,11 +140,11 @@ init_cygheap::init_installation_root ()
 {
   ptrdiff_t len = 0;
 
-  if (!GetModuleFileNameW (cygwin_hmodule, installation_root, PATH_MAX))
+  if (!GetModuleFileNameW (cygwin_hmodule, installation_root_buf, PATH_MAX))
     api_fatal ("Can't initialize Cygwin installation root dir.\n"
 	       "GetModuleFileNameW(%p, %p, %u), %E",
-	       cygwin_hmodule, installation_root, PATH_MAX);
-  PWCHAR p = installation_root;
+	       cygwin_hmodule, installation_root_buf, PATH_MAX);
+  PWCHAR p = installation_root_buf;
   if (wcsncasecmp (p, L"\\\\", 2))	/* Normal drive letter path */
     {
       len = 4;
@@ -173,18 +171,18 @@ init_cygheap::init_installation_root ()
 	    p = wcschr (p + 1, L'\\');  /* Skip share name */
 	}
     }
-  installation_root[1] = L'?';
+  installation_root_buf[1] = L'?';
   RtlInitEmptyUnicodeString (&installation_key, installation_key_buf,
 			     sizeof installation_key_buf);
-  RtlInt64ToHexUnicodeString (hash_path_name (0, installation_root),
+  RtlInt64ToHexUnicodeString (hash_path_name (0, installation_root_buf),
 			      &installation_key, FALSE);
 
   /* Strip off last path component ("\\cygwin1.dll") */
-  PWCHAR w = wcsrchr (installation_root, L'\\');
+  PWCHAR w = wcsrchr (installation_root_buf, L'\\');
   if (w)
     {
       *w = L'\0';
-      w = wcsrchr (installation_root, L'\\');
+      w = wcsrchr (installation_root_buf, L'\\');
     }
   if (!w)
     api_fatal ("Can't initialize Cygwin installation root dir.\n"
@@ -193,15 +191,14 @@ init_cygheap::init_installation_root ()
   /* Copy result into installation_dir before stripping off "bin" dir and
      revert to Win32 path.  This path is added to the Windows environment
      in build_env.  See there for a description. */
-  installation_dir_len = wcpncpy (installation_dir, installation_root + len,
-				  PATH_MAX)
-			 - installation_dir;
+  wcpncpy (installation_dir_buf, installation_root_buf + len, PATH_MAX);
+
   if (len == 4)		/* Local path */
     ;
   else if (len == 6)	/* UNC path */
-    installation_dir[0] = L'\\';
+    installation_dir_buf[0] = L'\\';
   else			/* Long, prefixed path */
-    installation_dir[1] = L'\\';
+    installation_dir_buf[1] = L'\\';
 
   /* If w < p, the Cygwin DLL resides in the root dir of a drive or network
      path.  In that case, if we strip off yet another backslash, the path
@@ -211,19 +208,16 @@ init_cygheap::init_installation_root ()
   if (w > p)
     *w = L'\0';
 
+  RtlInitUnicodeString (&installation_root, installation_root_buf);
+  RtlInitUnicodeString (&installation_dir, installation_dir_buf);
+
   for (int i = 1; i >= 0; --i)
     {
       reg_key r (i, KEY_WRITE, _WIDE (CYGWIN_INFO_INSTALLATIONS_NAME),
 		 NULL);
       if (NT_SUCCESS (r.set_string (installation_key_buf,
-				    installation_root)))
+				    installation_root_buf)))
 	break;
-    }
-
-  if (cygwin_props.disable_key)
-    {
-      installation_key.Length = 0;
-      installation_key.Buffer[0] = L'\0';
     }
 }
 
@@ -254,8 +248,6 @@ cygheap_init ()
 	cygheap->bucket_val[b] = sz[b & 1];
       /* Default locale settings. */
       cygheap->locale.mbtowc = __utf8_mbtowc;
-      cygheap->locale.wctomb = __utf8_wctomb;
-      strcpy (cygheap->locale.charset, "UTF-8");
       /* Set umask to a sane default. */
       cygheap->umask = 022;
       cygheap->rlim_core = RLIM_INFINITY;
@@ -415,7 +407,6 @@ creturn (cygheap_types x, cygheap_entry * c, unsigned len, const char *fn = NULL
   char *cend = ((char *) c + sizeof (*c) + len);
   if (cygheap_max < cend)
     cygheap_max = cend;
-  MALLOC_CHECK;
   return (void *) c->data;
 }
 
@@ -423,7 +414,6 @@ inline static void *
 cmalloc (cygheap_types x, size_t n, const char *fn)
 {
   cygheap_entry *c;
-  MALLOC_CHECK;
   c = (cygheap_entry *) _cmalloc (sizeof_cygheap (n));
   return creturn (x, c, n, fn);
 }
@@ -443,7 +433,6 @@ cmalloc_abort (cygheap_types x, size_t n)
 inline static void *
 crealloc (void *s, size_t n, const char *fn)
 {
-  MALLOC_CHECK;
   if (s == NULL)
     return cmalloc (HEAP_STR, n);	// kludge
 
@@ -471,7 +460,6 @@ cfree (void *s)
 {
   assert (!inheap (s));
   _cfree (tocygheap (s));
-  MALLOC_CHECK;
 }
 
 extern "C" void __reg2
@@ -486,7 +474,6 @@ inline static void *
 ccalloc (cygheap_types x, size_t n, size_t size, const char *fn)
 {
   cygheap_entry *c;
-  MALLOC_CHECK;
   n *= size;
   c = (cygheap_entry *) _cmalloc (sizeof_cygheap (n));
   if (c)
@@ -509,48 +496,40 @@ ccalloc_abort (cygheap_types x, size_t n, size_t size)
 extern "C" PWCHAR __reg1
 cwcsdup (PCWSTR s)
 {
-  MALLOC_CHECK;
   PWCHAR p = (PWCHAR) cmalloc (HEAP_STR, (wcslen (s) + 1) * sizeof (WCHAR));
   if (!p)
     return NULL;
   wcpcpy (p, s);
-  MALLOC_CHECK;
   return p;
 }
 
 extern "C" PWCHAR __reg1
 cwcsdup1 (PCWSTR s)
 {
-  MALLOC_CHECK;
   PWCHAR p = (PWCHAR) cmalloc (HEAP_1_STR, (wcslen (s) + 1) * sizeof (WCHAR));
   if (!p)
     return NULL;
   wcpcpy (p, s);
-  MALLOC_CHECK;
   return p;
 }
 
 extern "C" char *__reg1
 cstrdup (const char *s)
 {
-  MALLOC_CHECK;
   char *p = (char *) cmalloc (HEAP_STR, strlen (s) + 1);
   if (!p)
     return NULL;
   strcpy (p, s);
-  MALLOC_CHECK;
   return p;
 }
 
 extern "C" char *__reg1
 cstrdup1 (const char *s)
 {
-  MALLOC_CHECK;
   char *p = (char *) cmalloc (HEAP_1_STR, strlen (s) + 1);
   if (!p)
     return NULL;
   strcpy (p, s);
-  MALLOC_CHECK;
   return p;
 }
 
@@ -647,7 +626,7 @@ init_cygheap::add_tls (_cygtls *t)
      still utilizes the thread's _cygtls area, things go awry.
 
      The following methods take this into account:
-     
+
      - The thread mutex is generally only locked under tls_sentry locking.
      - remove_tls, called from _cygtls::remove, locks the mutex before
        removing the threadlist entry and _cygtls::remove then unlocks and
@@ -743,4 +722,16 @@ init_cygheap::find_tls (int sig, bool& issig_wait)
   if (t)
     WaitForSingleObject (t->mutex, INFINITE);
   return t;
+}
+
+/* Called from profil.c to sample all non-main thread PC values for profiling */
+extern "C" void
+cygheap_profthr_all (void (*profthr_byhandle) (HANDLE))
+{
+  for (uint32_t ix = 0; ix < nthreads; ix++)
+    {
+      _cygtls *tls = cygheap->threadlist[ix].thread;
+      if (tls->tid)
+	profthr_byhandle (tls->tid->win32_obj_id);
+    }
 }

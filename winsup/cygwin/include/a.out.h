@@ -1,7 +1,5 @@
 /* a.out.h
 
-   Copyright 1997, 1998, 1999, 2000, 2001, 2013 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -140,7 +138,7 @@ struct external_scnhdr {
  */
 struct external_lineno {
   union {
-    uint32_t l_symndx; 		/* function name symbol index, iff l_lnno 0 */
+    uint32_t l_symndx;		/* function name symbol index, iff l_lnno 0 */
     uint32_t l_paddr;		/* (physical) address of line number	*/
   } l_addr;
   uint16_t l_lnno;	/* line number		*/
@@ -393,7 +391,7 @@ typedef struct
   uint32_t bsize;		/* uninitialized data "   "		*/
   uint32_t entry;		/* entry pt.				*/
   uint32_t text_start;	/* base of text used for this file */
-#ifndef __x86_64__
+#ifdef __i386__
   uint32_t data_start;	/* base of all data used for this file */
 #endif
 

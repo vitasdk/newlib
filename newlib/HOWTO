@@ -47,31 +47,26 @@ but these, however, should be carefully limited and be given alternates for
 when a non-printed manual is produced--such as when info pages are produced.
 For an example of this kind of usage, see libm/common/s_logb.c.
 
-     Please note that most files with documentation contain both an
-ANSI_SYNOPSIS and a TRAD_SYNOPSIS section.  The TRAD_SYNOPSIS section gets
-deleted (since at least 2000) by makedoc, so when working on files these
-can safely be deleted and if you're making a new file, there is no need
-to add the TRAD_SYNOPSIS section.
-
      If writing a new function that requires documentation, the required
-sections are FUNCTION, INDEX, ANSI_SYNOPSIS (or SYNOPSIS), DESCRIPTION, RETURNS,
-and PORTABILITY.  BUGS and SEEALSO should be added as appropriate.
+sections are FUNCTION, INDEX, SYNOPSIS, DESCRIPTION, RETURNS,
+and PORTABILITY.  BUGS, NOTES, SEEALSO and WARNINGS should be added as
+appropriate.
 
      Source files which contain documentation are processed into ".def"
 files with the extracted information.  These .def files are noted in the
-makefiles as either CHEWOUT_FILES in the libc makefiles or chobj in the libm
-makefiles.  These .def files need to be included into an appropriate .tex 
-file for inclusion in the manuals (one each for libc and libm).  Pay special 
-attention under libc, as the manual is arranged by header file name, but not
-all header files are represented by directories (e.g.  wcsftime.c is found 
-under libc/time, but goes under wchar.h in the manual.)
+makefiles as CHEWOUT_FILES.  These .def files need to be included into an
+appropriate .tex file for inclusion in the manuals (one each for libc and libm).
+Pay special attention under libc, as the manual is arranged by header file name,
+but not all header files are represented by directories (e.g.  wcsftime.c is
+found under libc/time, but goes under wchar.h in the manual.)
 
 In summary, to add new documentation:
 
 1.  Add properly-formatted comments to source file (e.g. src.c);
-2.  add "chewout" file to list in Makefile.am (CHEWOUT_FILES in libc or chobj in
-    libm) (e.g. src.def), re-generate Makefile.in;
-3.  add file to something.tex;
+2.  add "chewout" file to CHEWOUT_FILES list in Makefile.am (e.g. src.def),
+    re-generate Makefile.in;
+3.  @include that .def file in the appropriate .tex file, add texinfo menu
+    entries that reference the @node(s) in that .def file;
 4.  make ChangeLog entry and generate patch.
  
 EL/IX (ELIX_LEVEL_n, ELIX_n_SOURCES)

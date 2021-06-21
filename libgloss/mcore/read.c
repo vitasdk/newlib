@@ -14,16 +14,15 @@
  */
 #include "glue.h"
 
-extern char _DEFUN_VOID (inbyte);
+extern char inbyte (void);
 
 /*
  * read  -- read bytes from the serial port. Ignore fd, since
  *          we only have stdin.
  */
 int
-_DEFUN (_read, (fd, buf, nbytes),
-       int fd _AND
-       char *buf _AND
+_read (int fd,
+       char *buf,
        int nbytes)
 {
   int i = 0;

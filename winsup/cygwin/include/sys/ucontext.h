@@ -1,7 +1,5 @@
 /* ucontext.h
 
-   Copyright 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -15,7 +13,7 @@ details. */
 
 typedef struct __mcontext mcontext_t;
 
-typedef __attribute__ ((aligned (16))) struct __ucontext {
+typedef __attribute__ ((__aligned__ (16))) struct __ucontext {
 	mcontext_t	uc_mcontext;
 	struct __ucontext *uc_link;
 	sigset_t	uc_sigmask;

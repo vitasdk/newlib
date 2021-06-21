@@ -1,8 +1,5 @@
 /* ntea.cc: code for manipulating Extended Attributes
 
-   Copyright 1997, 1998, 2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2014 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -24,15 +21,15 @@ details. */
 #define MAX_EA_NAME_LEN    256
 #define MAX_EA_VALUE_LEN 65536
 
-/* At least one maximum sized entry fits. 
+/* At least one maximum sized entry fits.
    CV 2014-04-04: NtQueryEaFile function chokes on buffers bigger than 64K
 		  with STATUS_INVALID_PARAMETER if the handle points to a file
 		  on a remote share, at least on Windows 7 and later.
 		  In theory the buffer should have a size of
-		  
+
 		    sizeof (FILE_FULL_EA_INFORMATION) + MAX_EA_NAME_LEN
 		    + MAX_EA_VALUE_LEN
-		  
+
 		  (65804 bytes), but we're opting for simplicity here, and
 		  a 64K buffer has the advantage that we can use a tmp_pathbuf
 		  buffer, rather than having to alloca 64K from stack. */
@@ -429,6 +426,11 @@ fgetxattr (int fd, const char *name, void *value, size_t size)
   cygheap_fdget cfd (fd);
   if (cfd < 0)
     res = -1;
+  else if (cfd->get_flags () & O_PATH)
+    {
+      set_errno (EBADF);
+      res = -1;
+    }
   else
     res = cfd->fgetxattr (name, value, size);
   return res;
@@ -456,6 +458,11 @@ flistxattr (int fd, char *list, size_t size)
   cygheap_fdget cfd (fd);
   if (cfd < 0)
     res = -1;
+  else if (cfd->get_flags () & O_PATH)
+    {
+      set_errno (EBADF);
+      res = -1;
+    }
   else
     res = cfd->fgetxattr (NULL, list, size);
   return res;
@@ -526,6 +533,11 @@ fsetxattr (int fd, const char *name, const void *value, size_t size, int flags)
   cygheap_fdget cfd (fd);
   if (cfd < 0)
     res = -1;
+  else if (cfd->get_flags () & O_PATH)
+    {
+      set_errno (EBADF);
+      res = -1;
+    }
   else
     res = cfd->fsetxattr (name, value, size, flags);
   return res;
@@ -553,6 +565,11 @@ fremovexattr (int fd, const char *name)
   cygheap_fdget cfd (fd);
   if (cfd < 0)
     res = -1;
+  else if (cfd->get_flags () & O_PATH)
+    {
+      set_errno (EBADF);
+      res = -1;
+    }
   else
     res = cfd->fsetxattr (name, NULL, 0, 0);
   return res;

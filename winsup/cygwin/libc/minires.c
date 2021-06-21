@@ -1,7 +1,5 @@
 /* minires.c.  Stub synchronous resolver for Cygwin.
 
-   Copyright 2006, 2008, 2009, 2010, 2011 Red Hat, Inc.
-
    Written by Pierre A. Humblet <Pierre.Humblet@ieee.org>
 
 This file is part of Cygwin.
@@ -375,7 +373,7 @@ static int get_tcp(struct sockaddr_in *CliAddr,
 {
   int fd, res = -1;
   unsigned short ans_length;
-  union {short len; u_char buf[sizeof(short)];} len_buf;
+  union {short len; u_int8_t buf[sizeof(short)];} len_buf;
 
   DPRINTF(debug, "retrying with TCP\n");
 
@@ -694,7 +692,7 @@ int res_mkquery (int op, const char * dnameptr, int qclass, int qtype,
 int res_nquery( res_state statp, const char * DomName, int Class, int Type,
 		unsigned char * AnsPtr, int AnsLength)
 {
-  u_char packet[PACKETSZ];
+  u_int8_t packet[PACKETSZ];
   int len;
 
   DPRINTF(statp->options & RES_DEBUG, "query \"%s\" type %d\n", DomName, Type);
@@ -880,12 +878,12 @@ expand_fail:
  preserve the letter cases.
 
  *****************************************************************/
-int dn_comp(const char * exp_dn, u_char * comp_dn, int length,
-	    u_char ** dnptrs, u_char ** lastdnptr)
+int dn_comp(const char * exp_dn, unsigned char * comp_dn, int length,
+	    unsigned char ** dnptrs, unsigned char ** lastdnptr)
 {
-  u_char *cptr = comp_dn, *dptr, *lptr, *rptr;
+  unsigned char *cptr = comp_dn, *dptr, *lptr, *rptr;
   unsigned int i, len;
-  u_char * const eptr = comp_dn + length - 1; /* Last valid */
+  unsigned char * const eptr = comp_dn + length - 1; /* Last valid */
 
   errno = EINVAL;
 
@@ -904,7 +902,7 @@ int dn_comp(const char * exp_dn, u_char * comp_dn, int length,
 	dptr = dnptrs[i];
 	if (dptr >= comp_dn) /* Handle name.name */
 	  continue;
-	rptr = (u_char *) exp_dn;
+	rptr = (unsigned char *) exp_dn;
 	len = *dptr++;
 	while (1) {
 	  do {
@@ -941,12 +939,12 @@ int dn_comp(const char * exp_dn, u_char * comp_dn, int length,
     }
     /* Write label */
     lptr = cptr++; /* Length byte */
-    rptr = (u_char *) exp_dn;
+    rptr = (unsigned char *) exp_dn;
     do {
       if (cptr <= eptr)
 	*cptr++ = *rptr;
     } while ((*++rptr != '.') && (*rptr != 0));
-    len = rptr - (u_char *) exp_dn;
+    len = rptr - (unsigned char *) exp_dn;
     if (len > MAXLABEL)
       return -1;
     *lptr = len;

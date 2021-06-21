@@ -3,8 +3,6 @@
    This wraps Cygwin configuration setting which were in newlib's
    sys/config.h before.  This way we can manaage our configuration
    setting without bothering newlib.
-
-   Copyright 2003, 2007, 2008, 2009, 2010, 2012, 2013, 2014 Red Hat, Inc.
    Written by C. Vinschen.
 
 This file is part of Cygwin.
@@ -37,24 +35,24 @@ extern "C" {
    compute these offsets already exists for the sake of gendef so
    we might as well just use it here.  */
 
-#ifdef _COMPILING_NEWLIB
+#if defined (_COMPILING_NEWLIB) || defined (__INSIDE_CYGWIN__)
 #ifdef __x86_64__
 #include "../tlsoffsets64.h"
-/* We would like to use just "%gs:8", but on x86_64 gcc uses pc-relative
-   addressing and translates "gs:8" into the wrong addressing mode. */
-static inline char *___getreent (void)
-{
-  register char *ret;
-  __asm __volatile__ ("movq %%gs:8,%0" : "=r" (ret));
-  return ret + tls_local_clib;
-}
-#define __getreent() ((struct _reent *) ___getreent())
 #else
 #include "../tlsoffsets.h"
-extern char *_tlsbase __asm__ ("%fs:4");
-#define __getreent() (struct _reent *)(_tlsbase + tls_local_clib)
 #endif
-#endif  /* _COMPILING_NEWLIB */
+__attribute__((__gnu_inline__))
+extern inline struct _reent *__getreent (void)
+{
+  register char *ret;
+#ifdef __x86_64__
+  __asm __volatile__ ("movq %%gs:8,%0" : "=r" (ret));
+#else
+  __asm __volatile__ ("movl %%fs:4,%0" : "=r" (ret));
+#endif
+  return (struct _reent *) (ret + tls_local_clib);
+}
+#endif /* _COMPILING_NEWLIB || __INSIDE_CYGWIN__ */
 
 #ifdef __x86_64__
 # define __SYMBOL_PREFIX
@@ -81,6 +79,7 @@ extern char *_tlsbase __asm__ ("%fs:4");
 #define _STDIO_BSD_SEMANTICS 1
 #define __TM_GMTOFF tm_gmtoff
 #define __TM_ZONE   tm_zone
+#define _USE_LONG_TIME_T 1
 
 #if defined(__INSIDE_CYGWIN__) || defined(_COMPILING_NEWLIB)
 #define __EXPORT __declspec(dllexport)

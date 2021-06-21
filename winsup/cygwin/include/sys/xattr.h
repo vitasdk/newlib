@@ -1,7 +1,5 @@
 /* sys/xattr.h
 
-   Copyright 2011 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -13,6 +11,7 @@ details. */
 #ifndef _SYS_XATTR_H
 #define _SYS_XATTR_H
 
+#include <sys/types.h>
 #include <attr/xattr.h>
 
 #endif /* _SYS_XATTR_H */

@@ -49,7 +49,7 @@ __FBSDID("$FreeBSD: /usr/local/www/cvsroot/FreeBSD/src/sys/kern/sysv_msg.c,v 1.5
 #endif /* __CYGWIN__ */
 
 #ifdef MSG_DEBUG
-#define DPRINTF(a)	debug_printf a
+#define DPRINTF(a)	debug a
 #else
 #define DPRINTF(a)
 #endif
@@ -733,7 +733,8 @@ msgsnd(struct thread *td, struct msgsnd_args *uap)
 			if (error != 0) {
 				DPRINTF(("msgsnd:  interrupted system call\n"));
 #ifdef __CYGWIN__
-			  if (error != EIDRM)
+			  if (error == EIDRM)
+                              goto done2;
 #endif /* __CYGWIN__ */
 				error = EINTR;
 				goto done2;
@@ -1089,7 +1090,8 @@ msgrcv(struct thread *td, struct msgrcv_args *uap)
 		if (error != 0) {
 			DPRINTF(("msgrcv:  interrupted system call\n"));
 #ifdef __CYGWIN__
-		    if (error != EIDRM)
+		    if (error == EIDRM)
+                        goto done2;
 #endif /* __CYGWIN__ */
 			error = EINTR;
 			goto done2;

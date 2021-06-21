@@ -1,8 +1,5 @@
 /* fhandler_netdrive.cc: fhandler for // and //MACHINE handling
 
-   Copyright 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014
-   Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -148,8 +145,6 @@ create_thread_and_wait (int what, PVOID in, PVOID out, DWORD outsize,
   return ndi.ret;
 }
 
-/* Returns 0 if path doesn't exist, >0 if path is a directory,
-   -1 if path is a file, -2 if it's a symlink.  */
 virtual_ftype_t
 fhandler_netdrive::exists ()
 {
@@ -251,7 +246,7 @@ fhandler_netdrive::readdir (DIR *dir, dirent *de)
       if (strlen (get_name ()) == 2)
 	{
 	  UNICODE_STRING ss, ds;
-	  
+
 	  tp.u_get (&ds);
 	  RtlInitUnicodeString (&ss, bs);
 	  RtlDowncaseUnicodeString (&ds, &ss, FALSE);

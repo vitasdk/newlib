@@ -6,18 +6,10 @@
 FUNCTION
         <<cosh>>, <<coshf>>---hyperbolic cosine
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <math.h>
         double cosh(double <[x]>);
-        float coshf(float <[x]>)
-
-TRAD_SYNOPSIS
-        #include <math.h>
-        double cosh(<[x]>)
-        double <[x]>;
-
-        float coshf(<[x]>)
-        float <[x]>;
+        float coshf(float <[x]>);
 
 DESCRIPTION
 
@@ -38,9 +30,6 @@ RETURNS
         The computed value is returned.  When the correct value would create
         an overflow,  <<cosh>> returns the value <<HUGE_VAL>> with the
         appropriate sign, and the global value <<errno>> is set to <<ERANGE>>.
-
-        You can modify error handling for these functions using the
-        function <<matherr>>.
 
 PORTABILITY
         <<cosh>> is ANSI.
@@ -71,8 +60,7 @@ QUICKREF
 #ifndef _DOUBLE_IS_32BITS
 
 double
-_DEFUN (cosh, (double),
-        double x)
+cosh (double x)
 {
   return (sineh (x, 1));
 }

@@ -29,13 +29,17 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __CYGWIN__
+#include "winsup.h"
+#endif
+
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
 __RCSID("$NetBSD: strptime.c,v 1.28 2008/04/28 20:23:01 martin Exp $");
 #endif
 
 #ifdef __CYGWIN__
-#include "winsup.h"
+#include "../locale/setlocale.h"
 #else
 #include "namespace.h"
 #include <sys/localedef.h>
@@ -46,7 +50,6 @@ __RCSID("$NetBSD: strptime.c,v 1.28 2008/04/28 20:23:01 martin Exp $");
 #include <string.h>
 #include <time.h>
 #include <tzfile.h>
-#include "../locale/timelocal.h"
 
 #ifdef __TM_GMTOFF
 # define TM_GMTOFF __TM_GMTOFF
@@ -65,7 +68,7 @@ __weak_alias(strptime,_strptime)
 #define ALT_O			0x02
 #define	LEGAL_ALT(x)		{ if (alt_format & ~(x)) return NULL; }
 
-static _CONST int _DAYS_BEFORE_MONTH[12] =
+static const int _DAYS_BEFORE_MONTH[12] =
 {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
 
 #define SET_MDAY 1
@@ -102,7 +105,7 @@ free_era_info (era_info_t *era_info)
 }
 
 static era_info_t *
-get_era_info (const char *era)
+get_era_info (const char *era, locale_t locale)
 {
   char *c;
   era_info_t *ei = NULL;
@@ -122,14 +125,14 @@ get_era_info (const char *era)
       ei[cur].num = 1;
       ei[cur].dir = (*era == '+') ? 1 : -1;
       era += 2;
-      ei[cur].offset = strtol (era, &c, 10);
+      ei[cur].offset = strtol_l (era, &c, 10, locale);
       era = c + 1;
-      ei[cur].start.tm_year = strtol (era, &c, 10);
+      ei[cur].start.tm_year = strtol_l (era, &c, 10, locale);
       /* Adjust offset for negative gregorian dates. */
       if (ei[cur].start.tm_year < 0)
 	++ei[cur].start.tm_year;
-      ei[cur].start.tm_mon = strtol (c + 1, &c, 10);
-      ei[cur].start.tm_mday = strtol (c + 1, &c, 10);
+      ei[cur].start.tm_mon = strtol_l (c + 1, &c, 10, locale);
+      ei[cur].start.tm_mday = strtol_l (c + 1, &c, 10, locale);
       ei[cur].start.tm_hour = ei[cur].start.tm_min = ei[cur].start.tm_sec = 0;
       era = c + 1;
       if (era[0] == '-' && era[1] == '*')
@@ -151,12 +154,12 @@ get_era_info (const char *era)
 	}
       else
 	{
-	  ei[cur].end.tm_year = strtol (era, &c, 10);
+	  ei[cur].end.tm_year = strtol_l (era, &c, 10, locale);
 	  /* Adjust offset for negative gregorian dates. */
 	  if (ei[cur].end.tm_year < 0)
 	    ++ei[cur].end.tm_year;
-	  ei[cur].end.tm_mon = strtol (c + 1, &c, 10);
-	  ei[cur].end.tm_mday = strtol (c + 1, &c, 10);
+	  ei[cur].end.tm_mon = strtol_l (c + 1, &c, 10, locale);
+	  ei[cur].end.tm_mday = strtol_l (c + 1, &c, 10, locale);
 	  ei[cur].end.tm_mday = 31;
 	  ei[cur].end.tm_hour = 23;
 	  ei[cur].end.tm_min = ei[cur].end.tm_sec = 59;
@@ -301,14 +304,17 @@ first_day (int year)
 /* This simplifies the calls to conv_num enormously. */
 #define ALT_DIGITS	((alt_format & ALT_O) ? *alt_digits : NULL)
 
-static const u_char *conv_num(const unsigned char *, int *, uint, uint,
-			      alt_digits_t *);
-static const u_char *find_string(const u_char *, int *, const char * const *,
-	const char * const *, int);
+static const unsigned char *conv_num(const unsigned char *, int *, uint, uint,
+				     alt_digits_t *);
+static const unsigned char *find_string(const unsigned char *, int *,
+					const char * const *,
+					const char * const *, int,
+					locale_t);
 
 static char *
 __strptime(const char *buf, const char *fmt, struct tm *tm,
-	   era_info_t **era_info, alt_digits_t **alt_digits)
+	   era_info_t **era_info, alt_digits_t **alt_digits,
+	   locale_t locale)
 {
 	unsigned char c;
 	const unsigned char *bp;
@@ -321,8 +327,8 @@ __strptime(const char *buf, const char *fmt, struct tm *tm,
 	uint ulim;
 	int ymd = 0;
 
-	bp = (const u_char *)buf;
-	struct lc_time_T *_CurrentTimeLocale = __get_current_time_locale ();
+	bp = (const unsigned char *)buf;
+	const struct lc_time_T *_CurrentTimeLocale = __get_time_locale (locale);
 
 	while (bp != NULL && (c = *fmt++) != '\0') {
 		/* Clear `alternate' modifier prior to new conversion. */
@@ -332,8 +338,8 @@ __strptime(const char *buf, const char *fmt, struct tm *tm,
 		i = 0;
 
 		/* Eat up white-space. */
-		if (isspace(c)) {
-			while (isspace(*bp))
+		if (isspace_l(c, locale)) {
+			while (isspace_l(*bp, locale))
 				bp++;
 			continue;
 		}
@@ -358,7 +364,8 @@ literal:
 			LEGAL_ALT(0);
 			alt_format |= ALT_E;
 			if (!*era_info && *_CurrentTimeLocale->era)
-			  *era_info = get_era_info (_CurrentTimeLocale->era);
+			  *era_info = get_era_info (_CurrentTimeLocale->era,
+						    locale);
 			goto again;
 
 		case 'O':	/* "%O?" alternative conversion modifier. */
@@ -383,7 +390,7 @@ literal:
 			LEGAL_ALT(0);
 			{
 			  char *end;
-			  width = strtoul (fmt - 1, &end, 10);
+			  width = strtoul_l (fmt - 1, &end, 10, locale);
 			  fmt = (const char *) end;
 			  goto again;
 			}
@@ -406,12 +413,15 @@ literal:
 		case 'F':	/* The date as "%Y-%m-%d". */
 			{
 			  LEGAL_ALT(0);
-			  ymd |= SET_YMD;
 			  char *tmp = __strptime ((const char *) bp, "%Y-%m-%d",
-						  tm, era_info, alt_digits);
-			  if (tmp && (uint) (tmp - (char *) bp) > width)
+						  tm, era_info, alt_digits,
+						  locale);
+			  /* width max chars converted, default 10, < 6 => 6 */
+			  if (tmp && (char *) bp +
+				(!width ? 10 : width < 6 ? 6 : width) < tmp)
 			    return NULL;
 			  bp = (const unsigned char *) tmp;
+			  ymd |= SET_YMD;
 			  continue;
 			}
 
@@ -442,9 +452,9 @@ literal:
 			LEGAL_ALT(ALT_E);
 			ymd |= SET_YMD;
 		    recurse:
-			bp = (const u_char *)__strptime((const char *)bp,
-							new_fmt, tm,
-							era_info, alt_digits);
+			bp = (const unsigned char *)
+			     __strptime((const char *)bp, new_fmt, tm,
+					era_info, alt_digits, locale);
 			continue;
 
 		/*
@@ -453,7 +463,7 @@ literal:
 		case 'A':	/* The day of week, using the locale's form. */
 		case 'a':
 			bp = find_string(bp, &tm->tm_wday, _ctloc(weekday),
-					_ctloc(wday), 7);
+					_ctloc(wday), 7, locale);
 			LEGAL_ALT(0);
 			ymd |= SET_WDAY;
 			continue;
@@ -462,7 +472,7 @@ literal:
 		case 'b':
 		case 'h':
 			bp = find_string(bp, &tm->tm_mon, _ctloc(month),
-					_ctloc(mon), 12);
+					_ctloc(mon), 12, locale);
 			LEGAL_ALT(0);
 			ymd |= SET_WDAY;
 			continue;
@@ -552,7 +562,8 @@ literal:
 			continue;
 
 		case 'p':	/* The locale's equivalent of AM/PM. */
-			bp = find_string(bp, &i, _ctloc(am_pm), NULL, 2);
+			bp = find_string(bp, &i, _ctloc(am_pm), NULL, 2,
+					 locale);
 			if (tm->tm_hour > 11)
 				return NULL;
 			tm->tm_hour += i * 12;
@@ -563,6 +574,26 @@ literal:
 			LEGAL_ALT(ALT_O);
 			bp = conv_num(bp, &tm->tm_sec, 0, 61, ALT_DIGITS);
 			continue;
+
+		case 's' :	/* The seconds since Unix epoch - GNU extension */
+		    {
+			long long sec;
+			time_t t;
+			char *end;
+			save_errno save;
+
+			LEGAL_ALT(0);
+			sec = strtoll_l ((char *)bp, &end, 10, locale);
+			t = sec;
+			if (end == (char *)bp
+			    || errno != 0
+			    || t != sec
+			    || localtime_r (&t, tm) != tm)
+			    return NULL;
+			bp = (const unsigned char *)end;
+			ymd |= SET_YDAY | SET_WDAY | SET_YMD;
+			break;
+		    }
 
 		case 'U':	/* The week of year, beginning on sunday. */
 		case 'W':	/* The week of year, beginning on monday. */
@@ -602,7 +633,7 @@ literal:
 				char *tmp = __strptime ((const char *) bp,
 							tmp_ei->era_Y,
 							tm, &tmp_ei,
-							alt_digits);
+							alt_digits, locale);
 				if (tmp)
 				  {
 				    bp = (const unsigned char *) tmp;
@@ -672,8 +703,8 @@ literal:
 				const unsigned char *ep;
 
 				ep = find_string(bp, &i,
-					       	 (const char * const *)tzname,
-					       	  NULL, 2);
+						 (const char * const *)tzname,
+						  NULL, 2, locale);
 				if (ep != NULL) {
 					tm->tm_isdst = i;
 #ifdef TM_GMTOFF
@@ -694,7 +725,7 @@ literal:
 		 */
 		case 'n':	/* Any kind of white-space. */
 		case 't':
-			while (isspace(*bp))
+			while (isspace_l(*bp, locale))
 				bp++;
 			LEGAL_ALT(0);
 			continue;
@@ -719,7 +750,7 @@ literal:
 	    /* Check if year falls into the era.  If not, it's an
 	       invalid combination of era and offset. */
 	    if (era->start.tm_year > tm->tm_year
-	    	|| era->end.tm_year < tm->tm_year)
+		|| era->end.tm_year < tm->tm_year)
 	      return NULL;
 	    tm->tm_year -= TM_YEAR_BASE;
 	  }
@@ -774,12 +805,12 @@ literal:
 }
 
 char *
-strptime (const char *__restrict buf, const char *__restrict fmt,
-	  struct tm *__restrict tm)
+strptime_l (const char *__restrict buf, const char *__restrict fmt,
+	    struct tm *__restrict tm, locale_t locale)
 {
   era_info_t *era_info = NULL;
   alt_digits_t *alt_digits = NULL;
-  char *ret = __strptime (buf, fmt, tm, &era_info, &alt_digits);
+  char *ret = __strptime (buf, fmt, tm, &era_info, &alt_digits, locale);
   if (era_info)
     free_era_info (era_info);
   if (alt_digits)
@@ -787,7 +818,22 @@ strptime (const char *__restrict buf, const char *__restrict fmt,
   return ret;
 }
 
-static const u_char *
+char *
+strptime (const char *__restrict buf, const char *__restrict fmt,
+	  struct tm *__restrict tm)
+{
+  era_info_t *era_info = NULL;
+  alt_digits_t *alt_digits = NULL;
+  char *ret = __strptime (buf, fmt, tm, &era_info, &alt_digits,
+			  __get_current_locale ());
+  if (era_info)
+    free_era_info (era_info);
+  if (alt_digits)
+    free_alt_digits (alt_digits);
+  return ret;
+}
+
+static const unsigned char *
 conv_num(const unsigned char *buf, int *dest, uint llim, uint ulim,
 	 alt_digits_t *alt_digits)
 {
@@ -820,9 +866,9 @@ conv_num(const unsigned char *buf, int *dest, uint llim, uint ulim,
 	return buf;
 }
 
-static const u_char *
-find_string(const u_char *bp, int *tgt, const char * const *n1,
-		const char * const *n2, int c)
+static const unsigned char *
+find_string(const unsigned char *bp, int *tgt, const char * const *n1,
+	    const char * const *n2, int c, locale_t locale)
 {
 	int i;
 	unsigned int len;
@@ -831,7 +877,8 @@ find_string(const u_char *bp, int *tgt, const char * const *n1,
 	for (; n1 != NULL; n1 = n2, n2 = NULL) {
 		for (i = 0; i < c; i++, n1++) {
 			len = strlen(*n1);
-			if (strncasecmp(*n1, (const char *)bp, len) == 0) {
+			if (strncasecmp_l(*n1, (const char *)bp, len,
+					  locale) == 0) {
 				*tgt = i;
 				return bp + len;
 			}

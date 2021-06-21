@@ -1,7 +1,5 @@
 /* pwdgrp.h
 
-   Copyright 2001, 2002, 2003, 2014, 2015 Red Hat inc.
-
    Stuff common to pwd and grp handling.
 
 This file is part of Cygwin.
@@ -103,6 +101,7 @@ class pwdgrp
   void *add_account_from_cygserver (cygpsid &sid);
   void *add_account_from_cygserver (const char *name);
   void *add_account_from_cygserver (uint32_t id);
+  bool construct_sid_from_name (cygsid &sid, wchar_t *name, wchar_t *sep);
   char *fetch_account_from_line (fetch_user_arg_t &arg, const char *line);
   char *fetch_account_from_file (fetch_user_arg_t &arg);
   char *fetch_account_from_windows (fetch_user_arg_t &arg,
@@ -133,7 +132,7 @@ public:
   struct passwd *add_user_from_windows (cygpsid &sid, cyg_ldap *pldap = NULL)
     { return (struct passwd *) add_account_from_windows (sid, pldap); }
   struct passwd *add_user_from_windows (const char *name,
-  					cyg_ldap* pldap = NULL)
+					cyg_ldap* pldap = NULL)
     { return (struct passwd *) add_account_from_windows (name, pldap); }
   struct passwd *add_user_from_windows (uint32_t id, cyg_ldap *pldap = NULL)
     { return (struct passwd *) add_account_from_windows (id, pldap); }
@@ -164,7 +163,7 @@ public:
   struct group *add_group_from_windows (uint32_t id, cyg_ldap *pldap = NULL)
     { return (struct group *) add_account_from_windows (id, pldap); }
   struct group *add_group_from_windows (fetch_acc_t &full_acc,
-  					cyg_ldap *pldap = NULL);
+					cyg_ldap *pldap = NULL);
   struct group *find_group (cygpsid &sid);
   struct group *find_group (const char *name);
   struct group *find_group (gid_t gid);

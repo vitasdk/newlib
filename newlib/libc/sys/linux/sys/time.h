@@ -14,11 +14,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -85,10 +81,10 @@
 
 #include <_ansi.h>
 
-int _EXFUN(gettimeofday, (struct timeval *__p, struct timezone *__z));
-int _EXFUN(settimeofday, (const struct timeval *, const struct timezone *));
-int _EXFUN(utimes, (const char *__path, const struct timeval __tvp[2]));
-int _EXFUN(getitimer, (int __which, struct itimerval *__value));
-int _EXFUN(setitimer, (int __which, const struct itimerval *__value,
-                                        struct itimerval *__ovalue));
+int gettimeofday (struct timeval *__p, struct timezone *__z);
+int settimeofday (const struct timeval *, const struct timezone *);
+int utimes (const char *__path, const struct timeval __tvp[2]);
+int getitimer (int __which, struct itimerval *__value);
+int setitimer (int __which, const struct itimerval *__value,
+                                        struct itimerval *__ovalue);
 #endif

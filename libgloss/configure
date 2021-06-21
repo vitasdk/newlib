@@ -666,6 +666,7 @@ CCAS
 CCASFLAGS'
 ac_subdirs_all='doc
 aarch64
+arc
 epiphany
 i386
 m32r
@@ -678,6 +679,7 @@ sparc_leon
 sparc
 wince
 mips
+riscv
 rs6000
 mn10200
 mn10300
@@ -688,6 +690,7 @@ crx
 d30v
 fr30
 frv
+ft32
 lm32
 mcore
 mep
@@ -707,6 +710,8 @@ spu
 tic6x
 iq2000
 or1k
+pru
+nios2
 libnosys'
 
 # Initialize some variables set by options.
@@ -2401,6 +2406,10 @@ case "${target}" in
 
 	config_testsuite=true
 	;;
+  arc*-*-*)
+	subdirs="$subdirs arc"
+
+	;;
   epiphany-*-*)
 	subdirs="$subdirs epiphany"
 
@@ -2450,6 +2459,10 @@ case "${target}" in
 	subdirs="$subdirs mips"
 
 	;;
+  riscv*-*-*)
+	subdirs="$subdirs riscv"
+
+	;;
   powerpc-*-*|powerpcle-*-*)
 	subdirs="$subdirs rs6000"
 
@@ -2488,6 +2501,10 @@ case "${target}" in
 	;;
   frv*-*-*)
 	subdirs="$subdirs frv"
+
+	;;
+  ft32*-*-*)
+	subdirs="$subdirs ft32"
 
 	;;
   lm32*-*-*)
@@ -2535,9 +2552,10 @@ case "${target}" in
 	subdirs="$subdirs m32c"
 
 	;;
-  msp430*-*-elf)
+  msp430-*-elf*)
 	subdirs="$subdirs msp430"
 
+	config_libnosys=false
 	;;
   rl78*-*-elf)
 	subdirs="$subdirs rl78"
@@ -2568,6 +2586,14 @@ case "${target}" in
 	;;
   or1k-*-* | or1knd-*-* )
 	subdirs="$subdirs or1k"
+
+	;;
+  pru-*-*)
+	subdirs="$subdirs pru"
+
+	;;
+  nios2-*-*)
+	subdirs="$subdirs nios2"
 
 	;;
 esac
@@ -3857,6 +3883,7 @@ cat >>$CONFIG_STATUS <<_ACEOF || ac_write_fail=1
 AMDEP_TRUE="$AMDEP_TRUE" ac_aux_dir="$ac_aux_dir"
 srcdir=${srcdir}
 target=${target}
+host=${host}
 with_multisubdir=${with_multisubdir}
 ac_configure_args="--enable-multilib ${ac_configure_args}"
 CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}

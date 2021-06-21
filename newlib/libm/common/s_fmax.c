@@ -5,13 +5,13 @@
  */
 /*
 FUNCTION
-<<fmax>>, <<fmaxf>>--maximum
+<<fmax>>, <<fmaxf>>---maximum
 INDEX
 	fmax
 INDEX
 	fmaxf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double fmax(double <[x]>, double <[y]>);
 	float fmaxf(float <[x]>, float <[y]>);

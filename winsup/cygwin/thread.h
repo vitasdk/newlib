@@ -1,7 +1,5 @@
+// -*- C++ -*-
 /* thread.h: Locking and threading module definitions
-
-   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009,
-   2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
 
 This file is part of Cygwin.
 
@@ -18,6 +16,9 @@ details. */
 
 /* resource.cc */
 extern size_t get_rlimit_stack (void);
+
+/* thread.cc */
+char *mythreadname (void);
 
 #include <pthread.h>
 #include <limits.h>
@@ -84,6 +85,8 @@ class pinfo;
 #define PTHREAD_RWLOCK_MAGIC PTHREAD_MAGIC+9
 #define PTHREAD_RWLOCKATTR_MAGIC PTHREAD_MAGIC+10
 #define PTHREAD_SPINLOCK_MAGIC PTHREAD_MAGIC+11
+#define PTHREAD_BARRIER_MAGIC PTHREAD_MAGIC+12
+#define PTHREAD_BARRIERATTR_MAGIC PTHREAD_MAGIC+13
 
 #define MUTEX_OWNER_ANONYMOUS ((pthread_t) -1)
 
@@ -240,6 +243,7 @@ public:
   void *stackaddr;
   size_t stacksize;
   size_t guardsize;
+  char *name;
 
   pthread_attr ();
   ~pthread_attr ();
@@ -266,7 +270,7 @@ public:
   static bool is_initializer_or_object (pthread_mutex_t const *);
   static bool is_initializer_or_bad_object (pthread_mutex_t const *);
 
-  int lock ();
+  int lock (PLARGE_INTEGER timeout = NULL);
   int trylock ();
   int unlock ();
   int destroy ();
@@ -371,7 +375,7 @@ public:
 
   /* API calls */
   static int cancel (pthread_t);
-  static int join (pthread_t * thread, void **return_val);
+  static int join (pthread_t * thread, void **return_val, PLARGE_INTEGER);
   static int detach (pthread_t * thread);
   static int create (pthread_t * thread, const pthread_attr_t * attr,
 			      void *(*start_routine) (void *), void *arg);
@@ -520,6 +524,38 @@ private:
   static fast_mutex cond_initialization_lock;
 };
 
+
+class pthread_barrierattr: public verifyable_object
+{
+public:
+  static bool is_good_object(pthread_barrierattr_t const *);
+  int shared;
+
+  pthread_barrierattr ();
+  ~pthread_barrierattr ();
+};
+
+
+class pthread_barrier: public verifyable_object
+{
+public:
+  static bool is_good_object(pthread_barrier_t const *);
+
+  pthread_mutex_t mtx; /* Mutex protecting everything below. */
+  pthread_cond_t cond; /* Conditional variable to wait on. */
+  unsigned cnt; /* Barrier count. Threads to wait for. */
+  uint64_t cyc; /* Cycle count. */
+  unsigned wt; /* Already waiting threads count. */
+
+  int init (const pthread_barrierattr_t *, unsigned);
+  int wait();
+  int destroy ();
+
+  pthread_barrier ();
+  ~pthread_barrier ();
+};
+
+
 class pthread_rwlockattr: public verifyable_object
 {
 public:
@@ -554,10 +590,10 @@ public:
   } *readers;
   fast_mutex readers_mx;
 
-  int rdlock ();
+  int rdlock (PLARGE_INTEGER timeout = NULL);
   int tryrdlock ();
 
-  int wrlock ();
+  int wrlock (PLARGE_INTEGER timeout = NULL);
   int trywrlock ();
 
   int unlock ();
@@ -660,11 +696,10 @@ public:
   }
 
 private:
-  int _wait ();
   void _post ();
   int _getvalue (int *sval);
   int _trywait ();
-  int _timedwait (const struct timespec *abstime);
+  int _wait (PLARGE_INTEGER timeout = NULL);
 
   void _fixup_before_fork ();
   void _fixup_after_fork ();

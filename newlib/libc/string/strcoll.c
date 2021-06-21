@@ -5,20 +5,17 @@ FUNCTION
 INDEX
 	strcoll
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <string.h>
 	int strcoll(const char *<[stra]>, const char * <[strb]>);
-
-TRAD_SYNOPSIS
-	#include <string.h>
-	int strcoll(<[stra]>, <[strb]>)
-	char *<[stra]>;
-	char *<[strb]>;
 
 DESCRIPTION
 	<<strcoll>> compares the string pointed to by <[stra]> to
 	the string pointed to by <[strb]>, using an interpretation
 	appropriate to the current <<LC_COLLATE>> state.
+
+	(NOT Cygwin:) The current implementation of <<strcoll>> simply
+	uses <<strcmp>> and does not support any language-specific sorting.
 
 RETURNS
 	If the first string is greater than the second string,
@@ -39,9 +36,8 @@ QUICKREF
 #include <string.h>
 
 int
-_DEFUN (strcoll, (a, b),
-	_CONST char *a _AND
-	_CONST char *b)
+strcoll (const char *a,
+	const char *b)
 
 {
   return strcmp (a, b);

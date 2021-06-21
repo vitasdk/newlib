@@ -12,9 +12,8 @@ extern int errno;
 #include "warning.h"
 
 int
-_DEFUN (_readlink, (path, buf, bufsize),
-        const char *path _AND
-        char *buf _AND
+_readlink (const char *path,
+        char *buf,
         size_t bufsize)
 {
   errno = ENOSYS;

@@ -3,11 +3,10 @@
 #include "local.h"
 
 size_t
-_DEFUN (_mbstowcs_r, (reent, pwcs, s, n, state),
-        struct _reent *r    _AND         
-        wchar_t       *__restrict pwcs _AND
-        const char    *__restrict s    _AND
-        size_t         n    _AND
+_mbstowcs_r (struct _reent *r,
+        wchar_t       *__restrict pwcs,
+        const char    *__restrict s,
+        size_t         n,
         mbstate_t     *state)
 {
   size_t ret = 0;
@@ -18,7 +17,7 @@ _DEFUN (_mbstowcs_r, (reent, pwcs, s, n, state),
     n = (size_t) 1; /* Value doesn't matter as long as it's not 0. */
   while (n > 0)
     {
-      bytes = __mbtowc (r, pwcs, t, MB_CUR_MAX, __locale_charset (), state);
+      bytes = __MBTOWC (r, pwcs, t, MB_CUR_MAX, state);
       if (bytes < 0)
 	{
 	  state->__count = 0;

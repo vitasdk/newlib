@@ -20,18 +20,10 @@ fmod
 INDEX
 fmodf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 #include <math.h>
-double fmod(double <[x]>, double <[y]>)
-float fmodf(float <[x]>, float <[y]>)
-
-TRAD_SYNOPSIS
-#include <math.h>
-double fmod(<[x]>, <[y]>)
-double (<[x]>, <[y]>);
-
-float fmodf(<[x]>, <[y]>)
-float (<[x]>, <[y]>);
+double fmod(double <[x]>, double <[y]>);
+float fmodf(float <[x]>, float <[y]>);
 
 DESCRIPTION
 The <<fmod>> and <<fmodf>> functions compute the floating-point
@@ -50,8 +42,6 @@ result has the same sign as <[x]> and magnitude less than the
 magnitude of <[y]>. 
 
 <<fmod(<[x]>,0)>> returns NaN, and sets <<errno>> to <<EDOM>>.
-
-You can modify error treatment for these functions using <<matherr>>.
 
 PORTABILITY
 <<fmod>> is ANSI C. <<fmodf>> is an extension.
@@ -77,28 +67,12 @@ PORTABILITY
 	return __ieee754_fmod(x,y);
 #else
 	double z;
-	struct exception exc;
 	z = __ieee754_fmod(x,y);
 	if(_LIB_VERSION == _IEEE_ ||isnan(y)||isnan(x)) return z;
 	if(y==0.0) {
-            /* fmod(x,0) */
-            exc.type = DOMAIN;
-            exc.name = "fmod";
-	    exc.arg1 = x;
-	    exc.arg2 = y;
-	    exc.err = 0;
-            if (_LIB_VERSION == _SVID_)
-               exc.retval = x;
-	    else
-	       exc.retval = 0.0/0.0;
-            if (_LIB_VERSION == _POSIX_)
-               errno = EDOM;
-            else if (!matherr(&exc)) {
-                  errno = EDOM;
-            }
-	    if (exc.err != 0)
-	       errno = exc.err;
-            return exc.retval; 
+	    /* fmod(x,0) */
+	    errno = EDOM;
+	    return 0.0/0.0;
 	} else
 	    return z;
 #endif

@@ -287,15 +287,22 @@ noinst_LIBRARIES = lib.a
 lib_a_SOURCES = $(GENERAL_SOURCES) $(ELIX_SOURCES)
 lib_a_CFLAGS = $(AM_CFLAGS)
 noinst_DATA = 
-CHEWOUT_FILES = ces.def
-SUFFIXES = .def
-CHEW = ../../../doc/makedoc -f $(srcdir)/../../../doc/doc.str
-TARGETDOC = ../tmp.texi
-CLEANFILES = $(CHEWOUT_FILES) *.ref
+
+#
+# documentation rules
+#
+SUFFIXES = .def .xml
+CHEW = ${top_builddir}/../doc/makedoc -f $(top_srcdir)/../doc/doc.str
+DOCBOOK_CHEW = ${top_srcdir}/../doc/makedocbook.py
+DOCBOOK_OUT_FILES = $(CHEWOUT_FILES:.def=.xml)
+DOCBOOK_CHAPTERS = $(CHAPTERS:.tex=.xml)
+CLEANFILES = $(CHEWOUT_FILES) $(DOCBOOK_OUT_FILES)
+CHEWOUT_FILES = 
+CHAPTERS = 
 all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .def .c .lo .o .obj
+.SUFFIXES: .def .xml .c .lo .o .obj
 $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am $(srcdir)/../../../Makefile.shared $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -600,11 +607,26 @@ objectlist.awk.in: $(noinst_LTLIBRARIES)
 	done
 
 .c.def:
-	$(CHEW) < $< > $*.def 2> $*.ref
-	touch stmp-def
+	$(CHEW) < $< > $*.def || ( rm $*.def && false )
+	@touch stmp-def
+
+TARGETDOC ?= ../tmp.texi
 
 doc: $(CHEWOUT_FILES)
-	cat $(srcdir)/ces.tex >> $(TARGETDOC)
+	for chapter in $(CHAPTERS) ; \
+	do \
+	  cat $(srcdir)/$$chapter >> $(TARGETDOC) ; \
+	done
+
+.c.xml:
+	$(DOCBOOK_CHEW) < $< > $*.xml || ( rm $*.xml && false )
+	@touch stmp-xml
+
+docbook: $(DOCBOOK_OUT_FILES)
+	for chapter in $(DOCBOOK_CHAPTERS) ; \
+	do \
+	  ${top_srcdir}/../doc/chapter-texi2docbook.py <$(srcdir)/$${chapter%.xml}.tex >../$$chapter ; \
+	done
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

@@ -1,43 +1,53 @@
 /*
 FUNCTION
-        <<strtod>>, <<strtof>>---string to double or float
+        <<strtod>>, <<strtof>>, <<strtold>>, <<strtod_l>>, <<strtof_l>>, <<strtold_l>>---string to double or float
 
 INDEX
 	strtod
-INDEX
-	_strtod_r
+
 INDEX
 	strtof
 
-ANSI_SYNOPSIS
+INDEX
+	strtold
+
+INDEX
+	strtod_l
+
+INDEX
+	strtof_l
+
+INDEX
+	strtold_l
+
+INDEX
+	_strtod_r
+
+SYNOPSIS
         #include <stdlib.h>
         double strtod(const char *restrict <[str]>, char **restrict <[tail]>);
         float strtof(const char *restrict <[str]>, char **restrict <[tail]>);
+        long double strtold(const char *restrict <[str]>,
+			    char **restrict <[tail]>);
+
+        #include <stdlib.h>
+        double strtod_l(const char *restrict <[str]>, char **restrict <[tail]>,
+			locale_t <[locale]>);
+        float strtof_l(const char *restrict <[str]>, char **restrict <[tail]>,
+		       locale_t <[locale]>);
+        long double strtold_l(const char *restrict <[str]>,
+			      char **restrict <[tail]>,
+			      locale_t <[locale]>);
 
         double _strtod_r(void *<[reent]>,
                          const char *restrict <[str]>, char **restrict <[tail]>);
 
-TRAD_SYNOPSIS
-        #include <stdlib.h>
-        double strtod(<[str]>,<[tail]>)
-        char *<[str]>;
-        char **<[tail]>;
-
-        float strtof(<[str]>,<[tail]>)
-        char *<[str]>;
-        char **<[tail]>;
-
-        double _strtod_r(<[reent]>,<[str]>,<[tail]>)
-	char *<[reent]>;
-        char *<[str]>;
-        char **<[tail]>;
-
 DESCRIPTION
-	The function <<strtod>> parses the character string <[str]>,
-	producing a substring which can be converted to a double
-	value.  The substring converted is the longest initial
-	subsequence of <[str]>, beginning with the first
-	non-whitespace character, that has one of these formats:
+	<<strtod>>, <<strtof>>, <<strtold>> parse the character string
+	<[str]>, producing a substring which can be converted to a double,
+	float, or long double value, respectively.  The substring converted
+	is the longest initial subsequence of <[str]>, beginning with the
+	first non-whitespace character, that has one of these formats:
 	.[+|-]<[digits]>[.[<[digits]>]][(e|E)[+|-]<[digits]>]
 	.[+|-].<[digits]>[(e|E)[+|-]<[digits]>]
 	.[+|-](i|I)(n|N)(f|F)[(i|I)(n|N)(i|I)(t|T)(y|Y)]
@@ -55,23 +65,33 @@ DESCRIPTION
 	(which will contain at least the terminating null character of
 	<[str]>) is stored in <<*<[tail]>>>.  If you want no
 	assignment to <<*<[tail]>>>, pass a null pointer as <[tail]>.
-	<<strtof>> is identical to <<strtod>> except for its return type.
 
 	This implementation returns the nearest machine number to the
 	input decimal string.  Ties are broken by using the IEEE
 	round-even rule.  However, <<strtof>> is currently subject to
 	double rounding errors.
 
+	<<strtod_l>>, <<strtof_l>>, <<strtold_l>> are like <<strtod>>,
+	<<strtof>>, <<strtold>> but perform the conversion based on the
+	locale specified by the locale object locale.  If <[locale]> is
+	LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is
+	undefined.
+
 	The alternate function <<_strtod_r>> is a reentrant version.
 	The extra argument <[reent]> is a pointer to a reentrancy structure.
 
 RETURNS
-	<<strtod>> returns the converted substring value, if any.  If
-	no conversion could be performed, 0 is returned.  If the
-	correct value is out of the range of representable values,
-	plus or minus <<HUGE_VAL>> is returned, and <<ERANGE>> is
-	stored in errno. If the correct value would cause underflow, 0
-	is returned and <<ERANGE>> is stored in errno.
+	These functions return the converted substring value, if any.  If
+	no conversion could be performed, 0 is returned.  If the correct
+	value is out of the range of representable values, plus or minus
+	<<HUGE_VAL>> (<<HUGE_VALF>>, <<HUGE_VALL>>) is returned, and
+	<<ERANGE>> is stored in errno. If the correct value would cause
+	underflow, 0 is returned and <<ERANGE>> is stored in errno.
+
+PORTABILITY
+<<strtod>> is ANSI.
+<<strtof>>, <<strtold>> are C99.
+<<strtod_l>>, <<strtof_l>>, <<strtold_l>> are GNU extensions.
 
 Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 <<lseek>>, <<read>>, <<sbrk>>, <<write>>.
@@ -110,13 +130,14 @@ THIS SOFTWARE.
 
 /* Original file gdtoa-strtod.c Modified 06-21-2006 by Jeff Johnston to work within newlib.  */
 
+#define _GNU_SOURCE
 #include <_ansi.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include "mprec.h"
 #include "gdtoa.h"
-#include "gd_qnan.h"
+#include "../locale/setlocale.h"
 
 /* #ifndef NO_FENV_H */
 /* #include <fenv.h> */
@@ -130,7 +151,7 @@ THIS SOFTWARE.
 #undef tinytens
 /* The factor of 2^106 in tinytens[4] helps us avoid setting the underflow */
 /* flag unnecessarily.  It leads to a song and dance at the end of strtod. */
-static _CONST double tinytens[] = { 1e-16, 1e-32,
+static const double tinytens[] = { 1e-16, 1e-32,
 #ifdef _DOUBLE_IS_32BITS
 				    0.0, 0.0, 0.0
 #else
@@ -150,10 +171,17 @@ static _CONST double tinytens[] = { 1e-16, 1e-32,
 #define Rounding Flt_Rounds
 #endif
 
+#ifdef IEEE_MC68k
+#define _0 0
+#define _1 1
+#else
+#define _0 1
+#define _1 0
+#endif
+
 #ifdef Avoid_Underflow /*{*/
  static double
-_DEFUN (sulp, (x, scale),
-       	U x _AND
+sulp (U x,
 	int scale)
 {
         U u;
@@ -175,10 +203,9 @@ _DEFUN (sulp, (x, scale),
 #ifndef NO_HEX_FP
 
 static void
-_DEFUN (ULtod, (L, bits, exp, k),
-	__ULong *L _AND
-	__ULong *bits _AND
-	Long exp _AND
+ULtod (__ULong *L,
+	__ULong *bits,
+	Long exp,
 	int k)
 {
 	switch(k & STRTOG_Retmask) {
@@ -212,39 +239,16 @@ _DEFUN (ULtod, (L, bits, exp, k),
 }
 #endif /* !NO_HEX_FP */
 
-#ifdef INFNAN_CHECK
-static int
-_DEFUN (match, (sp, t),
-	_CONST char **sp _AND
-	char *t)
-{
-	int c, d;
-	_CONST char *s = *sp;
-
-	while( (d = *t++) !=0) {
-		if ((c = *++s) >= 'A' && c <= 'Z')
-			c += 'a' - 'A';
-		if (c != d)
-			return 0;
-		}
-	*sp = s + 1;
-	return 1;
-}
-#endif /* INFNAN_CHECK */
-
-
 double
-_DEFUN (_strtod_r, (ptr, s00, se),
-	struct _reent *ptr _AND
-	_CONST char *__restrict s00 _AND
-	char **__restrict se)
+_strtod_l (struct _reent *ptr, const char *__restrict s00, char **__restrict se,
+	   locale_t loc)
 {
 #ifdef Avoid_Underflow
 	int scale;
 #endif
 	int bb2, bb5, bbe, bd2, bd5, bbbits, bs2, c, decpt, dsign,
 		 e, e1, esign, i, j, k, nd, nd0, nf, nz, nz0, sign;
-	_CONST char *s, *s0, *s1;
+	const char *s, *s0, *s1;
 	double aadj, adj;
 	U aadj1, rv, rv0;
 	Long L;
@@ -259,6 +263,8 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 #ifdef Honor_FLT_ROUNDS
 	int rounding;
 #endif
+	const char *decimal_point = __get_numeric_locale(loc)->decimal_point;
+	int dec_len = strlen (decimal_point);
 
 	delta = bs = bd = NULL;
 	sign = nz0 = nz = decpt = 0;
@@ -287,7 +293,7 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 	if (*s == '0') {
 #ifndef NO_HEX_FP
 		{
-		static _CONST FPI fpi = { 53, 1-1023-53+1, 2046-1023-53+1, 1, SI };
+		static const FPI fpi = { 53, 1-1023-53+1, 2046-1023-53+1, 1, SI };
 		Long exp;
 		__ULong bits[2];
 		switch(s[1]) {
@@ -307,7 +313,7 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 #else
 #define fpi1 fpi
 #endif
-			switch((i = gethex(ptr, &s, &fpi1, &exp, &bb, sign)) & STRTOG_Retmask) {
+			switch((i = gethex(ptr, &s, &fpi1, &exp, &bb, sign, loc)) & STRTOG_Retmask) {
 			  case STRTOG_NoNumber:
 				s = s00;
 				sign = 0;
@@ -338,11 +344,10 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 		else
 			z = 10*z + c - '0';
 	nd0 = nd;
-	if (strncmp (s, _localeconv_r (ptr)->decimal_point,
-		     strlen (_localeconv_r (ptr)->decimal_point)) == 0)
+	if (strncmp (s, decimal_point, dec_len) == 0)
 		{
 		decpt = 1;
-		c = *(s += strlen (_localeconv_r (ptr)->decimal_point));
+		c = *(s += dec_len);
 		if (!nd) {
 			for(; c == '0'; c = *++s)
 				nz++;
@@ -415,7 +420,7 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 #ifdef INFNAN_CHECK
 			/* Check for Nan and Infinity */
 			__ULong bits[2];
-			static _CONST FPI fpinan =	/* only 52 explicit bits */
+			static const FPI fpinan =	/* only 52 explicit bits */
 				{ 52, 1-1023-53+1, 2046-1023-53+1, 1, SI };
 			if (!decpt)
 			 switch(c) {
@@ -446,10 +451,7 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 						}
 					else {
 #endif
-						dword0(rv) = NAN_WORD0;
-#ifndef _DOUBLE_IS_32BITS
-						dword1(rv) = NAN_WORD1;
-#endif /*!_DOUBLE_IS_32BITS*/
+						dval(rv) = nan ("");
 #ifndef No_Hex_NaN
 						}
 #endif
@@ -1188,7 +1190,16 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 #endif
 		if (y == z) {
 			/* Can we stop now? */
+#ifndef _DOUBLE_IS_32BITS
+			/* If FE_INVALID floating point exceptions are
+			   enabled, a conversion to a 32 bit value is
+			   dangerous.  A positive double value can result
+			   in a negative 32 bit int, thus raising SIGFPE.
+			   To avoid this, always convert into 64 bit here. */
+			__int64_t L = (__int64_t)aadj;
+#else
 			L = (Long)aadj;
+#endif
 			aadj -= L;
 			/* The tolerances below are conservative. */
 			if (dsign || dword1(rv) || dword0(rv) & Bndry_mask) {
@@ -1251,24 +1262,55 @@ _DEFUN (_strtod_r, (ptr, s00, se),
 	return sign ? -dval(rv) : dval(rv);
 }
 
+double
+_strtod_r (struct _reent *ptr,
+	const char *__restrict s00,
+	char **__restrict se)
+{
+  return _strtod_l (ptr, s00, se, __get_current_locale ());
+}
+
 #ifndef _REENT_ONLY
 
 double
-_DEFUN (strtod, (s00, se),
-	_CONST char *__restrict s00 _AND char **__restrict se)
+strtod_l (const char *__restrict s00, char **__restrict se, locale_t loc)
 {
-  return _strtod_r (_REENT, s00, se);
+  return _strtod_l (_REENT, s00, se, loc);
+}
+
+double
+strtod (const char *__restrict s00, char **__restrict se)
+{
+  return _strtod_l (_REENT, s00, se, __get_current_locale ());
 }
 
 float
-_DEFUN (strtof, (s00, se),
-	_CONST char *__restrict s00 _AND
+strtof_l (const char *__restrict s00, char **__restrict se, locale_t loc)
+{
+  double val = _strtod_l (_REENT, s00, se, loc);
+  if (isnan (val))
+    return signbit (val) ? -nanf ("") : nanf ("");
+  float retval = (float) val;
+#ifndef NO_ERRNO
+  if (isinf (retval) && !isinf (val))
+    _REENT->_errno = ERANGE;
+#endif
+  return retval;
+}
+
+float
+strtof (const char *__restrict s00,
 	char **__restrict se)
 {
-  double retval = _strtod_r (_REENT, s00, se);
-  if (isnan (retval))
-    return nanf (NULL);
-  return (float)retval;
+  double val = _strtod_l (_REENT, s00, se, __get_current_locale ());
+  if (isnan (val))
+    return signbit (val) ? -nanf ("") : nanf ("");
+  float retval = (float) val;
+#ifndef NO_ERRNO
+  if (isinf (retval) && !isinf (val))
+    _REENT->_errno = ERANGE;
+#endif
+  return retval;
 }
 
 #endif

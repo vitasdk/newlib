@@ -7,19 +7,10 @@ INDEX
 INDEX
         _atoll_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
         #include <stdlib.h>
         long long atoll(const char *<[str]>);
         long long _atoll_r(struct _reent *<[ptr]>, const char *<[str]>);
-
-TRAD_SYNOPSIS
-        #include <stdlib.h>
-        long long atoll(<[str]>)
-        const char *<[str]>;
-
-        long long _atoll_r(<[ptr]>, <[str]>)
-	struct _reent *<[ptr]>;
-        const char *<[str]>;
 
 DESCRIPTION
 The function <<atoll>> converts the initial portion of the string 
@@ -52,11 +43,7 @@ No supporting OS subroutines are required.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -78,17 +65,15 @@ No supporting OS subroutines are required.
 
 #ifndef _REENT_ONLY
 long long
-_DEFUN(atoll, (str),
-       _CONST char *str)
+atoll (const char *str)
 {
 	return strtoll(str, (char **)NULL, 10);
 }
 #endif /* !_REENT_ONLY */
 
 long long
-_DEFUN(_atoll_r, (ptr, str),
-       struct _reent *ptr _AND
-       _CONST char *str)
+_atoll_r (struct _reent *ptr,
+       const char *str)
 {
 	return _strtoll_r(ptr, str, (char **)NULL, 10);
 }

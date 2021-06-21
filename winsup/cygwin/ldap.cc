@@ -1,7 +1,5 @@
 /* ldap.cc: Helper functions for ldap access to Active Directory.
 
-   Copyright 2014, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -9,6 +7,10 @@ Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
 
 #include "winsup.h"
+#include <lm.h>
+#include <dsgetdc.h>
+#include <iptypes.h>
+#include <sys/param.h>
 #include "ldap.h"
 #include "cygerrno.h"
 #include "security.h"
@@ -18,10 +20,7 @@ details. */
 #include "cygheap.h"
 #include "registry.h"
 #include "pinfo.h"
-#include "lm.h"
-#include "dsgetdc.h"
 #include "tls_pbuf.h"
-#include <sys/param.h>
 
 #define CYG_LDAP_ENUM_PAGESIZE	100	/* entries per page */
 
@@ -38,6 +37,7 @@ static const PCWSTR std_user_attr[] =
   L"objectSid",
   L"primaryGroupID",
   L"uidNumber",
+  L"profilePath",
   L"cygwinUnixUid",		/* TODO */
   /* windows scheme */
   L"displayName",
@@ -244,7 +244,7 @@ ULONG
 cyg_ldap::search_s (PWCHAR base, ULONG scope, PWCHAR filter, PWCHAR *attrs)
 {
   ULONG ret;
-  
+
   if ((ret = ldap_search_sW (lh, base, scope, filter, attrs, 0, &msg))
       != LDAP_SUCCESS)
     debug_printf ("ldap_search_sW(%W,%W) error 0x%02x", base, filter, ret);
@@ -281,7 +281,7 @@ cyg_ldap::next_page_s ()
 {
   ULONG total;
   ULONG ret;
-  
+
   do
     {
       ret = ldap_get_next_page_s (lh, srch_id, NULL, CYG_LDAP_ENUM_PAGESIZE,
@@ -339,7 +339,7 @@ cyg_ldap::open (PCWSTR domain)
   if (!(def_context = wcsdup (val[0])))
     {
       debug_printf ("wcsdup(%W, %W) %d", domain, rootdse_attr[0],
-      					 get_errno ());
+					 get_errno ());
       goto err;
     }
   ldap_value_freeW (val);
@@ -453,16 +453,15 @@ cyg_ldap::fetch_ad_account (PSID sid, bool group, PCWSTR domain)
 	 problems, we know what to do. */
       base = tp.w_get ();
       PWCHAR b = base;
-      for (PWCHAR dotp = (PWCHAR) domain; dotp && *dotp; domain = dotp)
+      for (PCWSTR dotp = domain; dotp && *dotp; domain = dotp)
 	{
 	  dotp = wcschr (domain, L'.');
-	  if (dotp)
-	    *dotp++ = L'\0';
 	  if (b > base)
 	    *b++ = L',';
 	  b = wcpcpy (b, L"DC=");
-	  b = wcpcpy (b, domain);
+	  b = dotp ? wcpncpy (b, domain, dotp++ - domain) : wcpcpy (b, domain);
 	}
+      debug_printf ("naming context <%W>", base);
     }
   else
     {

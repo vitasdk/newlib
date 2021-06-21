@@ -14,15 +14,9 @@ FUNCTION
 INDEX
 	on_exit
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
 	int on_exit (void (*<[function]>)(int, void *), void *<[arg]>);
-
-TRAD_SYNOPSIS
-	#include <stdlib.h>
-	int on_exit ((<[function]>, <[arg]>)
-	  void (*<[function]>)(int, void *);
-	  void *<[arg]>;
 
 DESCRIPTION
 You can use <<on_exit>> to enroll functions in a list of functions that
@@ -58,15 +52,22 @@ Supporting OS subroutines required: None
 #include <stdlib.h>
 #include "atexit.h"
 
+#ifdef _REENT_SMALL
+
+#include "on_exit_args.h"
+
+/* force linking of static instance of _on_exit_args */
+const void * const __on_exit_dummy = &__on_exit_args;
+
+#endif	/* def _REENT_SMALL */
+
 /*
  * Register a function to be performed at exit.
  */
 
 int
-_DEFUN (on_exit,
-	(fn, arg),
-	_VOID _EXFNPTR(fn, (int, _PTR)) _AND
-        _PTR arg)
+on_exit (void (*fn) (int, void *),
+        void *arg)
 {
   return __register_exitproc (__et_onexit, (void (*)(void)) fn, arg, NULL);
 }

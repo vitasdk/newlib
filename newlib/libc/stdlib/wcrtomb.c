@@ -7,10 +7,9 @@
 #include "local.h"
 
 size_t
-_DEFUN (_wcrtomb_r, (ptr, s, wc, ps),
-	struct _reent *ptr _AND
-	char *s _AND
-	wchar_t wc _AND
+_wcrtomb_r (struct _reent *ptr,
+	char *s,
+	wchar_t wc,
 	mbstate_t *ps)
 {
   int retval = 0;
@@ -25,9 +24,9 @@ _DEFUN (_wcrtomb_r, (ptr, s, wc, ps),
 #endif
 
   if (s == NULL)
-    retval = __wctomb (ptr, buf, L'\0', __locale_charset (), ps);
+    retval = __WCTOMB (ptr, buf, L'\0', ps);
   else
-    retval = __wctomb (ptr, s, wc, __locale_charset (), ps);
+    retval = __WCTOMB (ptr, s, wc, ps);
 
   if (retval == -1)
     {
@@ -41,9 +40,8 @@ _DEFUN (_wcrtomb_r, (ptr, s, wc, ps),
 
 #ifndef _REENT_ONLY
 size_t
-_DEFUN (wcrtomb, (s, wc, ps),
-	char *__restrict s _AND
-	wchar_t wc _AND
+wcrtomb (char *__restrict s,
+	wchar_t wc,
 	mbstate_t *__restrict ps)
 {
 #if defined(PREFER_SIZE_OVER_SPEED) || defined(__OPTIMIZE_SIZE__)
@@ -62,9 +60,9 @@ _DEFUN (wcrtomb, (s, wc, ps),
 #endif
 
   if (s == NULL)
-    retval = __wctomb (reent, buf, L'\0', __locale_charset (), ps);
+    retval = __WCTOMB (reent, buf, L'\0', ps);
   else
-    retval = __wctomb (reent, s, wc, __locale_charset (), ps);
+    retval = __WCTOMB (reent, s, wc, ps);
 
   if (retval == -1)
     {

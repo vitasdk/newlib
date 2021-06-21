@@ -1,15 +1,12 @@
 /* cygcheck.cc
 
-   Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012, 2013, 2014, 2015 Red Hat, Inc.
-
    This file is part of Cygwin.
 
    This software is a copyrighted work licensed under the terms of the
    Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
    details. */
 
-#define _WIN32_WINNT 0x0602
+#define _WIN32_WINNT 0x0a00
 #define cygwin_internal cygwin_internal_dontuse
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +14,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <io.h>
 #include <windows.h>
 #include <wininet.h>
@@ -27,7 +25,6 @@
 #include "../cygwin/include/sys/cygwin.h"
 #define _NOMNTENT_MACROS
 #include "../cygwin/include/mntent.h"
-#include "../cygwin/cygprops.h"
 #undef cygwin_internal
 #include "loadlib.h"
 
@@ -50,7 +47,6 @@ int find_package = 0;
 int list_package = 0;
 int grep_packages = 0;
 int del_orphaned_reg = 0;
-int unique_object_name_opt = 0;
 
 static char emptystr[] = "";
 
@@ -103,28 +99,43 @@ static common_apps[] = {
   {"awk", 0},
   {"bash", 0},
   {"cat", 0},
+  {"certutil", 0},
+  {"clinfo", 0},
+  {"comp", 0},
+  {"convert", 0},
   {"cp", 0},
   {"cpp", 1},
   {"crontab", 0},
+  {"curl", 0},
+  {"expand", 0},
   {"find", 0},
+  {"ftp", 0},
   {"gcc", 0},
   {"gdb", 0},
   {"grep", 0},
+  {"hostname", 0},
   {"kill", 0},
+  {"klist", 0},
   {"ld", 0},
   {"ls", 0},
   {"make", 0},
   {"mv", 0},
+  {"nslookup", 0},
   {"patch", 0},
   {"perl", 0},
+  {"replace", 0},
   {"rm", 0},
   {"sed", 0},
-  {"ssh", 0},
   {"sh", 0},
+  {"shutdown", 0},
+  {"sort", 0},
+  {"ssh", 0},
   {"tar", 0},
   {"test", 0},
+  {"timeout", 0},
   {"vi", 0},
   {"vim", 0},
+  {"whoami", 0},
   {0, 0}
 };
 
@@ -132,9 +143,6 @@ static common_apps[] = {
 enum
 {
   CO_DELETE_KEYS = 0x100,
-  CO_ENABLE_UON = 0x101,
-  CO_DISABLE_UON = 0x102,
-  CO_SHOW_UON = 0x103
 };
 
 static int num_paths, max_paths;
@@ -319,10 +327,7 @@ pathlike::check_existence (const char *fn, int showall, int verbose,
 			   char* first, const char *ext1, const char *ext2)
 {
   char file[4000];
-  strcpy (file, dir);
-  strcat (file, fn);
-  strcat (file, ext1);
-  strcat (file, ext2);
+  snprintf (file, sizeof file, "%s%s%s%s", dir, fn, ext1, ext2);
 
   wide_path wpath (file);
   if (GetFileAttributesW (wpath) != (DWORD) - 1)
@@ -358,7 +363,8 @@ find_on_path (const char *in_file, const char *ext, bool showall = false,
 {
   static char rv[4000];
 
-  /* Sort of a kludge but we've already tested this once, so don't try it again */
+  /* Sort of a kludge but we've already tested this once, so don't try it
+     again */
   if (in_file == rv)
     return in_file;
 
@@ -371,13 +377,15 @@ find_on_path (const char *in_file, const char *ext, bool showall = false,
   *rv = '\0';
   if (!in_file)
     {
-      display_error ("internal error find_on_path: NULL pointer for file", false, false);
+      display_error ("internal error find_on_path: NULL pointer for file",
+		     false, false);
       return 0;
     }
 
   if (!ext)
     {
-      display_error ("internal error find_on_path: NULL pointer for default_extension", false, false);
+      display_error ("internal error find_on_path: "
+		     "NULL pointer for default_extension", false, false);
       return 0;
     }
 
@@ -397,7 +405,8 @@ find_on_path (const char *in_file, const char *ext, bool showall = false,
 
   if (!file)
     {
-      display_error ("internal error find_on_path: cygpath conversion failed for %s\n", in_file);
+      display_error ("internal error find_on_path: "
+		     "cygpath conversion failed for %s\n", in_file);
       return 0;
     }
 
@@ -411,7 +420,8 @@ find_on_path (const char *in_file, const char *ext, bool showall = false,
 	pth->check_existence (file, showall, verbose, rv, ext);
 
 	if (checklinks)
-	  pth->check_existence (file, showall, verbose, rv, ext, LINK_EXTENSION);
+	  pth->check_existence (file, showall, verbose, rv, ext,
+				LINK_EXTENSION);
 
 	if (!*ext)
 	  continue;
@@ -803,12 +813,6 @@ track_down (const char *file, const char *suffix, int lvl)
   if (lvl)
     printf ("%*c", lvl, ' ');
 
-  if (!path)
-    {
-      display_error ("file not found - '%s'\n", file);
-      return false;
-    }
-
   printf ("%s", path);
 
   wide_path wpath (path);
@@ -1197,15 +1201,17 @@ dump_sysinfo_services ()
   int ret = fscanf (f, "cygrunsrv V%u.%u", &maj, &min);
   if (ferror (f) || feof (f) || ret == EOF || maj < 1 || min < 10)
     {
-      puts ("The version of cygrunsrv installed is too old to dump service info.\n");
+      puts ("The version of cygrunsrv installed is too old to dump "
+	    "service info.\n");
       return;
     }
-  fclose (f);
+  pclose (f);
 
   /* For verbose mode, just run cygrunsrv --list --verbose and copy output
      verbatim; otherwise run cygrunsrv --list and then cygrunsrv --query for
      each service.  */
-  snprintf (buf, sizeof (buf), (verbose ? "\"%s\" --list --verbose" : "\"%s\" --list"),
+  snprintf (buf, sizeof (buf),
+	    (verbose ? "\"%s\" --list --verbose" : "\"%s\" --list"),
 	    cygrunsrv);
   if ((f = popen (buf, "rt")) == NULL)
     {
@@ -1239,7 +1245,8 @@ dump_sysinfo_services ()
 	    snprintf (buf2, sizeof (buf2), "\"%s\" --query %s", cygrunsrv, srv);
 	    if ((f = popen (buf2, "rt")) == NULL)
 	      {
-		printf ("Failed to execute '%s', skipping services check.\n", buf2);
+		printf ("Failed to execute '%s', skipping services check.\n",
+			buf2);
 		return;
 	      }
 
@@ -1339,89 +1346,6 @@ memmem (char *haystack, size_t haystacklen,
       haystacklen--;
     }
   return NULL;
-}
-
-int
-handle_unique_object_name (int opt, char *path)
-{
-  HANDLE fh, fm;
-  void *haystack = NULL;
-
-  if (!path || !*path)
-    usage (stderr, 1);
-
-  DWORD access, share, protect, mapping;
-
-  if (opt == CO_SHOW_UON)
-    {
-      access = GENERIC_READ;
-      share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
-      protect = PAGE_READONLY;
-      mapping = FILE_MAP_READ;
-    }
-  else
-    {
-      access = GENERIC_READ | GENERIC_WRITE;
-      share = 0;
-      protect = PAGE_READWRITE;
-      mapping = FILE_MAP_WRITE;
-    }
-
-  fh = CreateFile (path, access, share, NULL, OPEN_EXISTING,
-		   FILE_FLAG_BACKUP_SEMANTICS, NULL);
-  if (fh == INVALID_HANDLE_VALUE)
-    {
-      DWORD err = GetLastError ();
-      switch (err)
-	{
-	case ERROR_SHARING_VIOLATION:
-	  display_error ("%s still used by other Cygwin processes.\n"
-			 "Please stop all of them and retry.", path);
-	  break;
-	case ERROR_ACCESS_DENIED:
-	  display_error (
-	    "Your permissions are not sufficient to change the file \"%s\"",
-	    path);
-	  break;
-	case ERROR_FILE_NOT_FOUND:
-	  display_error ("%s: No such file.", path);
-	  break;
-	default:
-	  display_error (path, true, false);
-	  break;
-	}
-      return 1;
-    }
-  if (!(fm = CreateFileMapping (fh, NULL, protect, 0, 0, NULL)))
-    display_error ("CreateFileMapping");
-  else if (!(haystack = MapViewOfFile (fm, mapping, 0, 0, 0)))
-    display_error ("MapViewOfFile");
-  else
-    {
-      size_t haystacklen = GetFileSize (fh, NULL);
-      cygwin_props_t *cygwin_props = (cygwin_props_t *)
-	       memmem ((char *) haystack, haystacklen,
-		       CYGWIN_PROPS_MAGIC, sizeof (CYGWIN_PROPS_MAGIC));
-      if (!cygwin_props)
-	display_error ("Can't find Cygwin properties in %s", path);
-      else
-	{
-	  if (opt != CO_SHOW_UON)
-	    cygwin_props->disable_key = opt - CO_ENABLE_UON;
-	  printf ("Unique object names are %s\n",
-		  cygwin_props->disable_key ? "disabled" : "enabled");
-	  UnmapViewOfFile (haystack);
-	  CloseHandle (fm);
-	  CloseHandle (fh);
-	  return 0;
-	}
-    }
-  if (haystack)
-    UnmapViewOfFile (haystack);
-  if (fm)
-    CloseHandle (fm);
-  CloseHandle (fh);
-  return 1;
 }
 
 extern "C" NTSTATUS NTAPI RtlGetVersion (PRTL_OSVERSIONINFOEXW);
@@ -1655,38 +1579,6 @@ dump_sysinfo ()
 	    {
 	    }
 	}
-      else if (osversion.dwMajorVersion == 5)
-	{
-	  /* cygcheck won't run on Windows 200 or earlier. */
-	  if (osversion.dwMinorVersion == 1)
-	    {
-	      strcpy (osname, "XP");
-	      if (GetSystemMetrics (SM_MEDIACENTER))
-		strcat (osname, " Media Center Edition");
-	      else if (GetSystemMetrics (SM_TABLETPC))
-		strcat (osname, " Tablet PC Edition");
-	      else if (GetSystemMetrics (SM_STARTER))
-		strcat (osname, " Starter Edition");
-	      else if (osversion.wSuiteMask & VER_SUITE_PERSONAL)
-		strcat (osname, " Home Edition");
-	      else
-		strcat (osname, " Professional");
-	    }
-	  else if (osversion.dwMinorVersion == 2)
-	    {
-	      strcpy (osname, "2003 Server");
-	      if (GetSystemMetrics (SM_SERVERR2))
-		strcat (osname, " R2");
-	      if (osversion.wSuiteMask & VER_SUITE_BLADE)
-		strcat (osname, " Web Edition");
-	      else if (osversion.wSuiteMask & VER_SUITE_DATACENTER)
-		strcat (osname, " Datacenter Edition");
-	      else if (osversion.wSuiteMask & VER_SUITE_ENTERPRISE)
-		strcat (osname, " Enterprise Edition");
-	      else if (osversion.wSuiteMask & VER_SUITE_COMPUTE_SERVER)
-		strcat (osname, " Compute Cluster Edition");
-	    }
-	}
       else
 	strcpy (osname, "NT");
       break;
@@ -1918,20 +1810,14 @@ dump_sysinfo ()
 	printf ("%7dMb %3d%% ", (int) capacity_mb, (int) percent_full);
       else
 	printf ("    N/A    N/A ");
-      printf ("%s %s %s %s %s %s  %s\n",
+      printf ("%s %s %s %s %s %s %s  %s\n",
 	      flags & FS_CASE_IS_PRESERVED ? "CP" : "  ",
 	      flags & FS_CASE_SENSITIVE ? "CS" : "  ",
 	      flags & FS_UNICODE_STORED_ON_DISK ? "UN" : "  ",
 	      flags & FS_PERSISTENT_ACLS ? "PA" : "  ",
 	      flags & FS_FILE_COMPRESSION ? "FC" : "  ",
 	      flags & FS_VOL_IS_COMPRESSED ? "VC" : "  ",
-#if 0
-	      flags & FILE_SUPPORTS_ENCRYPTION ? "EN" : "  ",
-	      flags & FILE_SUPPORTS_OBJECT_IDS ? "OI" : "  ",
-	      flags & FILE_SUPPORTS_REPARSE_POINTS ? "RP" : "  ",
-	      flags & FILE_SUPPORTS_SPARSE_FILES ? "SP" : "  ",
 	      flags & FILE_VOLUME_QUOTAS ? "QU" : "  ",
-#endif
 	      name);
     }
 
@@ -2135,12 +2021,19 @@ check_keys ()
   return 0;
 }
 
-/* RFC1738 says that these do not need to be escaped.  */
-static const char safe_chars[] = "$-_.+!*'(),";
+/* These do not need to be escaped in application/x-www-form-urlencoded */
+static const char safe_chars[] = "$-_.!*'(),";
 
 /* the URL to query.  */
 static const char base_url[] =
 	"http://cygwin.com/cgi-bin2/package-grep.cgi?text=1&grep=";
+
+#ifdef __x86_64__
+#define ARCH_STR  "&arch=x86_64"
+#else
+#define ARCH_STR  "&arch=x86"
+#endif
+static const char *ARCH_str = ARCH_STR;
 
 /* Queries Cygwin web site for packages containing files matching a regexp.
    Return value is 1 if there was a problem, otherwise 0.  */
@@ -2150,7 +2043,8 @@ package_grep (char *search)
   char buf[1024];
 
   /* construct the actual URL by escaping  */
-  char *url = (char *) alloca (sizeof (base_url) + strlen ("&arch=x86_64") + strlen (search) * 3);
+  char *url = (char *) alloca (sizeof (base_url) + strlen (ARCH_str)
+			       + strlen (search) * 3);
   strcpy (url, base_url);
 
   char *dest;
@@ -2168,11 +2062,7 @@ package_grep (char *search)
 	  dest += 2;
 	}
     }
-#ifdef __x86_64__
-  strcpy (dest, "&arch=x86_64");
-#else
-  strcpy (dest, "&arch=x86");
-#endif
+  strcpy (dest, ARCH_str);
 
   /* Connect to the net and open the URL.  */
   if (InternetAttemptConnect (0) != ERROR_SUCCESS)
@@ -2183,7 +2073,8 @@ package_grep (char *search)
 
   /* Initialize WinInet and attempt to fetch our URL.  */
   HINTERNET hi = NULL, hurl = NULL;
-  if (!(hi = InternetOpenA ("cygcheck", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0)))
+  if (!(hi = InternetOpenA ("cygcheck", INTERNET_OPEN_TYPE_PRECONFIG,
+			    NULL, NULL, 0)))
     return display_internet_error ("InternetOpen() failed", NULL);
 
   if (!(hurl = InternetOpenUrlA (hi, url, NULL, 0, 0, 0)))
@@ -2231,9 +2122,6 @@ Usage: cygcheck [-v] [-h] PROGRAM\n\
        cygcheck -l [PACKAGE]...\n\
        cygcheck -p REGEXP\n\
        cygcheck --delete-orphaned-installation-keys\n\
-       cygcheck --enable-unique-object-names Cygwin-DLL\n\
-       cygcheck --disable-unique-object-names Cygwin-DLL\n\
-       cygcheck --show-unique-object-names Cygwin-DLL\n\
        cygcheck -h\n\n\
 List system information, check installed packages, or query package database.\n\
 \n\
@@ -2255,15 +2143,6 @@ At least one command option or a PROGRAM is required, as shown above.\n\
 		       Delete installation keys of old, now unused\n\
 		       installations from the registry.  Requires the right\n\
 		       to change the registry.\n\
-  --enable-unique-object-names Cygwin-DLL\n\
-  --disable-unique-object-names Cygwin-DLL\n\
-  --show-unique-object-names Cygwin-DLL\n\
-		       Enable, disable, or show the setting of the\n\
-		       \"unique object names\" setting in the Cygwin DLL\n\
-		       given as argument to this option.  The DLL path must\n\
-		       be given as valid Windows(!) path.\n\
-		       See the users guide for more information.\n\
-		       If you don't know what this means, don't change it.\n\
   -v, --verbose        produce more verbose output\n\
   -h, --help           annotate output with explanatory comments when given\n\
 		       with another command, otherwise print this help\n\
@@ -2287,9 +2166,6 @@ struct option longopts[] = {
   {"list-package", no_argument, NULL, 'l'},
   {"package-query", no_argument, NULL, 'p'},
   {"delete-orphaned-installation-keys", no_argument, NULL, CO_DELETE_KEYS},
-  {"enable-unique-object-names", no_argument, NULL, CO_ENABLE_UON},
-  {"disable-unique-object-names", no_argument, NULL, CO_DISABLE_UON},
-  {"show-unique-object-names", no_argument, NULL, CO_SHOW_UON},
   {"help", no_argument, NULL, 'h'},
   {"version", no_argument, 0, 'V'},
   {0, no_argument, NULL, 0}
@@ -2302,9 +2178,11 @@ print_version ()
 {
   printf ("cygcheck (cygwin) %d.%d.%d\n"
 	  "System Checker for Cygwin\n"
-	  "Copyright (C) 1998 - %s Red Hat, Inc.\n"
-	  "This is free software; see the source for copying conditions.  There is NO\n"
-	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
+	  "Copyright (C) 1998 - %s Cygwin Authors\n"
+	  "This is free software; see the source for copying conditions.  "
+	  "There is NO\n"
+	  "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR "
+	  "PURPOSE.\n",
 	  CYGWIN_VERSION_DLL_MAJOR / 1000,
 	  CYGWIN_VERSION_DLL_MAJOR % 1000,
 	  CYGWIN_VERSION_DLL_MINOR,
@@ -2385,6 +2263,9 @@ main (int argc, char **argv)
   bool ok = true;
   load_cygwin (argc, argv);
 
+  _setmode (1, _O_BINARY);
+  _setmode (2, _O_BINARY);
+
   /* Need POSIX sorting while parsing args, but don't forget the
      user's original environment.  */
   char *posixly = getenv ("POSIXLY_CORRECT");
@@ -2426,11 +2307,6 @@ main (int argc, char **argv)
       case CO_DELETE_KEYS:
 	del_orphaned_reg = 1;
 	break;
-      case CO_ENABLE_UON:
-      case CO_DISABLE_UON:
-      case CO_SHOW_UON:
-	unique_object_name_opt = i;
-	break;
       case 'V':
 	print_version ();
 	exit (0);
@@ -2454,17 +2330,12 @@ main (int argc, char **argv)
     }
 
   if ((check_setup || sysinfo || find_package || list_package || grep_packages
-       || del_orphaned_reg || unique_object_name_opt)
+       || del_orphaned_reg)
       && keycheck)
     usage (stderr, 1);
 
   if ((find_package || list_package || grep_packages)
       && (check_setup || del_orphaned_reg))
-    usage (stderr, 1);
-
-  if ((check_setup || sysinfo || find_package || list_package || grep_packages
-       || del_orphaned_reg)
-      && unique_object_name_opt)
     usage (stderr, 1);
 
   if (dump_only && !check_setup && !sysinfo)
@@ -2475,8 +2346,6 @@ main (int argc, char **argv)
 
   if (keycheck)
     return check_keys ();
-  if (unique_object_name_opt)
-    return handle_unique_object_name (unique_object_name_opt, *argv);
   if (del_orphaned_reg)
     del_orphaned_reg_installations ();
   if (grep_packages)

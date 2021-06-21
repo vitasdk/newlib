@@ -13,8 +13,7 @@ extern int errno;
 #include "warning.h"
 
 int
-_DEFUN (_fstat, (fildes, st),
-        int          fildes _AND
+_fstat (int          fildes,
         struct stat *st)
 {
   errno = ENOSYS;

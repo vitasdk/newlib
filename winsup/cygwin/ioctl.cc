@@ -1,8 +1,5 @@
 /* ioctl.cc: ioctl routines.
 
-   Copyright 1996, 1998, 1999, 2000, 2001, 2002, 2003, 2006, 2008, 2009, 2011,
-   2012 Red Hat, Inc.
-
    Written by Doug Evans of Cygnus Support
    dje@cygnus.com
 
@@ -35,6 +32,11 @@ ioctl (int fd, int cmd, ...)
 
   debug_printf ("ioctl(fd %d, cmd %y)", fd, cmd);
   int res;
+  if (cfd->get_flags () & O_PATH)
+    {
+      set_errno (EBADF);
+      return -1;
+    }
   /* FIXME: This stinks.  There are collisions between cmd types
      depending on whether fd is associated with a pty master or not.
      Something to fix for Cygwin2.  CGF 2006-06-04 */

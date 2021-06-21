@@ -1,8 +1,5 @@
 /* sysconf.cc
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011, 2012, 2013, 2015 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -22,6 +19,7 @@ details. */
 #include "ntdll.h"
 #include "tls_pbuf.h"
 #include "cpuid.h"
+#include "clock.h"
 
 static long
 get_open_max (int in)
@@ -488,7 +486,8 @@ get_cpu_cache (int in)
   vendor_id[3] = 0;
   if (!strcmp ((char*) vendor_id, "GenuineIntel"))
     return get_cpu_cache_intel (in, maxf & 0xffff);
-  else if (!strcmp ((char*)vendor_id, "AuthenticAMD"))
+  else if (!strcmp ((char*)vendor_id, "AuthenticAMD")
+           || !strcmp((char*)vendor_id, "HygonGenuine"))
     {
       uint32_t maxe = 0, unused;
       cpuid (&maxe, &unused, &unused, &unused, 0x80000000);
@@ -530,7 +529,7 @@ static struct
   {cons, {c:SIGQUEUE_MAX}},		/*  18, _SC_SIGQUEUE_MAX */
   {cons, {c:TIMER_MAX}},		/*  19, _SC_TIMER_MAX */
   {nsup, {c:0}},			/*  20, _SC_TZNAME_MAX */
-  {cons, {c:-1L}},			/*  21, _SC_ASYNCHRONOUS_IO */
+  {cons, {c:_POSIX_ASYNCHRONOUS_IO}},	/*  21, _SC_ASYNCHRONOUS_IO */
   {cons, {c:_POSIX_FSYNC}},		/*  22, _SC_FSYNC */
   {cons, {c:_POSIX_MAPPED_FILES}},	/*  23, _SC_MAPPED_FILES */
   {cons, {c:-1L}},			/*  24, _SC_MEMLOCK */
@@ -543,9 +542,9 @@ static struct
   {cons, {c:_POSIX_SHARED_MEMORY_OBJECTS}},	/*  31, _SC_SHARED_MEMORY_OBJECTS */
   {cons, {c:_POSIX_SYNCHRONIZED_IO}},	/*  32, _SC_SYNCHRONIZED_IO */
   {cons, {c:_POSIX_TIMERS}},		/*  33, _SC_TIMERS */
-  {nsup, {c:0}},			/*  34, _SC_AIO_LISTIO_MAX */
-  {nsup, {c:0}},			/*  35, _SC_AIO_MAX */
-  {nsup, {c:0}},			/*  36, _SC_AIO_PRIO_DELTA_MAX */
+  {cons, {c:AIO_LISTIO_MAX}},		/*  34, _SC_AIO_LISTIO_MAX */
+  {cons, {c:AIO_MAX}},			/*  35, _SC_AIO_MAX */
+  {cons, {c:AIO_PRIO_DELTA_MAX}},	/*  36, _SC_AIO_PRIO_DELTA_MAX */
   {nsup, {c:0}},			/*  37, _SC_DELAYTIMER_MAX */
   {cons, {c:PTHREAD_KEYS_MAX}},		/*  38, _SC_THREAD_KEYS_MAX */
   {cons, {c:PTHREAD_STACK_MIN}},	/*  39, _SC_THREAD_STACK_MIN */
@@ -565,7 +564,7 @@ static struct
   {cons, {c:PTHREAD_DESTRUCTOR_ITERATIONS}},	/*  53, _SC_THREAD_DESTRUCTOR_ITERATIONS */
   {cons, {c:_POSIX_ADVISORY_INFO}},	/*  54, _SC_ADVISORY_INFO */
   {cons, {c:ATEXIT_MAX}},		/*  55, _SC_ATEXIT_MAX */
-  {cons, {c:-1L}},			/*  56, _SC_BARRIERS */
+  {cons, {c:_POSIX_BARRIERS}},		/*  56, _SC_BARRIERS */
   {cons, {c:BC_BASE_MAX}},		/*  57, _SC_BC_BASE_MAX */
   {cons, {c:BC_DIM_MAX}},		/*  58, _SC_BC_DIM_MAX */
   {cons, {c:BC_SCALE_MAX}},		/*  59, _SC_BC_SCALE_MAX */
@@ -584,14 +583,14 @@ static struct
   {cons, {c:_POSIX_REGEXP}},		/*  72, _SC_REGEXP */
   {cons, {c:RE_DUP_MAX}},		/*  73, _SC_RE_DUP_MAX */
   {cons, {c:_POSIX_SHELL}},		/*  74, _SC_SHELL */
-  {cons, {c:-1L}},			/*  75, _SC_SPAWN */
+  {cons, {c:_POSIX_SPAWN}},		/*  75, _SC_SPAWN */
   {cons, {c:_POSIX_SPIN_LOCKS}},	/*  76, _SC_SPIN_LOCKS */
   {cons, {c:-1L}},			/*  77, _SC_SPORADIC_SERVER */
   {nsup, {c:0}},			/*  78, _SC_SS_REPL_MAX */
   {cons, {c:SYMLOOP_MAX}},		/*  79, _SC_SYMLOOP_MAX */
   {cons, {c:_POSIX_THREAD_CPUTIME}},	/*  80, _SC_THREAD_CPUTIME */
   {cons, {c:-1L}},			/*  81, _SC_THREAD_SPORADIC_SERVER */
-  {cons, {c:-1L}},			/*  82, _SC_TIMEOUTS */
+  {cons, {c:_POSIX_TIMEOUTS}},		/*  82, _SC_TIMEOUTS */
   {cons, {c:-1L}},			/*  83, _SC_TRACE */
   {cons, {c:-1L}},			/*  84, _SC_TRACE_EVENT_FILTER */
   {nsup, {c:0}},			/*  85, _SC_TRACE_EVENT_NAME_MAX */
@@ -618,7 +617,7 @@ static struct
   {cons, {c:_XOPEN_VERSION}},		/* 106, _SC_XOPEN_VERSION */
   {cons, {c:_POSIX2_CHAR_TERM}},	/* 107, _SC_2_CHAR_TERM */
   {cons, {c:_POSIX2_C_BIND}},		/* 108, _SC_2_C_BIND */
-  {cons, {c:_POSIX2_C_BIND}},		/* 109, _SC_2_C_DEV */
+  {cons, {c:_POSIX2_C_DEV}},		/* 109, _SC_2_C_DEV */
   {cons, {c:-1L}},			/* 110, _SC_2_FORT_DEV */
   {cons, {c:-1L}},			/* 111, _SC_2_FORT_RUN */
   {cons, {c:-1L}},			/* 112, _SC_2_LOCALEDEF */
@@ -722,10 +721,14 @@ static struct
   {ls ("")},				/* _CS_POSIX_V7_THREADS_CFLAGS */
   {ls ("")},				/* _CS_POSIX_V7_THREADS_LDFLAGS */
   {ls ("POSIXLY_CORRECT=1")},		/* _CS_V7_ENV */
+  {ls ("")},				/* _CS_LFS_CFLAGS */
+  {ls ("")},				/* _CS_LFS_LDFLAGS */
+  {ls ("")},				/* _CS_LFS_LIBS */
+  {ls ("")},				/* _CS_LFS_LINTFLAGS */
 };
 
 #define CS_MIN _CS_PATH
-#define CS_MAX _CS_V7_ENV
+#define CS_MAX _CS_LFS_LINTFLAGS
 
 extern "C" size_t
 confstr (int in, char *buf, size_t len)
@@ -792,7 +795,7 @@ sysinfo (struct sysinfo *info)
 				     sizeof_stodi, NULL);
   if (NT_SUCCESS (status))
     uptime = (stodi->CurrentTime.QuadPart - stodi->BootTime.QuadPart)
-	     / 10000000ULL;
+	     / NS100PERSEC;
   else
     debug_printf ("NtQuerySystemInformation(SystemTimeOfDayInformation), "
 		  "status %y", status);

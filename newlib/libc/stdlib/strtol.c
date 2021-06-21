@@ -1,31 +1,27 @@
 /*
 FUNCTION
-   <<strtol>>---string to long
+   <<strtol>>, <<strtol_l>>---string to long
 
 INDEX
 	strtol
+
+INDEX
+	strtol_l
+
 INDEX
 	_strtol_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdlib.h>
-        long strtol(const char *restrict <[s]>, char **restrict <[ptr]>,int <[base]>);
+        long strtol(const char *restrict <[s]>, char **restrict <[ptr]>,
+		    int <[base]>);
 
-        long _strtol_r(void *<[reent]>, 
-                       const char *restrict <[s]>, char **restrict <[ptr]>,int <[base]>);
-
-TRAD_SYNOPSIS
 	#include <stdlib.h>
-	long strtol (<[s]>, <[ptr]>, <[base]>)
-        char *<[s]>;
-        char **<[ptr]>;
-        int <[base]>;
+        long strtol_l(const char *restrict <[s]>, char **restrict <[ptr]>,
+		      int <[base]>, locale_t <[locale]>);
 
-	long _strtol_r (<[reent]>, <[s]>, <[ptr]>, <[base]>)
-	char *<[reent]>;
-        char *<[s]>;
-        char **<[ptr]>;
-        int <[base]>;
+        long _strtol_r(void *<[reent]>, const char *restrict <[s]>,
+		       char **restrict <[ptr]>,int <[base]>);
 
 DESCRIPTION
 The function <<strtol>> converts the string <<*<[s]>>> to
@@ -67,18 +63,24 @@ If the subject string is empty (or not in acceptable form), no conversion
 is performed and the value of <[s]> is stored in <[ptr]> (if <[ptr]> is
 not <<NULL>>).
 
+<<strtol_l>> is like <<strtol>> but performs the conversion based on the
+locale specified by the locale object locale.  If <[locale]> is
+LC_GLOBAL_LOCALE or not a valid locale object, the behaviour is undefined.
+
 The alternate function <<_strtol_r>> is a reentrant version.  The
 extra argument <[reent]> is a pointer to a reentrancy structure.
 
 RETURNS
-<<strtol>> returns the converted value, if any. If no conversion was
-made, 0 is returned.
+<<strtol>>, <<strtol_l>> return the converted value, if any. If no
+conversion was made, 0 is returned.
 
-<<strtol>> returns <<LONG_MAX>> or <<LONG_MIN>> if the magnitude of
-the converted value is too large, and sets <<errno>> to <<ERANGE>>.
+<<strtol>>, <<strtol_l>> return <<LONG_MAX>> or <<LONG_MIN>> if the
+magnitude of the converted value is too large, and sets <<errno>>
+to <<ERANGE>>.
 
 PORTABILITY
 <<strtol>> is ANSI.
+<<strtol_l>> is a GNU extension.
 
 No supporting OS subroutines are required.
 */
@@ -95,11 +97,7 @@ No supporting OS subroutines are required.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -116,32 +114,32 @@ No supporting OS subroutines are required.
  * SUCH DAMAGE.
  */
 
-
+#define _GNU_SOURCE
 #include <_ansi.h>
 #include <limits.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <reent.h>
+#include "../locale/setlocale.h"
 
 /*
  * Convert a string to a long integer.
- *
- * Ignores `locale' stuff.  Assumes that the upper and lower case
- * alphabets and digits are each contiguous.
  */
-long
-_DEFUN (_strtol_r, (rptr, nptr, endptr, base),
-	struct _reent *rptr _AND
-	_CONST char *__restrict nptr _AND
-	char **__restrict endptr _AND
-	int base)
+static long
+_strtol_l (struct _reent *rptr, const char *__restrict nptr,
+	   char **__restrict endptr, int base, locale_t loc)
 {
 	register const unsigned char *s = (const unsigned char *)nptr;
 	register unsigned long acc;
 	register int c;
 	register unsigned long cutoff;
 	register int neg = 0, any, cutlim;
+
+	if (base < 0 || base == 1 || base > 36) {
+		errno = EINVAL;
+		return 0;
+	}
 
 	/*
 	 * Skip white space and pick up leading +/- sign if any.
@@ -150,7 +148,7 @@ _DEFUN (_strtol_r, (rptr, nptr, endptr, base),
 	 */
 	do {
 		c = *s++;
-	} while (isspace(c));
+	} while (isspace_l(c, loc));
 	if (c == '-') {
 		neg = 1;
 		c = *s++;
@@ -186,17 +184,19 @@ _DEFUN (_strtol_r, (rptr, nptr, endptr, base),
 	cutlim = cutoff % (unsigned long)base;
 	cutoff /= (unsigned long)base;
 	for (acc = 0, any = 0;; c = *s++) {
-		if (isdigit(c))
+		if (c >= '0' && c <= '9')
 			c -= '0';
-		else if (isalpha(c))
-			c -= isupper(c) ? 'A' - 10 : 'a' - 10;
+		else if (c >= 'A' && c <= 'Z')
+			c -= 'A' - 10;
+		else if (c >= 'a' && c <= 'z')
+			c -= 'a' - 10;
 		else
 			break;
 		if (c >= base)
 			break;
-               if (any < 0 || acc > cutoff || (acc == cutoff && c > cutlim))
+		if (any < 0 || acc > cutoff || (acc == cutoff && c > cutlim)) {
 			any = -1;
-		else {
+		} else {
 			any = 1;
 			acc *= base;
 			acc += c;
@@ -212,15 +212,30 @@ _DEFUN (_strtol_r, (rptr, nptr, endptr, base),
 	return (acc);
 }
 
+long
+_strtol_r (struct _reent *rptr,
+	const char *__restrict nptr,
+	char **__restrict endptr,
+	int base)
+{
+	return _strtol_l (rptr, nptr, endptr, base, __get_current_locale ());
+}
+
 #ifndef _REENT_ONLY
 
 long
-_DEFUN (strtol, (s, ptr, base),
-	_CONST char *__restrict s _AND
-	char **__restrict ptr _AND
+strtol_l (const char *__restrict s, char **__restrict ptr, int base,
+	  locale_t loc)
+{
+	return _strtol_l (_REENT, s, ptr, base, loc);
+}
+
+long
+strtol (const char *__restrict s,
+	char **__restrict ptr,
 	int base)
 {
-	return _strtol_r (_REENT, s, ptr, base);
+	return _strtol_l (_REENT, s, ptr, base, __get_current_locale ());
 }
 
 #endif

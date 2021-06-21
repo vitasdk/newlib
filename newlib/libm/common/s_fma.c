@@ -1,12 +1,12 @@
 /*
 FUNCTION
-<<fma>>, <<fmaf>>--floating multiply add
+<<fma>>, <<fmaf>>---floating multiply add
 INDEX
 	fma
 INDEX
 	fmaf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	double fma(double <[x]>, double <[y]>, double <[z]>);
 	float fmaf(float <[x]>, float <[y]>, float <[z]>);

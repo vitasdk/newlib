@@ -5,12 +5,12 @@
  */
 /*
 FUNCTION
-<<signbit>>--Does floating-point number have negative sign?
+<<signbit>>---Does floating-point number have negative sign?
 
 INDEX
 	signbit
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <math.h>
 	int signbit(real-floating <[x]>);
 

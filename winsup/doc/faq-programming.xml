@@ -15,18 +15,15 @@ volunteers to prepare and maintain packages, because the priority of the
 Cygwin Team is Cygwin itself.
 </para>
 <para>The Cygwin Package Contributor's Guide at
-<ulink url="https://cygwin.com/setup.html"/> details everything you need to know
-about being a package maintainer. The quickest way to get started is to
-read the <emphasis>Initial packaging procedure, script-based</emphasis> section on
-that page.  The <literal>generic-build-script</literal> found there works well for
-most packages. 
+<ulink url="https://cygwin.com/packages.html"/> details everything you need to know
+about Cygwin packaging.
 </para>
 <para>For questions about package maintenance, use the cygwin-apps mailing
 list (start at <ulink url="https://cygwin.com/lists.html"/>) <emphasis>after</emphasis>
 searching and browsing the cygwin-apps list archives, of course.  Be
 sure to look at the <emphasis>Submitting a package</emphasis> checklist at
-<ulink url="https://cygwin.com/setup.html"/> before sending an ITP (Intent To
-Package) email to cygwin-apps.
+<ulink url="https://cygwin.com/packaging-contributors-guide.html#submitting"/>
+before sending an ITP (Intent To Package) email to cygwin-apps.
 </para>
 <para>You should also announce your intentions to the general cygwin list, in
 case others were thinking the same thing.
@@ -90,8 +87,8 @@ Windows, while `long' on 64 bit Cygwin is 8 bytes.</para>
   ReadFile (HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
 </screen>
 
-<para>In the 32 bit Cygwin and Mingw environments, as well as in the 64 bit
-Mingw environment, it is no problem to substitute DWORD with unsigned
+<para>In the 32 bit Cygwin and Mingw-w64 environments, as well as in the 64 bit
+Mingw-w64 environment, it is no problem to substitute DWORD with unsigned
 long:</para>
 
 <screen>
@@ -478,14 +475,10 @@ as well as the User's Guide section
 <question><para>How do I compile a Win32 executable that doesn't use Cygwin?</para></question>
 <answer>
 
-<para>The compilers provided by the <literal>mingw-gcc</literal>,
-<literal>mingw64-i686-gcc</literal>, and <literal>mingw64-x86_64-gcc</literal>
-packages link against standard Microsoft DLLs instead of Cygwin. This is
-desirable for native Windows programs that don't need a UNIX emulation layer.
-</para>
-<para>This is not to be confused with 'MinGW' (Minimalist GNU for Windows),
-which is a completely separate effort.  That project's home page is
-<ulink url="http://www.mingw.org/index.shtml"/>.
+<para>The compilers provided by the <literal>mingw64-i686-gcc</literal> and
+<literal>mingw64-x86_64-gcc</literal> packages link against standard Microsoft
+DLLs instead of Cygwin. This is desirable for native Windows programs that
+don't need a UNIX emulation layer.
 </para>
 </answer></qandaentry>
 
@@ -500,9 +493,8 @@ self-contained executable.
 </para>
 <para>If this is an issue because you intend to distribute your Cygwin
 application, then you had better read and understand
-<ulink url="https://cygwin.com/licensing.html"/>, which explains the licensing
-options.  Unless you purchase a special commercial license from Red
-Hat, then your Cygwin application must be Open Source.
+<ulink url="https://cygwin.com/licensing.html"/>, which explains the
+licensing options.
 </para>
 </answer></qandaentry>
 
@@ -549,18 +541,9 @@ have our own Win32 headers which are pretty complete.
 </answer></qandaentry>
 
 <qandaentry id="faq.programming.msvs-mingw">
-<question><para>How do I use <literal>cygwin1.dll</literal> with Visual Studio or MinGW?</para></question>
+<question><para>How do I use <literal>cygwin1.dll</literal> with Visual Studio or Mingw-w64?</para></question>
 <answer>
 
-<para>Before you begin, note that Cygwin is licensed under the GNU GPL (as
-indeed are many other Cygwin-based libraries).  That means that if your
-code links against the Cygwin dll (and if your program is calling
-functions from Cygwin, it must, as a matter of fact, be linked against
-it), you must apply the GPL to your source as well.  Of course, this
-only matters if you plan to distribute your program in binary form.  For
-more information, see <ulink url="http://gnu.org/licenses/gpl-faq.html"/>.  If
-that is not a problem, read on.
-</para>
 <para>If you want to load the DLL dynamically, read
 <literal>winsup/cygwin/how-cygtls-works.txt</literal> and the sample code in
 <literal>winsup/testsuite/cygload</literal> to understand how this works.
@@ -693,25 +676,29 @@ rewriting the runtime library in question from specs...
 <answer>
 
 <para>First, you need to make sure you have the necessary build tools
-installed; you at least need <literal>gcc-g++</literal>, <literal>make</literal>,
-<literal>perl</literal>, <literal>cocom</literal>, <literal>gettext</literal>, <literal>gettext-devel</literal>,
-and <literal>zlib-devel</literal>.
-Building for 32-bit Cygwin also requires <literal>libiconv</literal>,
-<literal>mingw64-i686-gcc-g++</literal>, <literal>mingw64-i686-zlib</literal>,
-and <literal>mingw64-x86_64-gcc-core</literal>.
-Building for 64-bit Cygwin also requires <literal>libiconv-devel</literal>,
-<literal>mingw64-x86_64-gcc-g++</literal>, and
+installed; you at least need <literal>gcc-g++</literal>,
+<literal>make</literal>, <literal>patch</literal>, <literal>perl</literal>,
+<literal>gettext-devel</literal>, <literal>libiconv-devel</literal> and
+<literal>zlib-devel</literal>.  Installing <literal>git</literal> to fetch
+the sources from the
+<ulink url="https://cygwin.com/git/newlib-cygwin.git">source repository</ulink>
+helps, too.  If you change a certain core part of Cygwin, namely the layout
+of the Cygwin TLS area, you also have to install <literal>cocom</literal>.
+Building for 32-bit Cygwin also requires
+<literal>mingw64-i686-gcc-g++</literal> and <literal>mingw64-i686-zlib</literal>.
+Building for 64-bit Cygwin also requires
+<literal>mingw64-x86_64-gcc-g++</literal> and
 <literal>mingw64-x86_64-zlib</literal>.
-If you want to run the tests, <literal>dejagnu</literal> is also required.
+<!-- If you want to run the tests, <literal>dejagnu</literal> is also required. -->
 Normally, building ignores any errors in building the documentation,
-which requires the <literal>dblatex</literal>,
+which requires the <literal>dblatex</literal>, <literal>docbook2X</literal>,
 <literal>docbook-xml45</literal>, <literal>docbook-xsl</literal>, and
 <literal>xmlto</literal> packages.  For more information on building the
 documentation, see the README included in the <literal>cygwin-doc</literal> package.
 </para>
 
 <para>Next, get the Cygwin source.  Ideally, you should check out what you
-need from GIT (<ulink url="https://cygwin.com/git.html"/>).  This is the
+need from Git (<ulink url="https://cygwin.com/git.html"/>).  This is the
 <emphasis>preferred method</emphasis> for acquiring the sources.  Otherwise,
 if you are trying to duplicate a cygwin release then you should download the
 corresponding source package
@@ -825,13 +812,22 @@ Guide here: <ulink url="https://cygwin.com/cygwin-ug-net/dll.html"/>.
 </answer></qandaentry>
 
 <qandaentry id="faq.programming.breakpoint">
-<question><para>How can I set a breakpoint at MainCRTStartup?</para></question>
+<question><para>How can I set a breakpoint at mainCRTStartup?</para></question>
 <answer>
 
-<para><emphasis role='bold'>(Please note: This section has not yet been updated for the latest net release.)</emphasis>
+<para>
+  Set a breakpoint in <command>gdb</command> with <command>b *0x401000</command>
+  (for i686), or <command>b *0x100401000</command> (for x86_64).
 </para>
-<para>Set a breakpoint at *0x401000 in gdb and then run the program in
-question.
+
+<para>
+  This entrypoint address can be computed as the sum of the ImageBase and
+  AddressOfEntryPoint values given by <command>objdump -p</command>.
+</para>
+
+<para>
+  Note that the DllMain entrypoints for linked DLLs will have been executed
+  before this breakpoint is hit.
 </para>
 </answer></qandaentry>
 
@@ -859,15 +855,22 @@ on using <literal>strace</literal>, see the Cygwin User's Guide.
 </answer></qandaentry>
 
 <qandaentry id="faq.programming.gdb-signals">
-<question><para>Why doesn't gdb handle signals?</para></question>
+<question><para>How does gdb handle signals?</para></question>
 <answer>
 
-<para>Unfortunately, there is only minimal signal handling support in gdb
-currently.  Signal handling only works with Windows-type signals.
-SIGINT may work, SIGFPE may work, SIGSEGV definitely does.  You cannot
-'stop', 'print' or 'nopass' signals like SIGUSR1 or SIGHUP to the
-process being debugged.
+<para>
+gdb maps known Windows exceptions to signals such as SIGSEGV, SIGFPE, SIGTRAP,
+SIGINT and SIGILL.  Other Windows exceptions are passed on to the handler (if
+any), and reported as an unknown signal if an unhandled (second chance)
+exception occurs.
 </para>
+
+<para>
+There is also an experimental feature to notify gdb of purely Cygwin signals
+like SIGABRT, SIGHUP or SIGUSR1.  This currently has some known problems, for
+example, single-stepping from these signals may not work as expected.
+</para>
+
 </answer></qandaentry>
 
 <qandaentry id="faq.programming.linker">
@@ -877,10 +880,45 @@ process being debugged.
 <para>A common error is to put the library on the command line before
 the thing that needs things from it.
 </para>
+
 <para>This is wrong <literal>gcc -lstdc++ hello.cc</literal>.
 This is right <literal>gcc hello.cc -lstdc++</literal>.
 </para>
-</answer></qandaentry>
+
+<para>
+  The first command above (usually) works on Linux, because:
+  <itemizedlist mark="bullet">
+    <listitem>A DT_NEEDED tag for libstdc++ is added when the library name is seen.</listitem>
+    <listitem>The executable has unresolved symbols, which can be found in libstdc++.</listitem>
+    <listitem>When executed, the ELF loader resolves those symbols.</listitem>
+  </itemizedlist>
+</para>
+
+<para>
+  Note that this won't work if the linker flags <literal>--as-needed</literal>
+  or <literal>--no-undefined</literal> are used, or if the library being linked
+  with is a static library.
+</para>
+
+<para>
+  PE/COFF executables work very differently, and the dynamic library which
+  provides a symbol must be fully resolved <emphasis>at link time</emphasis>
+  (so the library which provides a symbol must follow a reference to it).
+</para>
+
+<para>
+  See point 3 in <xref linkend="faq.programming.unix-gui"></xref> for more
+  discussion of how this affects plugins.
+</para>
+
+<para>
+  This also has consequences for how weak symbols are resolved. See <ulink
+  url="https://cygwin.com/ml/cygwin/2010-04/msg00281.html"></ulink> for more
+  discussion of that.
+</para>
+
+</answer>
+</qandaentry>
 
 <qandaentry id="faq.programming.stat64">
 <question><para>Why do I get an error using <literal>struct stat64</literal>?</para></question>

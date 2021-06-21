@@ -1,7 +1,5 @@
 /* woutsup.h: for Cygwin code compiled outside the DLL (i.e. cygserver).
 
-   Copyright 2002, 2003, 2007 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -52,5 +50,5 @@ extern int cygserver_running;
     } while (false)
 
 #define debug_printf(f,...)	debug((f),##__VA_ARGS__)
-#define syscall_printf(f,...)	log(LOG_ERR,(f),##__VA_ARGS__)
+#define syscall_printf(f,...)	log(LOG_INFO,(f),##__VA_ARGS__)
 #define system_printf(f,...)	log(LOG_ERR,(f),##__VA_ARGS__)

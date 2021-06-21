@@ -1,7 +1,5 @@
 /* netinet/in.h
 
-   Copyright 1998, 2000, 2001, 2006 Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -18,8 +16,10 @@ extern "C"
 {
 #endif
 
+#if __MISC_VISIBLE
 extern int bindresvport (int, struct sockaddr_in *);
 extern int bindresvport_sa (int, struct sockaddr *);
+#endif
 
 #ifdef __cplusplus
 };

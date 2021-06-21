@@ -13,11 +13,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -80,7 +76,7 @@ typedef struct {
 #define	GLOB_NOMATCH	(-3)	/* No match and GLOB_NOCHECK was not set. */
 #define	GLOB_NOSYS	(-4)	/* Obsolete: source comptability only. */
 
-#ifndef _POSIX_SOURCE
+#if __GNU_VISIBLE
 #define	GLOB_ALTDIRFUNC	0x0040	/* Use alternately specified directory funcs. */
 #define	GLOB_BRACE	0x0080	/* Expand braces ala csh. */
 #define	GLOB_MAGCHAR	0x0100	/* Pattern had globbing characters. */
@@ -92,7 +88,7 @@ typedef struct {
 /* source compatibility, these are the old names */
 #define GLOB_MAXPATH	GLOB_LIMIT
 #define	GLOB_ABEND	GLOB_ABORTED
-#endif /* __BSD_VISIBLE */
+#endif /* __GNU_VISIBLE */
 
 __BEGIN_DECLS
 

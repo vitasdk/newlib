@@ -1,7 +1,7 @@
 # aem-ve.specs
 #
 # Spec file for AArch64 baremetal newlib, libgloss on the validation platform
-# with AngelAPI semi-hosting.
+# with version 2 of AngelAPI semi-hosting.
 
 %rename lib libc
 
@@ -10,3 +10,6 @@
 
 *lib:
 cpu-init/rdimon-aem-el3.o%s --start-group %(libc) %(libgloss) --end-group
+
+*startfile:
+crti%O%s crtbegin%O%s %{!pg:rdimon-crt0%O%s} %{pg:rdimon-crt0%O%s}

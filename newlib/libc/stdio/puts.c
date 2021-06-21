@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -24,20 +24,11 @@ INDEX
 INDEX
 	_puts_r
 
-ANSI_SYNOPSIS
+SYNOPSIS
 	#include <stdio.h>
 	int puts(const char *<[s]>);
 
 	int _puts_r(struct _reent *<[reent]>, const char *<[s]>);
-
-TRAD_SYNOPSIS
-	#include <stdio.h>
-	int puts(<[s]>)
-	char *<[s]>;
-
-	int _puts_r(<[reent]>, <[s]>)
-	struct _reent *<[reent]>;
-	char *<[s]>;
 
 DESCRIPTION
 <<puts>> writes the string at <[s]> (followed by a newline, instead of
@@ -74,9 +65,8 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  */
 
 int
-_DEFUN(_puts_r, (ptr, s),
-       struct _reent *ptr _AND
-       _CONST char * s)
+_puts_r (struct _reent *ptr,
+       const char * s)
 {
 #ifdef _FVWRITE_IN_STREAMIO
   int result;
@@ -134,8 +124,7 @@ err:
 #ifndef _REENT_ONLY
 
 int
-_DEFUN(puts, (s),
-       char _CONST * s)
+puts (char const * s)
 {
   return _puts_r (_REENT, s);
 }

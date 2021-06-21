@@ -5,7 +5,7 @@
  * Redistribution and use in source and binary forms are permitted
  * provided that the above copyright notice and this paragraph are
  * duplicated in all such forms and that any documentation,
- * advertising materials, and other materials related to such
+ * and/or other materials related to such
  * distribution and use acknowledge that the software was developed
  * by the University of California, Berkeley.  The name of the
  * University may not be used to endorse or promote products derived
@@ -33,9 +33,8 @@ static char sccsid[] = "%W% (Berkeley) %G%";
  */
 
 int
-_DEFUN(__swbuf_r, (ptr, c, fp),
-       struct _reent *ptr _AND
-       register int c _AND
+__swbuf_r (struct _reent *ptr,
+       register int c,
        register FILE *fp)
 {
   register int n;
@@ -88,8 +87,7 @@ _DEFUN(__swbuf_r, (ptr, c, fp),
    required for backward compatibility with applications built against
    earlier dynamically built newlib libraries. */
 int
-_DEFUN(__swbuf, (c, fp),
-       register int c _AND
+__swbuf (register int c,
        register FILE *fp)
 {
   return __swbuf_r (_REENT, c, fp);

@@ -1,8 +1,5 @@
 /* _cygwin_crt0_common.cc: common crt0 function for cygwin crt0's.
 
-   Copyright 2000, 2001, 2002, 2003, 2004, 2009, 2010, 2011, 2012, 2013
-   Red Hat, Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -37,21 +34,21 @@ details. */
    references to these operators toward the redirectors in the Cygwin DLL; this
    way we can record what definitions were visible at final link time but still
    send all calls to the redirectors.  */
-extern WEAK void *operator new(std::size_t sz) throw (std::bad_alloc)
+extern WEAK void *operator new(std::size_t sz) noexcept (false)
 			__asm__ (REAL_ZNWX);
-extern WEAK void *operator new[](std::size_t sz) throw (std::bad_alloc)
+extern WEAK void *operator new[](std::size_t sz) noexcept (false)
 			__asm__ (REAL_ZNAX);
-extern WEAK void operator delete(void *p) throw()
+extern WEAK void operator delete(void *p) noexcept (true)
 			__asm__ (REAL_ZDLPV);
-extern WEAK void operator delete[](void *p) throw()
+extern WEAK void operator delete[](void *p) noexcept (true)
 			__asm__ (REAL_ZDAPV);
-extern WEAK void *operator new(std::size_t sz, const std::nothrow_t &nt) throw()
+extern WEAK void *operator new(std::size_t sz, const std::nothrow_t &nt) noexcept (true)
 			__asm__ (REAL_ZNWX_NOTHROW_T);
-extern WEAK void *operator new[](std::size_t sz, const std::nothrow_t &nt) throw()
+extern WEAK void *operator new[](std::size_t sz, const std::nothrow_t &nt) noexcept (true)
 			__asm__ (REAL_ZNAX_NOTHROW_T);
-extern WEAK void operator delete(void *p, const std::nothrow_t &nt) throw()
+extern WEAK void operator delete(void *p, const std::nothrow_t &nt) noexcept (true)
 			__asm__ (REAL_ZDLPV_NOTHROW_T);
-extern WEAK void operator delete[](void *p, const std::nothrow_t &nt) throw()
+extern WEAK void operator delete[](void *p, const std::nothrow_t &nt) noexcept (true)
 			__asm__ (REAL_ZDAPV_NOTHROW_T);
 
 /* Avoid an info message from linker when linking applications.  */
@@ -64,7 +61,7 @@ extern int __dynamically_loaded;
 
 extern "C"
 {
-#ifndef __x86_64__
+#ifdef __i386__
 char **environ;
 #endif
 int _fmode;
@@ -117,7 +114,7 @@ _cygwin_crt0_common (MainFunc f, per_process *u)
 
   u->ctors = &__CTOR_LIST__;
   u->dtors = &__DTOR_LIST__;
-#ifndef __x86_64__
+#ifdef __i386__
   u->envptr = &environ;
 #endif
   if (uwasnull)
@@ -135,9 +132,8 @@ _cygwin_crt0_common (MainFunc f, per_process *u)
   u->premain[3] = cygwin_premain3;
   u->fmode_ptr = &_fmode;
 
-  /* This is used to record what the initial sp was.  The value is needed
-     when copying the parent's stack to the child during a fork.  */
-  u->initial_sp = (char *) __builtin_frame_address (1);
+  /* Unused */
+  u->initial_sp = NULL;
 
   /* Remember whatever the user linked his application with - or
      point to entries in the dll.  */

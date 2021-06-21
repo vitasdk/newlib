@@ -1,7 +1,5 @@
 /* process.h
 
-   Copyright 2001, 2002, 2003, 2004, 2005, 2012, 2015 Red Hat Inc.
-
    Written by Robert Collins <rbtcollins@hotmail.com>
 
 This file is part of Cygwin.
@@ -84,12 +82,12 @@ public:
   bool is_active () const { return _exit_status == STILL_ACTIVE; }
 
   void _hold (const char *file, int line) {
-    _log (file, line, LOG_DEBUG, "Try hold(%lu)", _cygpid);
+    _debug (file, line, "Try hold(%lu)", _cygpid);
     EnterCriticalSection (&_access);
-    _log (file, line, LOG_DEBUG, "holding (%lu)", _cygpid);
+    _debug (file, line, "holding (%lu)", _cygpid);
   }
   void _release (const char *file, int line) {
-    _log (file, line, LOG_DEBUG, "leaving (%lu)", _cygpid);
+    _debug (file, line, "leaving (%lu)", _cygpid);
     LeaveCriticalSection (&_access);
   }
 

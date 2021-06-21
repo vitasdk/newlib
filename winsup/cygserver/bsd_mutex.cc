@@ -1,7 +1,5 @@
 /* bsd_mutex.cc
 
-   Copyright 2003, 2004, 2005, 2007, 2012, 2014, 2015 Red Hat Inc.
-
 This file is part of Cygwin.
 
 This software is a copyrighted work licensed under the terms of the
@@ -40,13 +38,13 @@ mtx_init (mtx *m, const char *name, const void *, int)
 void
 _mtx_lock (mtx *m, DWORD winpid, const char *file, int line)
 {
-  _log (file, line, LOG_DEBUG, "Try locking mutex %s (%u) (hold: %u)",
+  _debug (file, line, "Try locking mutex %s (%u) (hold: %u)",
 	m->name, winpid, m->owner);
   if (WaitForSingleObject (m->h, INFINITE) != WAIT_OBJECT_0)
     _panic (file, line, "wait for %s in %d failed, %u", m->name, winpid,
 	    GetLastError ());
   m->owner = winpid;
-  _log (file, line, LOG_DEBUG, "Locked      mutex %s/%u (%u)",
+  _debug (file, line, "Locked      mutex %s/%u (owner: %u)",
 	m->name, ++m->cnt, winpid);
 }
 
@@ -89,7 +87,7 @@ _mtx_unlock (mtx *m, const char *file, int line)
 	_panic (file, line, "release of mutex %s failed, %u", m->name,
 		GetLastError ());
     }
-  _log (file, line, LOG_DEBUG, "Unlocked    mutex %s/%u (owner: %u)",
+  _debug (file, line, "Unlocked    mutex %s/%u (owner: %u)",
   	m->name, cnt, owner);
 }
 
@@ -277,13 +275,12 @@ public:
 };
 
 static msleep_sync_array *msleep_sync;
+extern struct msginfo msginfo;
+extern struct seminfo seminfo;
 
 void
 msleep_init (void)
 {
-  extern struct msginfo msginfo;
-  extern struct seminfo seminfo;
-
   msleep_glob_evt = CreateEvent (NULL, TRUE, FALSE, NULL);
   if (!msleep_glob_evt)
     panic ("CreateEvent in msleep_init failed: %u", GetLastError ());

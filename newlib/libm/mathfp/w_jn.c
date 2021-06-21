@@ -40,7 +40,7 @@ yn
 INDEX
 ynf
 
-ANSI_SYNOPSIS
+SYNOPSIS
 #include <math.h>
 double j0(double <[x]>);
 float j0f(float <[x]>);
@@ -54,39 +54,6 @@ double y1(double <[x]>);
 float y1f(float <[x]>);
 double yn(int <[n]>, double <[x]>);
 float ynf(int <[n]>, float <[x]>);
-
-TRAD_SYNOPSIS
-#include <math.h>
-
-double j0(<[x]>)
-double <[x]>;
-float j0f(<[x]>)
-float <[x]>;
-double j1(<[x]>)
-double <[x]>;
-float j1f(<[x]>)
-float <[x]>;
-double jn(<[n]>, <[x]>)
-int <[n]>;
-double <[x]>;
-float jnf(<[n]>, <[x]>)
-int <[n]>;
-float <[x]>;
-
-double y0(<[x]>)
-double <[x]>;
-float y0f(<[x]>)
-float <[x]>;
-double y1(<[x]>)
-double <[x]>;
-float y1f(<[x]>)
-float <[x]>;
-double yn(<[n]>, <[x]>)
-int <[n]>;
-double <[x]>;
-float ynf(<[n]>, <[x]>)
-int <[n]>;
-float <[x]>;
 
 DESCRIPTION
 The Bessel functions are a family of functions that solve the
@@ -160,25 +127,12 @@ None of the Bessel functions are in ANSI C.
 	return jn(n,x);
 #else
 	double z;
-	struct exception exc;
 	z = jn(n,x);
 	if(_LIB_VERSION == _IEEE_ || isnan(x) ) return z;
 	if(fabs(x)>X_TLOSS) {
 	    /* jn(|x|>X_TLOSS) */
-            exc.type = TLOSS;
-            exc.name = "jn";
-	    exc.err = 0;
-	    exc.arg1 = n;
-	    exc.arg2 = x;
-            exc.retval = 0.0;
-            if (_LIB_VERSION == _POSIX_)
-                errno = ERANGE;
-            else if (!matherr(&exc)) {
-               errno = ERANGE;
-            }        
-	    if (exc.err != 0)
-	       errno = exc.err;
-            return exc.retval; 
+	    errno = ERANGE;
+	    return 0.0;
 	} else
 	    return z;
 #endif
@@ -195,7 +149,6 @@ None of the Bessel functions are in ANSI C.
 	return yn(n,x);
 #else
 	double z;
-	struct exception exc;
 	z = yn(n,x);
 	if(_LIB_VERSION == _IEEE_ || isnan(x) ) return z;
         if(x <= 0.0){
@@ -206,40 +159,13 @@ None of the Bessel functions are in ANSI C.
 
 	    SET_HIGH_WORD(inf,0x7ff00000);	/* set inf to infinite */
 #endif
-	    exc.type = DOMAIN;	/* should be SING for IEEE */
-	    exc.name = "yn";
-	    exc.err = 0;
-	    exc.arg1 = n;
-	    exc.arg2 = x;
-	    if (_LIB_VERSION == _SVID_)
-	        exc.retval = -HUGE;
-	    else
-	        exc.retval = -HUGE_VAL;
-	    if (_LIB_VERSION == _POSIX_)
-	        errno = EDOM;
-	    else if (!matherr(&exc)) {
-	        errno = EDOM;
-	    }
-	    if (exc.err != 0)
-	       errno = exc.err;
-            return exc.retval; 
+	    errno = EDOM;
+	    return -HUGE_VAL;
         }
 	if(x>X_TLOSS) {
 	    /* yn(x>X_TLOSS) */
-            exc.type = TLOSS;
-            exc.name = "yn";
-	    exc.err = 0;
-	    exc.arg1 = n;
-	    exc.arg2 = x;
-            exc.retval = 0.0;
-            if (_LIB_VERSION == _POSIX_)
-                errno = ERANGE;
-            else if (!matherr(&exc)) {
-                errno = ERANGE;
-            }        
-	    if (exc.err != 0)
-	       errno = exc.err;
-            return exc.retval; 
+	    errno = ERANGE;
+	    return 0.0;
 	} else
 	    return z;
 #endif

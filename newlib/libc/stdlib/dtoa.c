@@ -33,9 +33,7 @@
 #include "mprec.h"
 
 static int
-_DEFUN (quorem,
-	(b, S),
-	_Bigint * b _AND _Bigint * S)
+quorem (_Bigint * b, _Bigint * S)
 {
   int n;
   __Long borrow, y;
@@ -177,14 +175,12 @@ _DEFUN (quorem,
 
 
 char *
-_DEFUN (_dtoa_r,
-	(ptr, _d, mode, ndigits, decpt, sign, rve),
-	struct _reent *ptr _AND
-	double _d _AND
-	int mode _AND
-	int ndigits _AND
-	int *decpt _AND
-	int *sign _AND
+_dtoa_r (struct _reent *ptr,
+	double _d,
+	int mode,
+	int ndigits,
+	int *decpt,
+	int *sign,
 	char **rve)
 {
   /*	Arguments ndigits, decpt, sign are similar to those
@@ -427,7 +423,7 @@ _DEFUN (_dtoa_r,
   for (_REENT_MP_RESULT_K(ptr) = 0; sizeof (_Bigint) - sizeof (__ULong) + j <= i;
        j <<= 1)
     _REENT_MP_RESULT_K(ptr)++;
-  _REENT_MP_RESULT(ptr) = Balloc (ptr, _REENT_MP_RESULT_K(ptr));
+  _REENT_MP_RESULT(ptr) = eBalloc (ptr, _REENT_MP_RESULT_K(ptr));
   s = s0 = (char *) _REENT_MP_RESULT(ptr);
 
   if (ilim >= 0 && ilim <= Quick_max && try_quick)
@@ -747,7 +743,7 @@ _DEFUN (_dtoa_r,
       mlo = mhi;
       if (spec_case)
 	{
-	  mhi = Balloc (ptr, mhi->_k);
+	  mhi = eBalloc (ptr, mhi->_k);
 	  Bcopy (mhi, mlo);
 	  mhi = lshift (ptr, mhi, Log2P);
 	}
