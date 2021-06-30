@@ -7,7 +7,7 @@
 
 #define SCE_ERRNO_MASK 0xFF
 
-struct hostent *gethostbyaddr(const void *__addr, socklen_t __len, int __type) {
+struct hostent *gethostbyaddr(const void *addr, socklen_t len, int type) {
     static struct hostent ent;
     char name[NI_MAXHOST];
     static char sname[NI_MAXHOST] = "";
