@@ -31,4 +31,16 @@ extern int __attribute__((weak)) __vita_glue_socket_close(SceUID scefd);
 extern int __attribute__((weak)) __vita_glue_socket_recv(SceUID scefd, void *buf, size_t len, int flags);
 extern int __attribute__((weak)) __vita_glue_socket_send(SceUID scefd, const void *buf, size_t len, int flags);
 
+void _init_vita_heap();
+void _init_vita_heap();
+void _init_vita_reent();
+void _init_vita_malloc();
+void _init_vita_io();
+
+void _free_vita_io();
+void _free_vita_malloc();
+void _free_vita_reent();
+void _free_vita_heap();
+
+void _free_vita_newlib();
 #endif // _VITAGLUE_H_

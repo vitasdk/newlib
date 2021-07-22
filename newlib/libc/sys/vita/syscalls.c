@@ -382,7 +382,7 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 }
 
 int
-_truncate_r(struct _reent *reent, char* path, off_t length)
+_truncate_r(struct _reent *reent, const char* path, off_t length)
 {
 	struct SceIoStat stat = {0};
 	stat.st_size = length;

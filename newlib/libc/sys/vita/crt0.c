@@ -1,7 +1,12 @@
+#include "vitaglue.h"
+#include <string.h>
+#include <stdlib.h>
+
 /* The maximum number of arguments that can be passed to main(). */
 #define ARGC_MAX 19
 
 int main(int argc, const char* argv[]);
+void __libc_init_array (void);
 
 void _init_vita_newlib(void) {
 	_init_vita_heap();
@@ -24,7 +29,7 @@ void _free_vita_newlib(void) {
 
 void _start(unsigned int args, void *argp)
 {
-	char *argv[ARGC_MAX + 1] = {""}; // Program name
+	const char *argv[ARGC_MAX + 1] = {""}; // Program name
 	int argc = 1;
 	int loc = 0;
 	char *ptr = argp;
