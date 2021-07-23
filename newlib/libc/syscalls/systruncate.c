@@ -5,9 +5,8 @@
 #include <unistd.h>
 
 int
-_DEFUN (truncate, (path, pstat),
-     const char * path _AND
-     off_t length)
+truncate (const char * path,
+     _off_t length)
 {
   return _truncate_r (_REENT, path, length);
 }

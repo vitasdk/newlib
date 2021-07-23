@@ -5,9 +5,8 @@
 #include <unistd.h>
 
 int
-_DEFUN (ftruncate, (fd, pstat),
-     int fd _AND
-     off_t length)
+ftruncate (int fd,
+     _off_t length)
 {
   return _ftruncate_r (_REENT, fd, length);
 }
