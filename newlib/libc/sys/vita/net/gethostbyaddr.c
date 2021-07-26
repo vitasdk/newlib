@@ -7,13 +7,13 @@
 
 #define SCE_ERRNO_MASK 0xFF
 
-struct hostent *gethostbyaddr(const void *__addr, socklen_t __len, int __type) {
+struct hostent *gethostbyaddr(const void *addr, socklen_t len, int type) {
     static struct hostent ent;
     char name[NI_MAXHOST];
     static char sname[NI_MAXHOST] = "";
     static char *addrlist[2] = { NULL, NULL };
 
-    if (__type != SCE_NET_AF_INET) {
+    if (type != SCE_NET_AF_INET) {
         errno = SCE_NET_ERROR_RESOLVER_ENOSUPPORT;
         return NULL;
     }
@@ -24,7 +24,7 @@ struct hostent *gethostbyaddr(const void *__addr, socklen_t __len, int __type) {
         return NULL;
     }
 
-    int err = sceNetResolverStartAton(rid, __addr, name, sizeof(name), 0, 0, 0);
+    int err = sceNetResolverStartAton(rid, addr, name, sizeof(name), 0, 0, 0);
     sceNetResolverDestroy(rid);
     if (err < 0) {
         errno = err & SCE_ERRNO_MASK;
@@ -32,11 +32,11 @@ struct hostent *gethostbyaddr(const void *__addr, socklen_t __len, int __type) {
     }
 
     strncpy(sname, name, NI_MAXHOST - 1);
-    addrlist[0] = (char *) __addr;
+    addrlist[0] = (char *) addr;
 
     ent.h_name = sname;
     ent.h_aliases = 0;
-    ent.h_addrtype = __type;
+    ent.h_addrtype = type;
     ent.h_length = sizeof(struct SceNetInAddr);
     ent.h_addr_list = addrlist;
     ent.h_addr = addrlist[0];
