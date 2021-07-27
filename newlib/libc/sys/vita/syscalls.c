@@ -190,6 +190,18 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 	return ret;
 }
 
+int 
+_mkdir_r (struct _reent * reent, const char * path, int mode)
+{
+	int ret;
+	if ((ret = sceIoMkdir(path, 0777)) < 0) {
+		reent->_errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+	reent->_errno = 0;
+	return 0;
+}
+
 int _fcntl2sony(int flags) {
 	int out = 0;
 	if (flags & O_RDWR)
