@@ -69,7 +69,8 @@ LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_DEPENDENCIES = $(SOCKET_OBJS) $(NET_OBJS) $(DIRENT_OBJS)
-am__objects_1 = lib_a-gethostbyaddr.$(OBJEXT) \
+am__objects_1 = lib_a-chroot.$(OBJEXT) lib_a-groups.$(OBJEXT)
+am__objects_2 = lib_a-gethostbyaddr.$(OBJEXT) \
 	lib_a-gethostbyname.$(OBJEXT) lib_a-getaddrinfo.$(OBJEXT) \
 	lib_a-freeaddrinfo.$(OBJEXT) lib_a-getservbyname.$(OBJEXT) \
 	lib_a-inet_ntop.$(OBJEXT) lib_a-inet_ntoa.$(OBJEXT) \
@@ -85,8 +86,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-select.$(OBJEXT) lib_a-error.$(OBJEXT) \
 	lib_a-dirent.$(OBJEXT) lib_a-lcltime_r.$(OBJEXT) \
 	lib_a-sleep.$(OBJEXT) lib_a-usleep.$(OBJEXT) \
-	lib_a-truncate.$(OBJEXT) lib_a-groups.$(OBJEXT) \
-	$(am__objects_1)
+	lib_a-truncate.$(OBJEXT) $(am__objects_1) $(am__objects_2)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp =
@@ -216,7 +216,8 @@ SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o
 NET_OBJS = gethostbyaddr.o gethostbyname.o getaddrinfo.o freeaddrinfo.o getservbyname.o inet_ntop.o inet_ntoa.o inet_netof.o inet_pton.o inet_lnaof.o inet_addr.o inet_network.o inet_net_ntop.o inet_aton.o inet_net_pton.o inet_makeaddr.o
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c sleep.c usleep.c truncate.c groups.c ${NET_SOURCES}
+STUB_SOURCES = chroot.c groups.c
+lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c lcltime_r.c sleep.c usleep.c truncate.c ${STUB_SOURCES} ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
@@ -369,6 +370,12 @@ lib_a-truncate.o: truncate.c
 
 lib_a-truncate.obj: truncate.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-truncate.obj `if test -f 'truncate.c'; then $(CYGPATH_W) 'truncate.c'; else $(CYGPATH_W) '$(srcdir)/truncate.c'; fi`
+
+lib_a-chroot.o: chroot.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-chroot.o `test -f 'chroot.c' || echo '$(srcdir)/'`chroot.c
+
+lib_a-chroot.obj: chroot.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-chroot.obj `if test -f 'chroot.c'; then $(CYGPATH_W) 'chroot.c'; else $(CYGPATH_W) '$(srcdir)/chroot.c'; fi`
 
 lib_a-groups.o: groups.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-groups.o `test -f 'groups.c' || echo '$(srcdir)/'`groups.c
