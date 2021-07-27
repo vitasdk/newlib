@@ -7,7 +7,6 @@ INCLUDES = $(NEWLIB_CFLAGS) $(CROSS_CFLAGS) $(TARGET_CFLAGS)
 GENERAL_SOURCES = \
 	sysclose.c	\
 	sysfcntl.c	\
-	sysftruncate.c	\
 	sysfstat.c	\
 	sysgetpid.c	\
 	sysgettod.c	\
@@ -20,7 +19,6 @@ GENERAL_SOURCES = \
 	syssbrk.c	\
 	sysstat.c	\
 	systimes.c	\
-	systruncate.c	\
 	sysunlink.c	\
 	syswrite.c
 

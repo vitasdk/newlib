@@ -160,9 +160,6 @@ extern _ssize_t _write_r (struct _reent *, int, const void *, size_t);
 /* This one is not guaranteed to be available on all targets.  */
 extern int _gettimeofday_r (struct _reent *, struct timeval *__tp, void *__tzp);
 
-extern int _truncate_r(struct _reent *reent, const char* path, _off_t length);
-extern int _ftruncate_r(struct _reent *reent, int fd, _off_t length);
-
 #ifdef __LARGE64_FILES
 
 
