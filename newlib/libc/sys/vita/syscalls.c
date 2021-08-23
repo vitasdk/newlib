@@ -21,10 +21,6 @@
 #include "vitaglue.h"
 #include "vitaerror.h"
 
-
-// TODO: add to SDK
-int sceKernelLibcGettimeofday(struct timeval *ptimeval, void *ptimezone);
-
 #define SCE_ERRNO_MASK 0xFF
 
 _ssize_t
@@ -111,7 +107,7 @@ _getpid_r(struct _reent *reent)
 int
 _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
-	int ret = sceKernelLibcGettimeofday(ptimeval, ptimezone);
+	int ret = sceKernelLibcGettimeofday((SceKernelTimeval*)ptimeval, (SceKernelTimezone *)ptimezone);
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
