@@ -70,6 +70,7 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
 typedef uint8_t sa_family_t;
 typedef uint32_t socklen_t;
@@ -244,11 +245,6 @@ struct sockaddr_storage {
 #define	SHUT_RD		0		/* Disallow further receives. */
 #define	SHUT_WR		1		/* Disallow further sends. */
 #define	SHUT_RDWR	2		/* Disallow further sends/receives. */
-
-struct iovec {
-	void	*iov_base;	/* Base address. */
-	size_t	 iov_len;	/* Length. */
-};
 
 struct msghdr {
 	void		*msg_name;	/* optional address */
