@@ -22,6 +22,11 @@ extern "C" {
 #endif
 
 #include <sys/types.h>
+#include <string.h>
+
+#ifndef __GNU_VISIBLE
+void* mempcpy(void *<[out]>, const void *<[in]>, size_t <[n]>);
+#endif
 
 struct iovec {
   void   *iov_base;
