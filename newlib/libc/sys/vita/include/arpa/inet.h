@@ -28,9 +28,13 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <sys/cdefs.h>
+
 
 #define	INET_ADDRSTRLEN		16
 #define	INET6_ADDRSTRLEN	46
+
+__BEGIN_DECLS
 
 int inet_aton(const char *cp, struct in_addr *inp);
 in_addr_t inet_addr(const char *cp);
@@ -43,5 +47,7 @@ const char *inet_ntop(int af, const void *src, char *dst, socklen_t size);
 int inet_pton(int af, const char *src, void *dst);
 int inet_net_pton(int af, const char *pres, void *netp, size_t nsize);
 char *inet_net_ntop(int af, const void *netp, int bits, char *pres, size_t psize);
+
+__END_DECLS
 
 #endif
