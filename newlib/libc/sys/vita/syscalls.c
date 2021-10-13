@@ -12,6 +12,7 @@
 #include <psp2/io/dirent.h>
 #include <psp2/io/stat.h>
 #include <psp2/rtc.h>
+#include <psp2/net/net.h>
 
 #include <psp2/kernel/processmgr.h>
 
@@ -42,8 +43,13 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 		ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
-		if (__vita_glue_socket_send)
-			ret = __vita_glue_socket_send(fdmap->sce_uid, buf, nbytes, 0);
+		ret = sceNetSend(fdmap->sce_uid, buf, nbytes, 0);
+		if (ret < 0) {
+			if (ret != -1 )
+				reent->_errno = __vita_sce_errno_to_errno(ret);
+			__vita_fd_drop(fdmap);
+			return -1;
+		}
 		break;
 	}
 
@@ -265,8 +271,13 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 		ret = sceIoRead(fdmap->sce_uid, ptr, len);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
-		if (__vita_glue_socket_recv)
-			ret = __vita_glue_socket_recv(fdmap->sce_uid, ptr, len, 0);
+		ret = sceNetRecv(fdmap->sce_uid, ptr, len, 0);
+		if (ret < 0) {
+			if (ret != -1 )
+				reent->_errno = __vita_sce_errno_to_errno(ret);
+			__vita_fd_drop(fdmap);
+			return -1;
+		}
 		break;
 	}
 
