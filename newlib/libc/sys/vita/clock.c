@@ -99,3 +99,43 @@ int clock_getres(clockid_t clk_id, struct timespec *res)
     errno = EINVAL;
     return -1;
 }
+
+int timer_create (clockid_t clock_id,
+        struct sigevent *__restrict evp,
+        timer_t *__restrict timerid)
+{
+    errno = ENOTSUP;
+    return -1;
+}
+
+int timer_delete (timer_t timerid)
+{
+    errno = EINVAL; // because we can't create timers - any timerid would be invalid
+    return -1;
+}
+
+int timer_settime (timer_t timerid, int flags,
+        const struct itimerspec *__restrict value,
+        struct itimerspec *__restrict ovalue)
+{
+    errno = EINVAL;
+    return -1;
+}
+
+int timer_gettime (timer_t timerid, struct itimerspec *value)
+{
+    errno = EINVAL;
+    return -1;
+}
+
+int timer_getoverrun (timer_t timerid)
+{
+    errno = EINVAL;
+    return -1;
+}
+
+int nanosleep (const struct timespec  *rqtp, struct timespec *rmtp)
+{
+    errno = ENOSYS;
+    return -1;
+}
