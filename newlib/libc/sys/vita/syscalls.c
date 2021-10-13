@@ -192,7 +192,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 	return ret;
 }
 
-int
+int 
 _mkdir_r (struct _reent * reent, const char * path, int mode)
 {
 	int ret;
@@ -283,7 +283,7 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
-		if (ret != -1 )
+		if (ret != -1)
 			reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
 	}
