@@ -5,9 +5,11 @@
 
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/net/net.h>
 
 #include "vitadescriptor.h"
 #include "vitaglue.h"
+#include "vitaerror.h"
 
 #define SCE_ERRNO_MASK 0xFF
 
@@ -195,8 +197,11 @@ int __vita_fd_drop(DescriptorTranslation *map)
 			break;
 		}
 		case VITA_DESCRIPTOR_SOCKET:
-			if (__vita_glue_socket_close)
-				ret = __vita_glue_socket_close(map->sce_uid);
+			ret = sceNetSocketClose(map->sce_uid);
+			if (ret < 0) {
+				sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+				return __vita_sce_errno_to_errno(ret);
+			}
 			break;
 		}
 

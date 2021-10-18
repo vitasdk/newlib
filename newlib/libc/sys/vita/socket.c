@@ -467,22 +467,4 @@ int	socket(int domain, int type, int protocol)
 	__vita_fdmap[s]->type = VITA_DESCRIPTOR_SOCKET;
 	return s;
 }
-
-int __vita_glue_socket_close(SceUID scefd)
-{
-	int res = sceNetSocketClose(scefd);
-	return res >= 0 ? res : __vita_sce_errno_to_errno(res);
-}
-
-ssize_t __vita_glue_socket_recv(SceUID scefd, void *buf, size_t len, int flags)
-{
-	int res = sceNetRecv(scefd, buf, len, flags);
-	return res >= 0 ? res : __vita_sce_errno_to_errno(res);
-}
-
-ssize_t	__vita_glue_socket_send(SceUID scefd, const void *buf, size_t len, int flags)
-{
-	int res = sceNetSend(scefd, buf, len, flags);
-	return res >= 0 ? res : __vita_sce_errno_to_errno(res);
-}
 #endif
