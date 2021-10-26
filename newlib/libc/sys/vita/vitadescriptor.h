@@ -32,7 +32,8 @@ typedef enum
 {
 	VITA_DESCRIPTOR_FILE,
 	VITA_DESCRIPTOR_SOCKET,
-	VITA_DESCRIPTOR_TTY
+	VITA_DESCRIPTOR_TTY,
+	VITA_DESCRIPTOR_DIR
 } DescriptorTypes;
 
 typedef struct
@@ -58,4 +59,3 @@ static inline int is_fd_valid(int fd)
 }
 
 #endif // _VITADESCRIPTOR_H_
-
