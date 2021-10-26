@@ -31,6 +31,8 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
 
+#include "vitadescriptor.h"
+
 #define SCE_ERRNO_MASK 0xFF
 #define MAXNAMLEN	256
 
@@ -88,6 +90,34 @@ DIR *opendir(const char *dirname)
 	strncpy(dirp->dirname, dirname, sizeof(dirp->dirname)-1 );
 	dirp->index = 0;
 
+	errno = 0;
+	return dirp;
+}
+
+DIR *fdopendir(int fd)
+{
+	int ret;
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap) {
+		errno = EBADF;
+		return NULL;
+	}
+
+	DIR *dirp;
+
+	if ((dirp = (DIR *)malloc(sizeof(DIR))) == NULL) {
+		errno = ENOMEM;
+		
+		__vita_fd_drop(fdmap);
+		__vita_release_descriptor(fd);
+		return NULL;
+	}
+
+	dirp->uid = fdmap->sce_uid;
+	dirp->index = 0;
+
+	__vita_fd_drop(fdmap);
 	errno = 0;
 	return dirp;
 }
