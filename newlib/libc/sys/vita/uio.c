@@ -14,10 +14,6 @@
  * <http://www.gnu.org/licenses/>.  
  */
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -136,7 +132,3 @@ ssize_t readv (int fd, const struct iovec *vector, int count)
 
   return bytes_read;
 }
-
-#if defined(__cplusplus)
-}  /* extern "C" */
-#endif
