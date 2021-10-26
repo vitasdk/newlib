@@ -27,11 +27,17 @@ DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/dirent.h>
 #include <sys/stat.h>
+#include <sys/unistd.h>
 
 #include <psp2/types.h>
 #include <psp2/io/stat.h>
+#include <psp2/io/fcntl.h>
+
+#include "vitadescriptor.h"
 
 #define SCE_ERRNO_MASK 0xFF
 
@@ -49,4 +55,27 @@ int rmdir(const char *pathname)
 	}
 	errno = 0;
 	return 0;
+}
+
+int fsync (int __fd)
+{
+  int ret;
+
+  DescriptorTranslation *fdmap = __vita_fd_grab(__fd);
+
+  if (!fdmap) {
+    errno = EBADF;
+    return -1;
+  }
+
+  ret = sceIoSyncByFd(fdmap->sce_uid, 0);
+  __vita_fd_drop(fdmap);
+
+  if (ret < 0) {
+    errno = ret & SCE_ERRNO_MASK;
+    return -1;
+  }
+
+  errno = 0;
+  return ret;
 }
