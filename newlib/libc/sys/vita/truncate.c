@@ -34,7 +34,7 @@ DEALINGS IN THE SOFTWARE.
 
 int truncate(const char *path, off_t length)
 {
-    struct _reent *reent = _REENT;
+	struct _reent *reent = _REENT;
 	struct SceIoStat stat = {0};
 	stat.st_size = length;
 	int ret;
@@ -52,11 +52,11 @@ int truncate(const char *path, off_t length)
 
 int ftruncate(int fd, off_t length)
 {
-    struct _reent *reent = _REENT;
+	struct _reent *reent = _REENT;
 	struct SceIoStat stat = {0};
 	stat.st_size = length;
 	int ret;
-	
+
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
 	if (!fdmap) {
@@ -72,6 +72,9 @@ int ftruncate(int fd, off_t length)
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_SOCKET:
 		ret = EBADF;
+		break;
+	case VITA_DESCRIPTOR_DIR:
+		ret = EISDIR;
 		break;
 	}
 
