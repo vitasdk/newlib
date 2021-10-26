@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <psp2/io/fcntl.h>
+#include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
 
@@ -192,10 +193,11 @@ int __vita_fd_drop(DescriptorTranslation *map)
 		{
 		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_TTY:
-		{
 			ret = sceIoClose(map->sce_uid);
 			break;
-		}
+		case VITA_DESCRIPTOR_DIR:
+			ret = sceIoDclose(map->sce_uid);
+			break;
 		case VITA_DESCRIPTOR_SOCKET:
 			ret = sceNetSocketClose(map->sce_uid);
 			if (ret < 0) {
