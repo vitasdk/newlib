@@ -17,12 +17,11 @@
 #ifndef _SYS_UIO_H_
 #define _SYS_UIO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <sys/types.h>
 #include <string.h>
+#include <sys/cdefs.h>
+
+__BEGIN_DECLS
 
 #ifndef __GNU_VISIBLE
 void* mempcpy(void *<[out]>, const void *<[in]>, size_t <[n]>);
@@ -36,8 +35,6 @@ struct iovec {
 ssize_t readv(int, const struct iovec *, int);
 ssize_t writev(int, const struct iovec *, int);
 
-#ifdef __cplusplus
-};
-#endif
+__END_DECLS
 
 #endif /* sys/uio.h */
