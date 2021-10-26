@@ -42,6 +42,10 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 	case VITA_DESCRIPTOR_TTY:
 		ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
 		break;
+	case VITA_DESCRIPTOR_DIR:
+		__vita_fd_drop(fdmap);
+		reent->_errno = EBADF;
+		return -1;
 	case VITA_DESCRIPTOR_SOCKET:
 		ret = sceNetSend(fdmap->sce_uid, buf, nbytes, 0);
 		if (ret < 0) {
@@ -49,7 +53,6 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 			__vita_fd_drop(fdmap);
 			return -1;
 		}
-
 		break;
 	}
 
@@ -178,6 +181,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 		break;
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_SOCKET:
+	case VITA_DESCRIPTOR_DIR:
 		ret = EBADF;
 		break;
 	}
@@ -192,7 +196,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 	return ret;
 }
 
-int 
+int
 _mkdir_r (struct _reent * reent, const char * path, int mode)
 {
 	int ret;
@@ -229,9 +233,29 @@ int
 _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret;
-	flags = _fcntl2sony(flags);
+	int isdir = 0;
+	int sce_flags;
+	
+	sce_flags = _fcntl2sony(flags);
 
-	ret = sceIoOpen(file, flags, 0666);
+	ret = sceIoOpen(file, sce_flags, 0666);
+	
+	if ((ret < 0) && ((ret & SCE_ERRNO_MASK) == EISDIR)) {
+		if ((flags & O_RDWR) || (flags & O_WRONLY)) {
+			reent->_errno = EINVAL;
+			return -1;
+		}
+
+		isdir = 1;
+		ret = sceIoDopen(file);
+
+		if (((flags & O_CREAT) || (flags & O_EXCL)) && ret >= 0) {
+			sceIoDclose(ret);
+			reent->_errno = EEXIST;
+			return -1;
+		}
+	}
+	
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
@@ -239,15 +263,19 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 
 	int fd = __vita_acquire_descriptor();
 
-	if (fd < 0)
-	{
+	if (fd < 0) {
+		if (isdir) {
+			sceIoDclose(ret);
+		} else {
+			sceIoClose(ret);
+		}
 		sceIoClose(ret);
 		reent->_errno = EMFILE;
 		return -1;
 	}
 
 	__vita_fdmap[fd]->sce_uid = ret;
-	__vita_fdmap[fd]->type = VITA_DESCRIPTOR_FILE;
+	__vita_fdmap[fd]->type = isdir ? VITA_DESCRIPTOR_DIR : VITA_DESCRIPTOR_FILE;
 
 	reent->_errno = 0;
 	return fd;
@@ -270,6 +298,10 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	case VITA_DESCRIPTOR_FILE:
 		ret = sceIoRead(fdmap->sce_uid, ptr, len);
 		break;
+	case VITA_DESCRIPTOR_DIR:
+		__vita_fd_drop(fdmap);
+		reent->_errno = EBADF;
+		return -1;
 	case VITA_DESCRIPTOR_SOCKET:
 		ret = sceNetRecv(fdmap->sce_uid, ptr, len, 0);
 		if (ret < 0) {
@@ -366,6 +398,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 	{
 	case VITA_DESCRIPTOR_TTY:
 	case VITA_DESCRIPTOR_FILE:
+	case VITA_DESCRIPTOR_DIR:
 		ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 		break;
 	case VITA_DESCRIPTOR_SOCKET:
