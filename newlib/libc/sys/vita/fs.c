@@ -59,23 +59,35 @@ int rmdir(const char *pathname)
 
 int fsync (int __fd)
 {
-  int ret;
+	int ret;
 
-  DescriptorTranslation *fdmap = __vita_fd_grab(__fd);
+	DescriptorTranslation *fdmap = __vita_fd_grab(__fd);
 
-  if (!fdmap) {
-    errno = EBADF;
-    return -1;
-  }
+	if (!fdmap) {
+		errno = EBADF;
+		return -1;
+	}
 
-  ret = sceIoSyncByFd(fdmap->sce_uid, 0);
-  __vita_fd_drop(fdmap);
+	switch (fdmap->type)
+	{
+	case VITA_DESCRIPTOR_FILE:
+		ret = sceIoSyncByFd(fdmap->sce_uid, 0);
+		break;
+	case VITA_DESCRIPTOR_TTY:
+	case VITA_DESCRIPTOR_SOCKET:
+	case VITA_DESCRIPTOR_DIR:
+		__vita_fd_drop(fdmap);
+		errno = EINVAL;
+		return -1;
+	}
 
-  if (ret < 0) {
-    errno = ret & SCE_ERRNO_MASK;
-    return -1;
-  }
+	__vita_fd_drop(fdmap);
 
-  errno = 0;
-  return ret;
+	if (ret < 0) {
+		errno = ret & SCE_ERRNO_MASK;
+		return -1;
+	}
+
+	errno = 0;
+	return ret;
 }
