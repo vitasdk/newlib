@@ -25,11 +25,26 @@ DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
+#include <sys/times.h>
+#include <reent.h>
 
 #include <psp2/rtc.h>
 #include <psp2/kernel/processmgr.h>
 
 #include "vitaerror.h"
+
+clock_t clock()
+{
+  struct tms tim_s;
+  clock_t res;
+
+  if ((res = (clock_t) _times_r (_REENT, &tim_s)) != (clock_t) -1)
+    res = (clock_t) (tim_s.tms_utime + tim_s.tms_stime +
+                     tim_s.tms_cutime + tim_s.tms_cstime);
+
+  return res;
+}
 
 int clock_gettime(clockid_t clk_id, struct timespec *tp)
 {
