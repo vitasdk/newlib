@@ -233,29 +233,25 @@ int
 _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret;
-	int isdir = 0;
-	int sce_flags;
-	
-	sce_flags = _fcntl2sony(flags);
+	int sce_flags = _fcntl2sony(flags);
 
-	ret = sceIoOpen(file, sce_flags, 0666);
-	
-	if ((ret < 0) && ((ret & SCE_ERRNO_MASK) == EISDIR)) {
+	if (flags & O_DIRECTORY) {
 		if ((flags & O_RDWR) || (flags & O_WRONLY)) {
 			reent->_errno = EINVAL;
 			return -1;
 		}
 
-		isdir = 1;
 		ret = sceIoDopen(file);
 
-		if (((flags & O_CREAT) || (flags & O_EXCL)) && ret >= 0) {
+		if (ret >= 0 && (flags & O_CREAT) && (flags & O_EXCL)) {
 			sceIoDclose(ret);
 			reent->_errno = EEXIST;
 			return -1;
 		}
+	} else {
+		ret = sceIoOpen(file, sce_flags, 0666);
 	}
-	
+
 	if (ret < 0) {
 		reent->_errno = ret & SCE_ERRNO_MASK;
 		return -1;
@@ -264,7 +260,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	int fd = __vita_acquire_descriptor();
 
 	if (fd < 0) {
-		if (isdir) {
+		if (flags & O_DIRECTORY) {
 			sceIoDclose(ret);
 		} else {
 			sceIoClose(ret);
@@ -275,7 +271,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	}
 
 	__vita_fdmap[fd]->sce_uid = ret;
-	__vita_fdmap[fd]->type = isdir ? VITA_DESCRIPTOR_DIR : VITA_DESCRIPTOR_FILE;
+	__vita_fdmap[fd]->type = (flags & O_DIRECTORY) ? VITA_DESCRIPTOR_DIR : VITA_DESCRIPTOR_FILE;
 
 	reent->_errno = 0;
 	return fd;
