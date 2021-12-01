@@ -29,8 +29,7 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/io/stat.h>
 
 #include "vitadescriptor.h"
-
-#define SCE_ERRNO_MASK 0xFF
+#include "vitaerror.h"
 
 int truncate(const char *path, off_t length)
 {
@@ -41,8 +40,9 @@ int truncate(const char *path, off_t length)
 
 	ret = sceIoChstat(path, &stat, SCE_CST_SIZE);
 
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	if (ret < 0)
+	{
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -59,26 +59,29 @@ int ftruncate(int fd, off_t length)
 	
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
-	if (!fdmap) {
+	if (!fdmap)
+	{
 		reent->_errno = EBADF;
 		return -1;
 	}
 
 	switch (fdmap->type)
 	{
-	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoChstatByFd(fdmap->sce_uid, &stat, SCE_CST_SIZE);
-		break;
-	case VITA_DESCRIPTOR_TTY:
-	case VITA_DESCRIPTOR_SOCKET:
-		ret = EBADF;
-		break;
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceIoChstatByFd(fdmap->sce_uid, &stat, SCE_CST_SIZE);
+			break;
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
 	}
 
 	__vita_fd_drop(fdmap);
 
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	if (ret < 0)
+	{
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 

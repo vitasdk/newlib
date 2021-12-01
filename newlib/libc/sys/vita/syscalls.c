@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <reent.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -21,13 +22,13 @@
 #include "vitadescriptor.h"
 #include "vitaglue.h"
 #include "vitaerror.h"
-
-#define SCE_ERRNO_MASK 0xFF
+#include "vitafs.h"
 
 _ssize_t
 _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 {
-	int ret;
+	int ret = 0;
+	int type = ERROR_GENERIC;
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
@@ -38,26 +39,24 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 
 	switch (fdmap->type)
 	{
-	case VITA_DESCRIPTOR_FILE:
-	case VITA_DESCRIPTOR_TTY:
-		ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
-		break;
-	case VITA_DESCRIPTOR_SOCKET:
-		ret = sceNetSend(fdmap->sce_uid, buf, nbytes, 0);
-		if (ret < 0) {
-			reent->_errno = __vita_sce_errno_to_errno(ret);
-			__vita_fd_drop(fdmap);
-			return -1;
-		}
-
-		break;
+		case VITA_DESCRIPTOR_FILE:
+		case VITA_DESCRIPTOR_TTY:
+			ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
+			break;
+		case VITA_DESCRIPTOR_SOCKET:
+			type = ERROR_SOCKET;
+			ret = sceNetSend(fdmap->sce_uid, buf, nbytes, 0);
+			break;
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
 	}
 
 	__vita_fd_drop(fdmap);
 
 	if (ret < 0) {
 		if (ret != -1)
-			reent->_errno = ret & SCE_ERRNO_MASK;
+			reent->_errno = __vita_sce_errno_to_errno(ret, type);
 		return -1;
 	}
 
@@ -80,7 +79,7 @@ _close_r(struct _reent *reent, int fd)
 
 	if (res < 0)
 	{
-		reent->_errno = -res;
+		reent->_errno = EBADF;
 		return -1;
 	}
 
@@ -115,7 +114,7 @@ _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
 	int ret = sceKernelLibcGettimeofday((SceKernelTimeval*)ptimeval, (SceKernelTimezone *)ptimezone);
 	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 	reent->_errno = 0;
@@ -132,7 +131,7 @@ _isatty_r(struct _reent *reent, int fd)
 		return 0;
 	}
 
-	int istty = fdmap->type == VITA_DESCRIPTOR_TTY;
+	int istty = (fdmap->type == VITA_DESCRIPTOR_TTY);
 
 	__vita_fd_drop(fdmap);
 	return istty;
@@ -141,20 +140,23 @@ _isatty_r(struct _reent *reent, int fd)
 int
 _kill_r(struct _reent *reent, int pid, int sig)
 {
-	if (pid != sceKernelGetProcessId()) {
+	if (pid != sceKernelGetProcessId())
+	{
 		reent->_errno = EPERM;
 		return -1;
 	}
-	switch (sig) {
-	default:
-		__builtin_trap();
-	case SIGINT:
-	case SIGTERM:
-		sceKernelExitProcess(-sig);
-		break;
-	case SIGCHLD:
-	case SIGCONT:
-		return 0;
+	switch (sig)
+	{
+		default:
+			__builtin_trap();
+			break;
+		case SIGINT:
+		case SIGTERM:
+			sceKernelExitProcess(-sig);
+			break;
+		case SIGCHLD:
+		case SIGCONT:
+			return 0;
 	}
 }
 
@@ -173,19 +175,21 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 
 	switch (fdmap->type)
 	{
-	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoLseek32(fdmap->sce_uid, ptr, dir);
-		break;
-	case VITA_DESCRIPTOR_TTY:
-	case VITA_DESCRIPTOR_SOCKET:
-		ret = EBADF;
-		break;
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceIoLseek32(fdmap->sce_uid, ptr, dir);
+			break;
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
 	}
 
 	__vita_fd_drop(fdmap);
 
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	if (ret < 0)
+	{
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -196,15 +200,25 @@ int
 _mkdir_r (struct _reent * reent, const char * path, int mode)
 {
 	int ret;
-	if ((ret = sceIoMkdir(path, 0777)) < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	char* full_path = __realpath(path);
+	if(!full_path)
+	{
+		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+	if ((ret = sceIoMkdir(full_path, 0777)) < 0)
+	{
+		free(full_path);
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+	free(full_path);
 	reent->_errno = 0;
 	return 0;
 }
 
-int _fcntl2sony(int flags) {
+int _fcntl2sony(int flags)
+{
 	int out = 0;
 	if (flags & O_RDWR)
 		out |= SCE_O_RDWR;
@@ -229,25 +243,55 @@ int
 _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret;
-	flags = _fcntl2sony(flags);
+	int sce_flags = _fcntl2sony(flags);
+	int is_dir = 0;
 
-	ret = sceIoOpen(file, flags, 0666);
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+    // check flags
+
+	char* full_path = __realpath(file);
+	if (!full_path)
+	{
+		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+
+	// get full path and stat. if dir - use dir funcs, otherwise - file
+	// if O_DIRECTORY passed - check that path is indeed dir and return ENOTDIR otherwise
+	// ENOENT, etc is handled by sce funcs
+	if (__is_dir(full_path) == 0) {
+		is_dir = 1;
+	}
+	if (flags & O_DIRECTORY && !is_dir)
+	{
+		free(full_path);
+		reent->_errno = ENOTDIR;
+		return -1;
+	}
+
+	ret = is_dir ? sceIoDopen(full_path) : sceIoOpen(full_path, sce_flags, 0666);
+	if (ret < 0)
+	{
+		free(full_path);
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+
 
 	int fd = __vita_acquire_descriptor();
 
 	if (fd < 0)
 	{
-		sceIoClose(ret);
+		free(full_path);
+		is_dir ? sceIoDclose(ret) : sceIoClose(ret);
 		reent->_errno = EMFILE;
 		return -1;
 	}
 
 	__vita_fdmap[fd]->sce_uid = ret;
-	__vita_fdmap[fd]->type = VITA_DESCRIPTOR_FILE;
+	__vita_fdmap[fd]->type = is_dir ? VITA_DESCRIPTOR_DIRECTORY : VITA_DESCRIPTOR_FILE;
+	__vita_fdmap[fd]->filename = strdup(full_path);
+
+	free(full_path);
 
 	reent->_errno = 0;
 	return fd;
@@ -257,34 +301,36 @@ _ssize_t
 _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 {
 	int ret;
+	int type = ERROR_GENERIC;
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
-	if (!fdmap) {
+	if (!fdmap)
+	{
 		reent->_errno = EBADF;
 		return -1;
 	}
 
 	switch (fdmap->type)
 	{
-	case VITA_DESCRIPTOR_TTY:
-	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoRead(fdmap->sce_uid, ptr, len);
-		break;
-	case VITA_DESCRIPTOR_SOCKET:
-		ret = sceNetRecv(fdmap->sce_uid, ptr, len, 0);
-		if (ret < 0) {
-			reent->_errno = __vita_sce_errno_to_errno(ret);
-			__vita_fd_drop(fdmap);
-			return -1;
-		}
-		break;
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceIoRead(fdmap->sce_uid, ptr, len);
+			break;
+		case VITA_DESCRIPTOR_SOCKET:
+			type = ERROR_SOCKET;
+			ret = sceNetRecv(fdmap->sce_uid, ptr, len, 0);
+			break;
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
 	}
 
 	__vita_fd_drop(fdmap);
 
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		if (ret != -1)
-			reent->_errno = ret & SCE_ERRNO_MASK;
+			reent->_errno = __vita_sce_errno_to_errno(ret, type);
 		return -1;
 	}
 
@@ -303,11 +349,20 @@ int
 _unlink_r(struct _reent *reent, const char * path)
 {
 	int ret;
-	ret = sceIoRemove(path);
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	char* full_path = __realpath(path);
+	if (!full_path)
+	{
+		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+	ret = sceIoRemove(full_path);
+	if (ret < 0)
+	{
+		free(full_path);
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+	free(full_path);
 	reent->_errno = 0;
 	return 0;
 }
@@ -316,11 +371,29 @@ int
 _rename_r(struct _reent *reent, const char *old, const char *new)
 {
 	int ret;
-	ret = sceIoRename(old, new);
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	char* full_path_old = __realpath(old);
+	if (!full_path_old)
+	{
+		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+	char* full_path_new = __realpath(new);
+	if (!full_path_new)
+	{
+		free(full_path_old);
+		reent->_errno = errno; // set by realpath
+		return -1;
+	}
+	ret = sceIoRename(full_path_old, full_path_new);
+	if (ret < 0)
+	{
+		free(full_path_old);
+		free(full_path_new);
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+	free(full_path_old);
+	free(full_path_new);
 	reent->_errno = 0;
 	return 0;
 }
@@ -337,7 +410,8 @@ _times_r(struct _reent *reent, struct tms *ptms)
 }
 
 static void
-scestat_to_stat(struct SceIoStat *in, struct stat *out) {
+scestat_to_stat(struct SceIoStat *in, struct stat *out)
+{
 	memset(out, 0, sizeof(*out));
 	out->st_size = in->st_size;
 	if (SCE_S_ISREG(in->st_mode))
@@ -357,26 +431,29 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
-	if (!fdmap) {
+	if (!fdmap)
+	{
 		reent->_errno = EBADF;
 		return -1;
 	}
 
 	switch (fdmap->type)
 	{
-	case VITA_DESCRIPTOR_TTY:
-	case VITA_DESCRIPTOR_FILE:
-		ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
-		break;
-	case VITA_DESCRIPTOR_SOCKET:
-		ret = EBADF;
-		break;
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_FILE:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
+			break;
+		case VITA_DESCRIPTOR_SOCKET:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
 	}
 
 	__vita_fd_drop(fdmap);
 
-	if (ret < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	if (ret < 0)
+	{
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -390,10 +467,19 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 {
 	struct SceIoStat stat = {0};
 	int ret;
-	if ((ret = sceIoGetstat(path, &stat)) < 0) {
-		reent->_errno = ret & SCE_ERRNO_MASK;
+	char* full_path = __realpath(path);
+	if (!full_path)
+	{
+		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+	if ((ret = sceIoGetstat(full_path, &stat)) < 0)
+	{
+		free(full_path);
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+	free(full_path);
 	scestat_to_stat(&stat, st);
 	reent->_errno = 0;
 	return 0;

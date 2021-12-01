@@ -3,26 +3,29 @@
 #include <netdb.h>
 #include <errno.h>
 #include <psp2/net/net.h>
+#include "../vitaerror.h"
 
-#define SCE_ERRNO_MASK 0xFF
 #define MAX_NAME 512
 
-struct hostent *gethostbyname(const char *name) {
+struct hostent *gethostbyname(const char *name)
+{
 	static struct hostent ent;
 	static char sname[MAX_NAME] = "";
 	static struct SceNetInAddr saddr = {0};
 	static char *addrlist[2] = { (char *) &saddr, NULL };
 
 	int rid = sceNetResolverCreate("resolver", NULL, 0);
-	if (rid < 0) {
-		errno = rid & SCE_ERRNO_MASK;
+	if (rid < 0)
+	{
+		errno = __vita_scenet_errno_to_errno(rid);
 		return NULL;
 	}
 
 	int err = sceNetResolverStartNtoa(rid, name, &saddr, 0, 0, 0);
 	sceNetResolverDestroy(rid);
-	if (err < 0) {
-		errno = err & SCE_ERRNO_MASK;
+	if (err < 0)
+	{
+		errno = __vita_scenet_errno_to_errno(err);
 		return NULL;
 	}
 

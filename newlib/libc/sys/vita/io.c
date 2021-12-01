@@ -2,8 +2,10 @@
 #include <sys/unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <psp2/io/fcntl.h>
+#include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
 
@@ -11,14 +13,13 @@
 #include "vitaglue.h"
 #include "vitaerror.h"
 
-#define SCE_ERRNO_MASK 0xFF
-
 DescriptorTranslation *__vita_fdmap[MAX_OPEN_FILES];
 DescriptorTranslation __vita_fdmap_pool[MAX_OPEN_FILES];
 
 SceKernelLwMutexWork _newlib_fd_mutex __attribute__ ((aligned (8)));
 
-void _init_vita_io(void) {
+void _init_vita_io(void)
+{
 	int ret;
 	sceKernelCreateLwMutex(&_newlib_fd_mutex, "fd conversion table mutex", SCE_KERNEL_MUTEX_ATTR_RECURSIVE, 1, NULL);
 
@@ -28,7 +29,8 @@ void _init_vita_io(void) {
 	// TODO: do we prefer sceKernelStdin and friends?
 	ret = sceIoOpen("tty0:", SCE_O_RDONLY, 0);
 
-	if (ret >= 0) {
+	if (ret >= 0)
+	{
 		__vita_fdmap[STDIN_FILENO] = &__vita_fdmap_pool[STDIN_FILENO];
 		__vita_fdmap[STDIN_FILENO]->sce_uid = ret;
 		__vita_fdmap[STDIN_FILENO]->type = VITA_DESCRIPTOR_TTY;
@@ -37,7 +39,8 @@ void _init_vita_io(void) {
 
 	ret = sceIoOpen("tty0:", SCE_O_WRONLY, 0);
 
-	if (ret >= 0) {
+	if (ret >= 0)
+	{
 		__vita_fdmap[STDOUT_FILENO] = &__vita_fdmap_pool[STDOUT_FILENO];
 		__vita_fdmap[STDOUT_FILENO]->sce_uid = ret;
 		__vita_fdmap[STDOUT_FILENO]->type = VITA_DESCRIPTOR_TTY;
@@ -46,7 +49,8 @@ void _init_vita_io(void) {
 
 	ret = sceIoOpen("tty0:", SCE_O_WRONLY, 0);
 
-	if (ret >= 0) {
+	if (ret >= 0)
+	{
 		__vita_fdmap[STDERR_FILENO] = &__vita_fdmap_pool[STDERR_FILENO];
 		__vita_fdmap[STDERR_FILENO]->sce_uid = ret;
 		__vita_fdmap[STDERR_FILENO]->type = VITA_DESCRIPTOR_TTY;
@@ -59,17 +63,20 @@ void _init_vita_io(void) {
 void _free_vita_io(void) {
 	sceKernelLockLwMutex(&_newlib_fd_mutex, 1, 0);
 
-	if (__vita_fdmap[STDIN_FILENO]) {
+	if (__vita_fdmap[STDIN_FILENO])
+	{
 		sceIoClose(__vita_fdmap[STDIN_FILENO]->sce_uid);
 		memset(__vita_fdmap[STDIN_FILENO], 0, sizeof(DescriptorTranslation));
 		__vita_fdmap[STDIN_FILENO] = NULL;
 	}
-	if (__vita_fdmap[STDOUT_FILENO]) {
+	if (__vita_fdmap[STDOUT_FILENO])
+	{
 		sceIoClose(__vita_fdmap[STDOUT_FILENO]->sce_uid);
 		memset(__vita_fdmap[STDOUT_FILENO], 0, sizeof(DescriptorTranslation));
 		__vita_fdmap[STDOUT_FILENO] = NULL;
 	}
-	if (__vita_fdmap[STDERR_FILENO]) {
+	if (__vita_fdmap[STDERR_FILENO])
+	{
 		sceIoClose(__vita_fdmap[STDERR_FILENO]->sce_uid);
 		memset(__vita_fdmap[STDERR_FILENO], 0, sizeof(DescriptorTranslation));
 		__vita_fdmap[STDERR_FILENO] = NULL;
@@ -190,24 +197,41 @@ int __vita_fd_drop(DescriptorTranslation *map)
 
 		switch (map->type)
 		{
-		case VITA_DESCRIPTOR_FILE:
-		case VITA_DESCRIPTOR_TTY:
-		{
-			ret = sceIoClose(map->sce_uid);
-			break;
-		}
-		case VITA_DESCRIPTOR_SOCKET:
-			ret = sceNetSocketClose(map->sce_uid);
-			if (ret < 0) {
-				sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-				return __vita_sce_errno_to_errno(ret);
+			case VITA_DESCRIPTOR_FILE:
+			case VITA_DESCRIPTOR_TTY:
+			{
+				ret = sceIoClose(map->sce_uid);
+				if (map->filename)
+				{
+					free(map->filename);
+				}
+				break;
 			}
-			break;
+			case VITA_DESCRIPTOR_DIRECTORY:
+			{
+				ret = sceIoDclose(map->sce_uid);
+				if (map->filename)
+				{
+					free(map->filename);
+				}
+				break;
+			}
+			case VITA_DESCRIPTOR_SOCKET:
+			{
+				ret = sceNetSocketClose(map->sce_uid);
+				if (ret < 0)
+				{
+					sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
+					return -__vita_scenet_errno_to_errno(ret);
+				}
+				break;
+			}
 		}
 
-		if (ret < 0) {
+		if (ret < 0)
+		{
 			sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
-			return -(ret & SCE_ERRNO_MASK);
+			return -__vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		}
 
 		map->ref_count--;

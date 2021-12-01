@@ -27,5 +27,5 @@ DEALINGS IN THE SOFTWARE.
 
 unsigned int sleep(unsigned int seconds)
 {
-    return sceKernelDelayThread(seconds * 1000 * 1000);
+	return sceKernelDelayThread(seconds * 1000 * 1000);
 }

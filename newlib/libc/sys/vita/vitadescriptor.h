@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.
 typedef enum
 {
 	VITA_DESCRIPTOR_FILE,
+	VITA_DESCRIPTOR_DIRECTORY,
 	VITA_DESCRIPTOR_SOCKET,
 	VITA_DESCRIPTOR_TTY
 } DescriptorTypes;
@@ -40,6 +41,7 @@ typedef struct
 	int sce_uid;
 	DescriptorTypes type;
 	int ref_count;
+	char* filename;
 } DescriptorTranslation;
 
 extern DescriptorTranslation *__vita_fdmap[];

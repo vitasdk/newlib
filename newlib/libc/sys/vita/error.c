@@ -27,8 +27,23 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/net/net.h>
 
 #include "vitaerror.h"
+#include "vitadescriptor.h"
 
-int __vita_sce_errno_to_errno(int sce_errno)
+int __vita_sce_errno_to_errno(int sce_errno, int type)
+{
+	if (type == ERROR_SOCKET)
+	{
+		return __vita_scenet_errno_to_errno(sce_errno);
+	}
+	return sce_errno & SCE_ERRNO_MASK;
+}
+
+int __vita_make_sce_errno(int posix_errno)
+{
+	return SCE_ERRNO_NONE | posix_errno;
+}
+
+int __vita_scenet_errno_to_errno(int sce_errno)
 {
 	switch (sce_errno)
 	{
