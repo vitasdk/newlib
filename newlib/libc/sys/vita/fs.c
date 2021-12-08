@@ -52,7 +52,7 @@ int rmdir(const char *pathname)
 	char* full_path = __realpath(pathname);
 	if(!full_path)
 	{
-		errno = errno; // set by realpath
+		// errno is set by __realpath
 		return -1;
 	}
 
@@ -78,7 +78,7 @@ int chmod(const char *pathname, mode_t mode)
 	char* full_path = __realpath(pathname);
 	if(!full_path)
 	{
-		errno = errno; // set by realpath
+		// errno is set by __realpath
 		return -1;
 	}
 	int ret = sceIoGetstat(full_path, &stat);
