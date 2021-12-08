@@ -69,7 +69,6 @@ DIR *__opendir_common(int fd)
 
 	if (!dirp)
 	{
-		close(fd);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -87,7 +86,12 @@ DIR *opendir(const char *dirname)
 
 	if ((fd = open(dirname, O_RDONLY | O_DIRECTORY)) == -1)
 		return (NULL);
-	return (__opendir_common(fd));
+	DIR *ret = __opendir_common(fd);
+	if (!ret)
+	{
+		close(fd);
+	}
+	return ret;
 }
 
 DIR *fdopendir(int fd)
