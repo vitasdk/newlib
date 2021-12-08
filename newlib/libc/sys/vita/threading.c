@@ -72,7 +72,8 @@ int vitasdk_delete_thread_reent(int thid)
 	return res;
 }
 
-int _exit_thread_common(int exit_status, int (*exit_func)(int)) {
+int _exit_thread_common(int exit_status, int (*exit_func)(int))
+{
 	int res = 0;
 	int ret = 0;
 	int thid = sceKernelGetThreadId();
@@ -99,11 +100,13 @@ int _exit_thread_common(int exit_status, int (*exit_func)(int)) {
 	return ret;
 }
 
-int vita_exit_thread(int exit_status) {
+int vita_exit_thread(int exit_status)
+{
 	return _exit_thread_common(exit_status, sceKernelExitThread);
 }
 
-int vita_exit_delete_thread(int exit_status) {
+int vita_exit_delete_thread(int exit_status)
+{
 	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
 }
 
@@ -130,7 +133,8 @@ static inline struct reent_for_thread *__vita_allocate_reent(void)
 	struct reent_for_thread *free_reent = 0;
 
 	for (i = 0; i < MAX_THREADS; ++i)
-		if (reent_list[i].thread_id == 0) {
+		if (reent_list[i].thread_id == 0)
+		{
 			free_reent = &reent_list[i];
 			break;
 		}
@@ -138,7 +142,8 @@ static inline struct reent_for_thread *__vita_allocate_reent(void)
 	return free_reent;
 }
 
-struct _reent *__getreent_for_thread(int thid) {
+struct _reent *__getreent_for_thread(int thid)
+{
 	struct reent_for_thread *free_reent = 0;
 	struct _reent *returned_reent = 0;
 
@@ -150,7 +155,8 @@ struct _reent *__getreent_for_thread(int thid) {
 	else
 		on_tls = TLS_REENT_THID_PTR(thid);	
 	
-	if (*on_tls) {
+	if (*on_tls)
+	{
 		return *on_tls;
 	}
   
@@ -160,20 +166,25 @@ struct _reent *__getreent_for_thread(int thid) {
 	// We allocate one and put a pointer to it on the TLS
 	free_reent = __vita_allocate_reent();
 
-	if (!free_reent) {
+	if (!free_reent)
+	{
 		// clean any hanging thread references
 		__vita_clean_reent();
 
 		free_reent = __vita_allocate_reent();
 
-		if (!free_reent) {
+		if (!free_reent)
+		{
 			// we've exhausted all our resources
 			sceClibPrintf("[VITASDK] FATAL: Exhausted all thread reent resources!");
 			__builtin_trap();
 		}
-	} else {
+	}
+	else
+	{
 		// First, check if it needs to be cleaned up (if it came from another thread)
-		if (free_reent->needs_reclaim) {
+		if (free_reent->needs_reclaim)
+		{
 			_reclaim_reent(&free_reent->reent);
 			free_reent->needs_reclaim = 0;
 		}
@@ -181,7 +192,8 @@ struct _reent *__getreent_for_thread(int thid) {
 		memset(free_reent, 0, sizeof(struct reent_for_thread));
 
 		// Set it up
-		if(thid==0){
+		if(thid==0)
+		{
 			thid = sceKernelGetThreadId();
 		}
 		free_reent->thread_id = thid;
@@ -196,7 +208,8 @@ struct _reent *__getreent_for_thread(int thid) {
 	return returned_reent;
 }
 
-struct _reent *__getreent(void) {
+struct _reent *__getreent(void)
+{
 	return  __getreent_for_thread(0);
 }
 
@@ -219,7 +232,8 @@ void *vitasdk_get_pthread_data(SceUID thid)
 }
 
 // Called from _start to set up the main thread reentrancy structure
-void _init_vita_reent(void) {
+void _init_vita_reent(void)
+{
 	memset(reent_list, 0, sizeof(reent_list));
 	_newlib_reent_mutex = sceKernelCreateMutex("reent list access mutex", 0, 0, 0);
 	reent_list[0].thread_id = sceKernelGetThreadId();
@@ -228,6 +242,7 @@ void _init_vita_reent(void) {
 	_REENT_INIT_PTR(&_newlib_global_reent);
 }
 
-void _free_vita_reent(void) {
+void _free_vita_reent(void)
+{
 	sceKernelDeleteMutex(_newlib_reent_mutex);
 }

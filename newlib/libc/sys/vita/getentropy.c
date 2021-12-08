@@ -28,21 +28,42 @@ DEALINGS IN THE SOFTWARE.
 
 #include <psp2/kernel/rng.h>
 
-#define MAX_ENTROPY 64
+#define MAX_ENTROPY 256
 
 int getentropy(void *ptr, size_t n)
-{ 
-   if (n > MAX_ENTROPY) {
-		errno = -EIO;
+{
+	size_t target = n;
+	void* p = ptr;
+	int ret;
+
+	if (n > MAX_ENTROPY)
+	{
+		errno = EIO;
 		return -1;
 	}
 
-   int ret = sceKernelGetRandomNumber(ptr, n);
-   
-   return (ret == 0) ? 0 : -1;
+	while (target > 64)
+	{
+		ret = sceKernelGetRandomNumber(ptr, 64);
+		ptr += 64;
+		target -= 64;
+		if (ret < 0 )
+		{
+			errno = EIO;
+			return -1;
+		}
+	}
+
+	ret = sceKernelGetRandomNumber(ptr, target);
+	if (ret < 0 )
+	{
+		errno = EIO;
+		return -1;
+	}
+	
+	return 0;
 }
 
 void _arc4random_getentropy_fail(void)
-{ 
-
+{
 }

@@ -37,16 +37,18 @@ DEALINGS IN THE SOFTWARE.
 #define MAX_EVENTS 255
 
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-		   struct timeval *timeout)
+		struct timeval *timeout)
 {
-	if (nfds < 0 || nfds >= MAX_OPEN_FILES) {
+	if (nfds < 0 || nfds >= MAX_OPEN_FILES)
+	{
 		errno = EINVAL;
 		return -1;
 	}
 
 	uint64_t wait = timeout->tv_sec * 1000000 + timeout->tv_usec;
 
-	if (nfds == 0) {
+	if (nfds == 0)
+	{
 		sceKernelDelayThread(wait);
 		return 0;
 	}
@@ -55,33 +57,40 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 
 	int eid = sceNetEpollCreate("", 0);
 	if (eid < 0) {
-		errno = __vita_sce_errno_to_errno(eid);
+		errno = __vita_scenet_errno_to_errno(eid);
 		return -1;
 	}
 
 	DescriptorTranslation *lock[MAX_OPEN_FILES] = {0};
 
-	for (i = 0; i < nfds; i++) {
+	for (i = 0; i < nfds; i++)
+	{
 		SceNetEpollEvent ev = {0};
 		ev.data.fd = i;
-		if (readfds && FD_ISSET(i, readfds)) {
+		if (readfds && FD_ISSET(i, readfds))
+		{
 			ev.events |= SCE_NET_EPOLLIN;
 		}
-		if (writefds && FD_ISSET(i, writefds)) {
+		if (writefds && FD_ISSET(i, writefds))
+		{
 			ev.events |= SCE_NET_EPOLLOUT;
 		}
-		if (exceptfds && FD_ISSET(i, exceptfds)) {
+		if (exceptfds && FD_ISSET(i, exceptfds))
+		{
 			ev.events |= SCE_NET_EPOLLERR;
 		}
-		if (ev.events == 0) {
+		if (ev.events == 0)
+		{
 			continue;
 		}
 
 		DescriptorTranslation *fdmap = __vita_fd_grab(i);
-		if (fdmap == NULL) {
+		if (fdmap == NULL)
+		{
 			continue;
 		}
-		if (fdmap->type != VITA_DESCRIPTOR_SOCKET) {
+		if (fdmap->type != VITA_DESCRIPTOR_SOCKET)
+		{
 			__vita_fd_drop(fdmap);
 			continue;
 		}
@@ -94,33 +103,42 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	int nev = sceNetEpollWait(eid, events, MAX_EVENTS, wait);
 	int res = 0;
 
-	if (nev < 0) {
-		errno = __vita_sce_errno_to_errno(nev);
+	if (nev < 0)
+	{
+		errno = __vita_scenet_errno_to_errno(nev);
 		res = -1;
 		goto exit;
 	}
 
-	if (readfds) {
+	if (readfds)
+	{
 		FD_ZERO(readfds);
 	}
-	if (writefds) {
+	if (writefds)
+	{
 		FD_ZERO(writefds);
 	}
-	if (exceptfds) {
+	if (exceptfds)
+	{
 		FD_ZERO(exceptfds);
 	}
 
-	for (i = 0; i < nev; i++) {
-		if (events[i].events) {
-			if (events[i].events & SCE_NET_EPOLLIN) {
+	for (i = 0; i < nev; i++)
+	{
+		if (events[i].events)
+		{
+			if (events[i].events & SCE_NET_EPOLLIN)
+			{
 				FD_SET(events[i].data.fd, readfds);
 				res++;
 			}
-			if (events[i].events & SCE_NET_EPOLLOUT) {
+			if (events[i].events & SCE_NET_EPOLLOUT)
+			{
 				FD_SET(events[i].data.fd, writefds);
 				res++;
 			}
-			if (events[i].events & SCE_NET_EPOLLERR) {
+			if (events[i].events & SCE_NET_EPOLLERR)
+			{
 				FD_SET(events[i].data.fd, exceptfds);
 				res++;
 			}
@@ -130,8 +148,10 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 exit:
 	sceNetEpollDestroy(eid);
 
-	for (i = 0; i < nfds; i++) {
-		if (lock[i] != NULL) {
+	for (i = 0; i < nfds; i++)
+	{
+		if (lock[i] != NULL)
+		{
 			__vita_fd_drop(lock[i]);
 		}
 	}

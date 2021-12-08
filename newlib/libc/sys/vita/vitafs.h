@@ -1,7 +1,6 @@
 /*
 
-Copyright (C) 2016, David "Davee" Morgan
-Copyright (C) 2020, Francisco José García García
+Copyright (C) 2021, vitasdk
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -23,11 +22,10 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#include <sys/types.h>
+#ifndef _VITAFS_H_
+#define _VITAFS_H_
 
-#include <psp2/kernel/threadmgr.h>
+char *__realpath(const char *path);
+int __is_dir(const char *path);
 
-int usleep(unsigned useconds)
-{
-	return sceKernelDelayThread(useconds);
-}
+#endif // _VITAFS_H_

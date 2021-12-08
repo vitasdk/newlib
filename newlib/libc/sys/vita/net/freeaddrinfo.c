@@ -43,10 +43,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 void freeaddrinfo(struct addrinfo *res)
 {
-    while (res != NULL) {
-      struct addrinfo *p = res;
-      res = res->ai_next;
-      free(p->ai_canonname);
-      free(p);
-    }
+	while (res != NULL)
+	{
+		struct addrinfo *p = res;
+		res = res->ai_next;
+		free(p->ai_canonname);
+		free(p);
+	}
 }

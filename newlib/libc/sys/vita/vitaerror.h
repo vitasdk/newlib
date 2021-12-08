@@ -26,7 +26,17 @@ DEALINGS IN THE SOFTWARE.
 #ifndef _VITAERROR_H_
 #define _VITAERROR_H_
 
-int __vita_sce_errno_to_errno(int sce_errno);
+#define SCE_ERRNO_MASK 0xFF
+#define SCE_ERRNO_NONE 0x80010000
+typedef enum
+{
+    ERROR_GENERIC,
+    ERROR_SOCKET
+} ErrorType;
+
+int __vita_scenet_errno_to_errno(int sce_errno);
+int __vita_sce_errno_to_errno(int sce_errno, int type);
+int __vita_make_sce_errno(int posix_errno);
 
 #endif // _VITAERROR_H_
 

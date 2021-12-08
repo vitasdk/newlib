@@ -7,8 +7,6 @@
 #include "vitadescriptor.h"
 #include "vitaerror.h"
 
-#define SCE_ERRNO_MASK 0xFF
-
 ssize_t pread (int __fd, void *__buf, size_t __nbytes, off_t __offset)
 {
 	int ret;
@@ -25,7 +23,7 @@ ssize_t pread (int __fd, void *__buf, size_t __nbytes, off_t __offset)
 
 	if (ret < 0) {
 		if (ret != -1 )
-			errno = ret & SCE_ERRNO_MASK;
+			errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -49,7 +47,7 @@ ssize_t pwrite (int __fd, const void *__buf, size_t __nbytes, off_t __offset)
 
 	if (ret < 0) {
 		if (ret != -1)
-			errno = ret & SCE_ERRNO_MASK;
+			errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 

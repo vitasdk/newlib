@@ -27,14 +27,14 @@ DEALINGS IN THE SOFTWARE.
 
 int dup(int oldfd)
 {
-    int fd = __vita_duplicate_descriptor(oldfd);
+	int fd = __vita_duplicate_descriptor(oldfd);
 
-    if (fd < 0)
-    {
-        errno = EBADF;
-        return -1;
-    }
+	if (fd < 0)
+	{
+		errno = EBADF;
+		return -1;
+	}
 
-    errno = 0;
-    return fd;
+	errno = 0;
+	return fd;
 }

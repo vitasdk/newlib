@@ -54,7 +54,7 @@ int accept(int s, struct sockaddr *addr, socklen_t *addrlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -89,7 +89,7 @@ int	bind(int s, const struct sockaddr *addr, socklen_t addrlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -114,7 +114,7 @@ int	connect(int s, const struct sockaddr *addr, socklen_t addrlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -139,7 +139,7 @@ int	getpeername(int s, struct sockaddr *addr, socklen_t *addrlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -164,7 +164,7 @@ int	getsockname(int s, struct sockaddr *addr, socklen_t *addrlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -189,7 +189,7 @@ int	getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -219,7 +219,7 @@ int	listen(int s, int backlog)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -244,7 +244,7 @@ ssize_t	recv(int s, void *buf, size_t len, int flags)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -270,7 +270,7 @@ ssize_t	recvfrom(int s, void *buf, size_t len, int flags,
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -295,7 +295,7 @@ ssize_t recvmsg(int s, struct msghdr *msg, int flags)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -320,7 +320,7 @@ ssize_t	send(int s, const void *buf, size_t len, int flags)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -347,7 +347,7 @@ ssize_t	sendto(int s, const void *buf,
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -372,7 +372,7 @@ ssize_t sendmsg(int s, const struct msghdr *msg, int flags)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -411,7 +411,7 @@ int	setsockopt(int s, int level, int optname, const void *optval, socklen_t optl
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -436,7 +436,7 @@ int	shutdown(int s, int how)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 
@@ -451,7 +451,7 @@ int	socket(int domain, int type, int protocol)
 
 	if (res < 0)
 	{
-		errno = __vita_sce_errno_to_errno(res);
+		errno = __vita_scenet_errno_to_errno(res);
 		return -1;
 	}
 

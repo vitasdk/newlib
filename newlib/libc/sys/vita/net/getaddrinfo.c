@@ -69,7 +69,8 @@
 static struct addrinfo *malloc_ai(int port, u_long addr, int socktype, int proto)
 {
 	struct addrinfo *ai = (struct addrinfo *)malloc(sizeof(struct addrinfo) + sizeof(struct sockaddr_in));
-	if (ai) {
+	if (ai)
+	{
 		memset(ai, 0, sizeof(struct addrinfo) + sizeof(struct sockaddr_in));
 		ai->ai_addr = (struct sockaddr *)(ai + 1);
 		/* XXX -- ssh doesn't use sa_len */
@@ -99,24 +100,27 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
 	socktype = (hints && hints->ai_socktype) ? hints->ai_socktype : SOCK_STREAM;
 	if (hints && hints->ai_protocol)
 		proto = hints->ai_protocol;
-	else {
-		switch (socktype) {
-		case SOCK_DGRAM:
-			proto = IPPROTO_UDP;
-			break;
-		case SOCK_STREAM:
-			proto = IPPROTO_TCP;
-			break;
-		default:
-			proto = 0;
-			break;
+	else
+	{
+		switch (socktype)
+		{
+			case SOCK_DGRAM:
+				proto = IPPROTO_UDP;
+				break;
+			case SOCK_STREAM:
+				proto = IPPROTO_TCP;
+				break;
+			default:
+				proto = 0;
+				break;
 		}
 	}
 
 	if (service) {
 		if (isdigit((int)*service))
 			port = htons(atoi(service));
-		else {
+		else
+		{
 			struct servent *se;
 			char *pe_proto;
 
@@ -156,9 +160,12 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
 	}
 	if (hints && hints->ai_flags & AI_NUMERICHOST)
 		return EAI_NODATA;
-	if ((hp = gethostbyname(node)) && hp->h_name && hp->h_name[0] && hp->h_addr_list[0]) {
-		for (i = 0; hp->h_addr_list[i]; i++) {
-			if ((cur = malloc_ai(port, ((struct in_addr *)hp->h_addr_list[i])->s_addr, socktype, proto)) == NULL) {
+	if ((hp = gethostbyname(node)) && hp->h_name && hp->h_name[0] && hp->h_addr_list[0])
+	{
+		for (i = 0; hp->h_addr_list[i]; i++)
+		{
+			if ((cur = malloc_ai(port, ((struct in_addr *)hp->h_addr_list[i])->s_addr, socktype, proto)) == NULL)
+			{
 				if (*res)
 					freeaddrinfo(*res);
 				return EAI_MEMORY;
@@ -169,9 +176,11 @@ int getaddrinfo(const char *node, const char *service, const struct addrinfo *hi
 				*res = cur;
 			prev = cur;
 		}
-		if (hints && hints->ai_flags & AI_CANONNAME && *res) {
+		if (hints && hints->ai_flags & AI_CANONNAME && *res)
+		{
 			/* NOT sasl_strdup for compatibility */
-			if (((*res)->ai_canonname = strdup(hp->h_name)) == NULL) {
+			if (((*res)->ai_canonname = strdup(hp->h_name)) == NULL)
+			{
 				freeaddrinfo(*res);
 				return EAI_MEMORY;
 			}

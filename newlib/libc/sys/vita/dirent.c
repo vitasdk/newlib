@@ -24,40 +24,38 @@ DEALINGS IN THE SOFTWARE.
 
 #include <sys/dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <psp2/types.h>
 #include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
-
-#define SCE_ERRNO_MASK 0xFF
-#define MAXNAMLEN	256
+#include "vitadescriptor.h"
+#include "vitaerror.h"
 
 struct DIR_
 {
-	SceUID uid;
+	int fd;
 	struct dirent dir;
-	char dirname[MAXNAMLEN];
 	int index;
 };
 
 int	closedir(DIR *dirp)
 {
-	if (!dirp || dirp->uid < 0)
+	if (!dirp || !dirp->fd)
 	{
 		errno = EBADF;
 		return -1;
 	}
 
-	int res = sceIoDclose(dirp->uid);
-	dirp->uid = -1;
-
+	int res = close(dirp->fd);
 	free(dirp);
 
 	if (res < 0)
 	{
-		errno = res & SCE_ERRNO_MASK;
 		return -1;
 	}
 
@@ -65,31 +63,56 @@ int	closedir(DIR *dirp)
 	return 0;
 }
 
-DIR *opendir(const char *dirname)
+DIR *__opendir_common(int fd)
 {
-	SceUID uid = sceIoDopen(dirname);
-
-	if (uid < 0)
-	{
-		errno = uid & SCE_ERRNO_MASK;
-		return NULL;
-	}
-
 	DIR *dirp = calloc(1, sizeof(DIR));
 
 	if (!dirp)
 	{
-		sceIoDclose(uid);
 		errno = ENOMEM;
 		return NULL;
 	}
 
-	dirp->uid = uid;
-	strncpy(dirp->dirname, dirname, sizeof(dirp->dirname)-1 );
+	dirp->fd = fd;
 	dirp->index = 0;
 
 	errno = 0;
 	return dirp;
+}
+
+DIR *opendir(const char *dirname)
+{
+	int fd;
+
+	if ((fd = open(dirname, O_RDONLY | O_DIRECTORY)) == -1)
+		return (NULL);
+	DIR *ret = __opendir_common(fd);
+	if (!ret)
+	{
+		close(fd);
+	}
+	return ret;
+}
+
+DIR *fdopendir(int fd)
+{
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+	if (!fdmap)
+	{
+		errno = EBADF;
+		return NULL;
+	}
+
+	if (fdmap->type != VITA_DESCRIPTOR_DIRECTORY)
+	{
+		__vita_fd_drop(fdmap);
+		errno = ENOTDIR;
+		return NULL;
+	}
+
+	__vita_fd_drop(fdmap);
+
+	return (__opendir_common(fd));
 }
 
 struct dirent *readdir(DIR *dirp)
@@ -100,17 +123,26 @@ struct dirent *readdir(DIR *dirp)
 		return NULL;
 	}
 
-	int res = sceIoDread(dirp->uid, (SceIoDirent *)&dirp->dir);
+	DescriptorTranslation *fdmap = __vita_fd_grab(dirp->fd);
+	if (!fdmap)
+	{
+		errno = EBADF;
+		return NULL;
+	}
+
+	int res = sceIoDread(fdmap->sce_uid, (SceIoDirent *)&dirp->dir);
+
+	__vita_fd_drop(fdmap);
 
 	if (res < 0)
 	{
-		errno = res & SCE_ERRNO_MASK;
+		errno = __vita_sce_errno_to_errno(res, ERROR_GENERIC);
 		return NULL;
 	}
 
 	if (res == 0)
 	{
-		errno = 0;
+		// end-of-listing shouldn't change errno
 		return NULL;
 	}
 
@@ -127,17 +159,26 @@ void rewinddir(DIR *dirp)
 		return;
 	}
 
-	SceUID dirfd = sceIoDopen(dirp->dirname);
-
-	if (dirfd < 0)
+	DescriptorTranslation *fdmap = __vita_fd_grab(dirp->fd);
+	if (!fdmap)
 	{
-		errno = dirfd & SCE_ERRNO_MASK;
+		errno = EBADF;
 		return;
 	}
 
-	sceIoDclose(dirp->uid);
+	SceUID dirfd = sceIoDopen(fdmap->filename); // filename contains full path, so it's okay to use in sce funcs
 
-	dirp->uid = dirfd;
+	if (dirfd < 0)
+	{
+		__vita_fd_drop(fdmap);
+		errno = __vita_sce_errno_to_errno(dirfd, ERROR_GENERIC);
+		return;
+	}
+
+	sceIoDclose(fdmap->sce_uid);
+	fdmap->sce_uid = dirfd;
+	__vita_fd_drop(fdmap);
+
 	dirp->index = 0;
 	errno = 0;
 }
@@ -166,7 +207,6 @@ void seekdir(DIR *dirp, long int index)
 			return;
 		}
 	}
-
 }
 
 long int telldir(DIR *dirp)
@@ -178,4 +218,81 @@ long int telldir(DIR *dirp)
 	}
 
 	return dirp->index;
+}
+
+int dirfd(DIR *dirp)
+{
+	if (!dirp)
+	{
+		errno = EINVAL;
+		return -1;
+	}
+
+	return dirp->fd;
+}
+
+int readdir_r(DIR *restrict dirp, struct dirent *restrict entry, struct dirent **restrict result)
+{
+	*result = NULL;
+	errno = 0;
+	struct dirent *next = readdir(dirp);
+	if(errno != 0 && next == NULL)
+	{
+		return errno;
+	}
+	if(next)
+	{
+		memcpy(entry, next, sizeof(struct dirent));
+		*result = entry;
+	}
+	return 0;
+}
+
+int
+alphasort(const struct dirent **d1, const struct dirent **d2)
+{
+	return (strcoll((*d1)->d_name, (*d2)->d_name));
+}
+
+// modified from musl
+int scandir(const char *path, struct dirent ***res,
+	int (*sel)(const struct dirent *),
+	int (*cmp)(const struct dirent **, const struct dirent **))
+{
+	DIR *d = opendir(path);
+	struct dirent *de, **names=0, **tmp;
+	size_t cnt=0, len=0;
+	int old_errno = errno;
+
+	if (!d) return -1;
+
+	while ((errno=0), (de = readdir(d)))
+	{
+		if (sel && !sel(de)) continue;
+		if (cnt >= len)
+		{
+			len = 2*len+1;
+			if (len > SIZE_MAX/sizeof *names) break;
+			tmp = realloc(names, len * sizeof *names);
+			if (!tmp) break;
+			names = tmp;
+		}
+		names[cnt] = malloc(sizeof(struct dirent));
+		if (!names[cnt]) break;
+		memcpy(names[cnt++], de, sizeof(struct dirent));
+	}
+
+	closedir(d);
+
+	if (errno)
+	{
+		if (names) while (cnt-- > 0) free(names[cnt]);
+		free(names);
+		return -1;
+	}
+	errno = old_errno;
+
+	if (cmp) qsort(names, cnt, sizeof *names, (int (*)(const void *, const void *))cmp);
+	*res = names;
+	return cnt;
 }

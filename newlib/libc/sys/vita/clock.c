@@ -36,121 +36,125 @@ DEALINGS IN THE SOFTWARE.
 
 clock_t clock()
 {
-  struct tms tim_s;
-  clock_t res;
+	struct tms tim_s;
+	clock_t res;
 
-  if ((res = (clock_t) _times_r (_REENT, &tim_s)) != (clock_t) -1)
-    res = (clock_t) (tim_s.tms_utime + tim_s.tms_stime +
-                     tim_s.tms_cutime + tim_s.tms_cstime);
+	if ((res = (clock_t) _times_r (_REENT, &tim_s)) != (clock_t) -1)
+		res = (clock_t) (tim_s.tms_utime + tim_s.tms_stime +
+				tim_s.tms_cutime + tim_s.tms_cstime);
 
-  return res;
+	return res;
 }
 
 int clock_gettime(clockid_t clk_id, struct timespec *tp)
 {
-    time_t seconds;
-    SceDateTime time;
-    uint64_t t;
+	time_t seconds;
+	SceDateTime time;
+	uint64_t t;
 
-    if (!tp) {
-        errno = EFAULT;
-        return -1;
-    }
-    switch(clk_id) {
-        case CLOCK_REALTIME:
-            sceRtcGetCurrentClockLocalTime(&time);
+	if (!tp)
+	{
+		errno = EFAULT;
+		return -1;
+	}
 
-            sceRtcGetTime_t(&time, &seconds);
+	switch(clk_id) {
+		case CLOCK_REALTIME:
+			sceRtcGetCurrentClockLocalTime(&time);
+			sceRtcGetTime_t(&time, &seconds);
 
-            tp->tv_sec = seconds;
-            tp->tv_nsec = time.microsecond * 1000;
-            return 0;
-            break;
-        case CLOCK_MONOTONIC:
-            t = sceKernelGetProcessTimeWide();
-            tp->tv_sec = t / 1000000;
-            tp->tv_nsec = (t % 1000000) * 1000;
-            return 0;
-            break;
-        default:
-            break;
-    }
-    errno = EINVAL;
-    return -1;
+			tp->tv_sec = seconds;
+			tp->tv_nsec = time.microsecond * 1000;
+			return 0;
+			break;
+		case CLOCK_MONOTONIC:
+			t = sceKernelGetProcessTimeWide();
+			tp->tv_sec = t / 1000000;
+			tp->tv_nsec = (t % 1000000) * 1000;
+			return 0;
+			break;
+		default:
+			break;
+	}
+
+	errno = EINVAL;
+	return -1;
 }
 
 int clock_settime(clockid_t clk_id, const struct timespec *tp)
 {
-    if (!tp) {
-        errno = EFAULT;
-        return -1;
-    }
-    errno = EPERM;
-    return -1;
+	if (!tp) {
+		errno = EFAULT;
+		return -1;
+	}
+	errno = EPERM;
+	return -1;
 }
 
 int clock_getres(clockid_t clk_id, struct timespec *res)
 {
-    if (!res) {
-        errno = EFAULT;
-        return -1;
-    }
+	if (!res)
+	{
+		errno = EFAULT;
+		return -1;
+	}
 
-    switch(clk_id) {
-        case CLOCK_REALTIME:
-            res->tv_sec = 0;
-            res->tv_nsec = 1000; // 1 microsecond
-            return 0;
-            break;
-        case CLOCK_MONOTONIC:
-            res->tv_sec = 0;
-            res->tv_nsec = 1000; // 1 microsecond
-            return 0;
-            break;
-        default:
-            break;
-    }
+	switch(clk_id)
+	{
+		case CLOCK_REALTIME:
+			res->tv_sec = 0;
+			res->tv_nsec = 1000; // 1 microsecond
+			return 0;
+			break;
+		case CLOCK_MONOTONIC:
+			res->tv_sec = 0;
+			res->tv_nsec = 1000; // 1 microsecond
+			return 0;
+			break;
+		default:
+			break;
+	}
 
-    errno = EINVAL;
-    return -1;
+	errno = EINVAL;
+	return -1;
 }
 
 int timer_create (clockid_t clock_id,
-        struct sigevent *__restrict evp,
-        timer_t *__restrict timerid)
+	struct sigevent *__restrict evp,
+	timer_t *__restrict timerid)
 {
-    errno = ENOTSUP;
-    return -1;
+	errno = ENOTSUP;
+	return -1;
 }
 
 int timer_delete (timer_t timerid)
 {
-    errno = EINVAL; // because we can't create timers - any timerid would be invalid
-    return -1;
+	errno = EINVAL; // because we can't create timers - any timerid would be invalid
+	return -1;
 }
 
 int timer_settime (timer_t timerid, int flags,
-        const struct itimerspec *__restrict value,
-        struct itimerspec *__restrict ovalue)
+	const struct itimerspec *__restrict value,
+	struct itimerspec *__restrict ovalue)
 {
-    errno = EINVAL;
-    return -1;
+	errno = EINVAL;
+	return -1;
 }
 
 int timer_gettime (timer_t timerid, struct itimerspec *value)
 {
-    errno = EINVAL;
-    return -1;
+	errno = EINVAL;
+	return -1;
 }
 
 int timer_getoverrun (timer_t timerid)
 {
-    errno = EINVAL;
-    return -1;
+	errno = EINVAL;
+	return -1;
 }
 
 int nanosleep (const struct timespec  *rqtp, struct timespec *rmtp)
 {
-    errno = ENOSYS;
-    return -1;
+	errno = ENOSYS;
+	return -1;
 }
