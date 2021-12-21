@@ -26,8 +26,18 @@
 #include <string.h>
 #include <sys/types.h>
 #include <psp2/net/net.h>
+#include "../vitanet.h"
+#include "../vitaerror.h"
 
-#define inet_pton4(src, dst) sceNetInetPton(AF_INET, src, dst)
+static int inet_pton4(const char *src, void *dst)
+{
+	int ret = sceNetInetPton(AF_INET, src, dst);
+	if (!dst)
+	{
+		errno = __vita_scenet_errno_to_errno(scenet_errno);
+	}
+	return (ret < 0) ? -1 : ret;
+}
 
 static int inet_pton6(const char *src, u_char *dst)
 {
@@ -134,9 +144,11 @@ int inet_pton(int af, const char *src, void *dst)
 {
 	switch (af) {
 	case AF_INET:
+		_vita_net_init();
 		return inet_pton4(src, dst);
 
 	case AF_INET6:
+		_vita_net_init();
 		return inet_pton6(src, dst);
 
 	default:

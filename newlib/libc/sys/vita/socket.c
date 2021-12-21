@@ -25,12 +25,14 @@ DEALINGS IN THE SOFTWARE.
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include <psp2/net/net.h>
 #include <psp2/types.h>
 
 #include "vitadescriptor.h"
 #include "vitaerror.h"
+#include "vitanet.h"
 
 static inline int is_socket_valid(int s)
 {
@@ -447,6 +449,7 @@ int	shutdown(int s, int how)
 #ifdef F_socket
 int	socket(int domain, int type, int protocol)
 {
+	_vita_net_init();
 	int res = sceNetSocket("", domain, type, protocol);
 
 	if (res < 0)

@@ -26,10 +26,20 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <psp2/net/net.h>
+#include "../vitanet.h"
+#include "../vitaerror.h"
 
 #define SPRINTF(x) ((socklen_t) sprintf x)
 
-#define inet_ntop4(src, dst, size) sceNetInetNtop(AF_INET, src, dst, size)
+static const char *inet_ntop4(const void *src, char *dst, socklen_t size)
+{
+	const char* ret = sceNetInetNtop(AF_INET, src, dst, size);
+	if (!ret)
+	{
+		errno = __vita_scenet_errno_to_errno(scenet_errno);
+	}
+	return ret;
+}
 
 static const char *inet_ntop6(const u_char *src, char *dst, socklen_t size)
 {
@@ -141,9 +151,11 @@ const char *inet_ntop(int af, const void *src, char *dst, socklen_t size)
 {
 	switch (af) {
 	case AF_INET:
+		_vita_net_init();
 		return inet_ntop4(src, dst, size);
 
 	case AF_INET6:
+		_vita_net_init();
 		return inet_ntop6(src, dst, size);
 
 	default:

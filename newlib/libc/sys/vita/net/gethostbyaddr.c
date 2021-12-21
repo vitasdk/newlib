@@ -5,9 +5,11 @@
 #include <sys/socket.h>
 #include <psp2/net/net.h>
 #include "../vitaerror.h"
+#include "../vitanet.h"
 
 struct hostent *gethostbyaddr(const void *addr, socklen_t len, int type)
 {
+	_vita_net_init();
 	static struct hostent ent;
 	char name[NI_MAXHOST];
 	static char sname[NI_MAXHOST] = "";
