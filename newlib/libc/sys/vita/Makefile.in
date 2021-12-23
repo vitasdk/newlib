@@ -90,7 +90,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-truncate.$(OBJEXT) lib_a-fs.$(OBJEXT) \
 	lib_a-clock.$(OBJEXT) lib_a-pread.$(OBJEXT) \
 	lib_a-pathconf.$(OBJEXT) lib_a-fpathconf.$(OBJEXT) \
-	lib_a-poll.$(OBJEXT) \
+	lib_a-poll.$(OBJEXT) lib_a-monetary.$(OBJEXT) \
 	$(am__objects_1) $(am__objects_2)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -429,6 +429,12 @@ lib_a-poll.o: poll.c
 
 lib_a-poll.obj: poll.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-poll.obj `if test -f 'poll.c'; then $(CYGPATH_W) 'poll.c'; else $(CYGPATH_W) '$(srcdir)/poll.c'; fi`
+
+lib_a-monetary.o: monetary.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-monetary.o `test -f 'monetary.c' || echo '$(srcdir)/'`monetary.c
+
+lib_a-monetary.obj: monetary.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-monetary.obj `if test -f 'monetary.c'; then $(CYGPATH_W) 'monetary.c'; else $(CYGPATH_W) '$(srcdir)/monetary.c'; fi`
 
 lib_a-gethostbyaddr.o: net/gethostbyaddr.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.o `test -f 'net/gethostbyaddr.c' || echo '$(srcdir)/'`net/gethostbyaddr.c
