@@ -92,6 +92,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-pathconf.$(OBJEXT) lib_a-fpathconf.$(OBJEXT) \
 	lib_a-poll.$(OBJEXT) lib_a-monetary.$(OBJEXT) \
 	lib_a-uname.$(OBJEXT) lib_a-getentropy.$(OBJEXT) \
+	lib_a-basename.$(OBJEXT) lib_a-dirname.$(OBJEXT) \
 	$(am__objects_1) $(am__objects_2)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -227,6 +228,7 @@ NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/free
 STUB_SOURCES = chroot.c groups.c chown.c
 lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
+	basename.c dirname.c \
 	${STUB_SOURCES} ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
@@ -452,6 +454,18 @@ lib_a-chown.o: chown.c
 
 lib_a-chown.obj: chown.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-chown.obj `if test -f 'chown.c'; then $(CYGPATH_W) 'chown.c'; else $(CYGPATH_W) '$(srcdir)/chown.c'; fi`
+
+lib_a-basename.o: basename.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-basename.o `test -f 'basename.c' || echo '$(srcdir)/'`basename.c
+
+lib_a-basename.obj: basename.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-basename.obj `if test -f 'basename.c'; then $(CYGPATH_W) 'basename.c'; else $(CYGPATH_W) '$(srcdir)/basename.c'; fi`
+
+lib_a-dirname.o: dirname.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dirname.o `test -f 'dirname.c' || echo '$(srcdir)/'`dirname.c
+
+lib_a-dirname.obj: dirname.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-dirname.obj `if test -f 'dirname.c'; then $(CYGPATH_W) 'dirname.c'; else $(CYGPATH_W) '$(srcdir)/dirname.c'; fi`
 
 lib_a-gethostbyaddr.o: net/gethostbyaddr.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.o `test -f 'net/gethostbyaddr.c' || echo '$(srcdir)/'`net/gethostbyaddr.c
