@@ -14,7 +14,7 @@ NET_OBJS = gethostbyaddr.o gethostbyname.o getaddrinfo.o freeaddrinfo.o getservb
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 
 NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-STUB_SOURCES = chroot.c groups.c
+STUB_SOURCES = chroot.c groups.c chown.c
 lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
 	${STUB_SOURCES} ${NET_SOURCES}
