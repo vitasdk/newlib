@@ -37,5 +37,7 @@ void _free_vita_malloc();
 void _free_vita_reent();
 void _free_vita_heap();
 
+unsigned int _get_vita_heap_size();
+
 void _free_vita_newlib();
 #endif // _VITAGLUE_H_
