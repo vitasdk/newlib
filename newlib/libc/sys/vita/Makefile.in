@@ -93,7 +93,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-poll.$(OBJEXT) lib_a-monetary.$(OBJEXT) \
 	lib_a-uname.$(OBJEXT) lib_a-getentropy.$(OBJEXT) \
 	lib_a-basename.$(OBJEXT) lib_a-dirname.$(OBJEXT) \
-	lib_a-resource.$(OBJEXT) \
+	lib_a-resource.$(OBJEXT) lib_a-sysconf.$(OBJEXT) \
 	$(am__objects_1) $(am__objects_2)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -229,7 +229,7 @@ NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/free
 STUB_SOURCES = chroot.c groups.c chown.c
 lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
-	basename.c dirname.c resource.c \
+	basename.c dirname.c resource.c sysconf.c \
 	${STUB_SOURCES} ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
@@ -473,6 +473,12 @@ lib_a-resource.o: resource.c
 
 lib_a-resource.obj: resource.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-resource.obj `if test -f 'resource.c'; then $(CYGPATH_W) 'resource.c'; else $(CYGPATH_W) '$(srcdir)/resource.c'; fi`
+
+lib_a-sysconf.o: sysconf.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysconf.o `test -f 'sysconf.c' || echo '$(srcdir)/'`sysconf.c
+
+lib_a-sysconf.obj: sysconf.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-sysconf.obj `if test -f 'sysconf.c'; then $(CYGPATH_W) 'sysconf.c'; else $(CYGPATH_W) '$(srcdir)/sysconf.c'; fi`
 
 lib_a-gethostbyaddr.o: net/gethostbyaddr.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.o `test -f 'net/gethostbyaddr.c' || echo '$(srcdir)/'`net/gethostbyaddr.c
