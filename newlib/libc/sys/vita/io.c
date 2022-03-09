@@ -226,6 +226,11 @@ int __vita_fd_drop(DescriptorTranslation *map)
 				}
 				break;
 			}
+			case VITA_DESCRIPTOR_PIPE:
+			{
+				ret = sceKernelDeleteMsgPipe(map->sce_uid);
+				break;
+			}
 		}
 
 		if (ret < 0)

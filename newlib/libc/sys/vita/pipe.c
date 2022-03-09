@@ -1,6 +1,6 @@
 /*
 
-Copyright (C) 2016, David "Davee" Morgan
+Copyright (C) 2022, vitasdk
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -22,43 +22,56 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#ifndef _VITADESCRIPTOR_H_
-#define _VITADESCRIPTOR_H_
+#include <reent.h>
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/syslimits.h>
+#include <string.h>
+
+#include <psp2/types.h>
+#include "vitaerror.h"
+#include "vitadescriptor.h"
+
+#define MSGPIPE_MEMTYPE_USER_MAIN 0x40
+#define MSGPIPE_THREAD_ATTR_PRIO (0x8 | 0x4)
 
 
-#define MAX_OPEN_FILES 256
-
-typedef enum
+int pipe(int pipefd[2])
 {
-	VITA_DESCRIPTOR_FILE,
-	VITA_DESCRIPTOR_DIRECTORY,
-	VITA_DESCRIPTOR_SOCKET,
-	VITA_DESCRIPTOR_TTY,
-	VITA_DESCRIPTOR_PIPE
-} DescriptorTypes;
+    int ret;
+    ret = sceKernelCreateMsgPipe("newlib pipe", MSGPIPE_MEMTYPE_USER_MAIN, MSGPIPE_THREAD_ATTR_PRIO, 4096, NULL);
 
-typedef struct
-{
-	int sce_uid;
-	DescriptorTypes type;
-	int ref_count;
-	char* filename;
-} DescriptorTranslation;
-
-extern DescriptorTranslation *__vita_fdmap[];
+    if (ret < 0)
+    {
+        errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+        return -1;
+    }
 
 
-int __vita_acquire_descriptor(void);
-int __vita_release_descriptor(int fd);
-int __vita_duplicate_descriptor(int fd);
-int __vita_descriptor_ref_count(int fd);
-DescriptorTranslation *__vita_fd_grab(int fd);
-int __vita_fd_drop(DescriptorTranslation *fdmap);
+    int fd = __vita_acquire_descriptor();
 
-static inline int is_fd_valid(int fd)
-{
-	return (fd > 0) && (fd < MAX_OPEN_FILES) && (__vita_fdmap[fd] != NULL);
+    if (fd < 0)
+    {
+        sceKernelDeleteMsgPipe(ret);
+        errno = EMFILE;
+        return -1;
+    }
+
+    __vita_fdmap[fd]->sce_uid = ret;
+    __vita_fdmap[fd]->type = VITA_DESCRIPTOR_PIPE;
+
+    int fd2 = __vita_duplicate_descriptor(fd);
+    if (fd2 < 0)
+    {
+        sceKernelDeleteMsgPipe(ret);
+        errno = EMFILE;
+        return -1;
+    }
+
+    pipefd[0] = fd;
+    pipefd[1] = fd2;
+
+    return 0;
 }
-
-#endif // _VITADESCRIPTOR_H_
-

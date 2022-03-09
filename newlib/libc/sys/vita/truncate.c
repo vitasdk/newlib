@@ -73,6 +73,7 @@ int ftruncate(int fd, off_t length)
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
 		case VITA_DESCRIPTOR_DIRECTORY:
+		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
 	}
