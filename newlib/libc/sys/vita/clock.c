@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include <psp2/rtc.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 
 #include "vitaerror.h"
 
@@ -83,10 +84,12 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 
 int clock_settime(clockid_t clk_id, const struct timespec *tp)
 {
-	if (!tp) {
+	if (!tp)
+	{
 		errno = EFAULT;
 		return -1;
 	}
+
 	errno = EPERM;
 	return -1;
 }
@@ -129,7 +132,7 @@ int timer_create (clockid_t clock_id,
 
 int timer_delete (timer_t timerid)
 {
-	errno = EINVAL; // because we can't create timers - any timerid would be invalid
+	errno = EINVAL; // since we can't create timers, any id would be invalid
 	return -1;
 }
 
@@ -153,8 +156,22 @@ int timer_getoverrun (timer_t timerid)
 	return -1;
 }
 
-int nanosleep (const struct timespec  *rqtp, struct timespec *rmtp)
+int nanosleep (const struct timespec *rqtp, struct timespec *rmtp)
 {
-	errno = ENOSYS;
-	return -1;
+	if (!rqtp)
+	{
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (rqtp->tv_sec < 0 || rqtp->tv_nsec < 0 || rqtp->tv_nsec > 999999999)
+	{
+		errno = EINVAL;
+		return -1;
+	}
+
+	const uint32_t us = rqtp->tv_sec * 1000000 + (rqtp->tv_nsec+999) / 1000;
+
+	sceKernelDelayThread(us);
+	return 0;
 }
