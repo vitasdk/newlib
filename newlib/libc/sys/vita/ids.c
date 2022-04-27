@@ -28,12 +28,12 @@ DEALINGS IN THE SOFTWARE.
 
 uid_t getuid()
 {
-	return 1;
+	return 1000;
 }
 
 uid_t geteuid()
 {
-	return 1;
+	return 1000;
 }
 
 int setuid(uid_t uid)
@@ -56,12 +56,12 @@ int setreuid(uid_t ruid, uid_t euid)
 
 gid_t getgid()
 {
-	return 1;
+	return 1000;
 }
 
 gid_t getegid()
 {
-	return 1;
+	return 1000;
 }
 
 int setgid(gid_t gid)
