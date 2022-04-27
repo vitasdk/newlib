@@ -112,11 +112,23 @@ _getpid_r(struct _reent *reent)
 int
 _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
-	int ret = sceKernelLibcGettimeofday((SceKernelTimeval*)ptimeval, (SceKernelTimezone *)ptimezone);
+	time_t seconds;
+	SceDateTime time;
+	int ret = sceRtcGetCurrentClockLocalTime(&time);
 	if (ret < 0) {
 		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
+
+	ret = sceRtcGetTime_t(&time, &seconds);
+	if (ret < 0) {
+		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+
+	ptimeval->tv_sec = seconds;
+	ptimeval->tv_usec = time.microsecond * 1000;
+
 	reent->_errno = 0;
 	return 0;
 }
