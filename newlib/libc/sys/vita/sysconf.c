@@ -1,4 +1,4 @@
-/* libc/sys/linux/sysconf.c - The sysconf function */
+/* libc/sys/vita/sysconf.c - The sysconf function */
 
 /* Copyright 2002, Red Hat Inc. */
 
