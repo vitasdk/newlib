@@ -69,8 +69,7 @@ LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 lib_a_AR = $(AR) $(ARFLAGS)
 lib_a_DEPENDENCIES = $(SOCKET_OBJS) $(NET_OBJS) $(DIRENT_OBJS)
-am__objects_1 = lib_a-chroot.$(OBJEXT) lib_a-groups.$(OBJEXT) \
-	lib_a-chown.$(OBJEXT)
+am__objects_1 = lib_a-chroot.$(OBJEXT) lib_a-groups.$(OBJEXT)
 am__objects_2 = lib_a-gethostbyaddr.$(OBJEXT) \
 	lib_a-gethostbyname.$(OBJEXT) lib_a-getaddrinfo.$(OBJEXT) \
 	lib_a-freeaddrinfo.$(OBJEXT) lib_a-getservbyname.$(OBJEXT) \
@@ -227,7 +226,7 @@ NET_OBJS = gethostbyaddr.o gethostbyname.o getaddrinfo.o freeaddrinfo.o getservb
 DIRENT_OBJS = closedir.o opendir.o readdir.o readdir_r.o rewinddir.o seekdir.o telldir.o
 NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/freeaddrinfo.c net/getservbyname.c \
 	net/inet_ntop.c net/inet_ntoa.c net/inet_netof.c net/inet_pton.c net/inet_lnaof.c net/inet_addr.c net/inet_network.c net/inet_net_ntop.c net/inet_aton.c net/inet_net_pton.c net/inet_makeaddr.c
-STUB_SOURCES = chroot.c groups.c chown.c
+STUB_SOURCES = chroot.c groups.c
 lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
 	basename.c dirname.c resource.c sysconf.c ids.c \
@@ -450,12 +449,6 @@ lib_a-uname.o: uname.c
 
 lib_a-uname.obj: uname.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-uname.obj `if test -f 'uname.c'; then $(CYGPATH_W) 'uname.c'; else $(CYGPATH_W) '$(srcdir)/uname.c'; fi`
-
-lib_a-chown.o: chown.c
-	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-chown.o `test -f 'chown.c' || echo '$(srcdir)/'`chown.c
-
-lib_a-chown.obj: chown.c
-	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-chown.obj `if test -f 'chown.c'; then $(CYGPATH_W) 'chown.c'; else $(CYGPATH_W) '$(srcdir)/chown.c'; fi`
 
 lib_a-basename.o: basename.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-basename.o `test -f 'basename.c' || echo '$(srcdir)/'`basename.c
