@@ -60,7 +60,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 
 	switch(clk_id) {
 		case CLOCK_REALTIME:
-			sceRtcGetCurrentClockLocalTime(&time);
+			sceRtcGetCurrentClock(&time, 0);
 			sceRtcGetTime_t(&time, &seconds);
 
 			tp->tv_sec = seconds;
