@@ -1,6 +1,6 @@
 /*
 
-Copyright (C) 2016, David "Davee" Morgan
+Copyright (C) 2022, vitasdk
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -22,22 +22,53 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#ifndef _VITAGLUE_H_
-#define _VITAGLUE_H_
+#include <unistd.h>
+#include <limits.h>
+#include <time.h>
+#include <errno.h>
+#include <sys/types.h>
 
-#include <psp2/types.h>
+long int sysconf(int name)
+{
+	switch (name)
+	{
+		// limits
+		case _SC_ARG_MAX:
+			return ARG_MAX;
+		case _SC_CHILD_MAX:
+			return CHILD_MAX;
+		case _SC_CLK_TCK:
+			return CLK_TCK;
+		case _SC_NGROUPS_MAX:
+			return NGROUPS_MAX;
+		case _SC_OPEN_MAX:
+			return OPEN_MAX;
 
-void _init_vita_heap();
-void _init_vita_reent();
-void _init_vita_malloc();
-void _init_vita_io();
+		// hardcoded values
+		case _SC_SEM_NSEMS_MAX:
+			return 256;
+		case _SC_SEM_VALUE_MAX:
+			return 32767;
+		case _SC_THREAD_KEYS_MAX:
+			return 128;
+		case _SC_THREAD_STACK_MIN:
+			return 4096;
+		case _SC_THREAD_THREADS_MAX:
+			return 128;
+		case _SC_SEMAPHORES:
+			return 1;
+		case _SC_THREADS:
+			return 1;
+		case _SC_THREAD_ATTR_STACKSIZE:
+			return 1;
+		case _SC_THREAD_SAFE_FUNCTIONS:
+			return 1;
+		case _SC_VERSION:
+			return 200809L; // we (try to) target posix-2008
+		default:
+			errno = EINVAL;
+			return -1;
+	}
 
-void _free_vita_io();
-void _free_vita_malloc();
-void _free_vita_reent();
-void _free_vita_heap();
-
-unsigned int _get_vita_heap_size();
-
-void _free_vita_newlib();
-#endif // _VITAGLUE_H_
+	return -1;
+}

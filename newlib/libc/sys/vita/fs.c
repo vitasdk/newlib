@@ -147,6 +147,68 @@ int fchmod(int fd, mode_t mode)
 	return 0;
 }
 
+int chown(const char *path, uid_t owner, gid_t group)
+{
+	// Implementation note: there's no real chown on vita
+	// We only check for path correctness
+	struct SceIoStat stat = {0};
+	char* full_path = __realpath(path);
+	if(!full_path)
+	{
+		// errno is set by __realpath
+		return -1;
+	}
+
+	int ret = sceIoGetstat(full_path, &stat);
+	if (ret < 0)
+	{
+		free(full_path);
+		errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+
+	free(full_path);
+	return 0;
+}
+
+int fchownat(int fd, const char *path, uid_t owner, gid_t group, int flag)
+{
+	// Implementation note: there's no real chown on vita
+	// We only check for path correctness
+	struct SceIoStat stat = {0};
+	int ret = 0;
+
+	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
+
+	if (!fdmap)
+	{
+		errno = EBADF;
+		return -1;
+	}
+
+	switch (fdmap->type)
+	{
+		case VITA_DESCRIPTOR_FILE:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
+			break;
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_SOCKET:
+			ret = __vita_make_sce_errno(EBADF);
+			break;
+	}
+
+	if (ret < 0)
+	{
+		__vita_fd_drop(fdmap);
+		errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		return -1;
+	}
+
+	__vita_fd_drop(fdmap);
+	return 0;
+}
+
 int fsync(int fd)
 {
 	int ret = 0;

@@ -400,7 +400,7 @@ int	setsockopt(int s, int level, int optname, const void *optval, socklen_t optl
 			errno = EINVAL;
 			return -1;
 		}
-		struct timeval *timeout = optval;
+		const struct timeval *timeout = optval;
 		int wait = timeout->tv_sec * 1000000 + timeout->tv_usec;
 		res = sceNetSetsockopt(fdmap->sce_uid, level, optname, &wait, sizeof(wait));
 	} else {

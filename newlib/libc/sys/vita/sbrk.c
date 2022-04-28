@@ -77,3 +77,8 @@ void _free_vita_heap(void)
 	_newlib_heap_base = 0;
 	_newlib_heap_cur = 0;
 }
+
+unsigned int _get_vita_heap_size()
+{
+	return _newlib_heap_size;
+}

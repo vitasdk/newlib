@@ -1,6 +1,6 @@
 /*
 
-Copyright (C) 2016, David "Davee" Morgan
+Copyright (c) 2022 vitasdk
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -22,22 +22,30 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#ifndef _VITAGLUE_H_
-#define _VITAGLUE_H_
+#include <errno.h>
+#include <sys/utsname.h>
+#include <string.h>
+#include <stdio.h>
 
-#include <psp2/types.h>
+#include <psp2/kernel/modulemgr.h>
 
-void _init_vita_heap();
-void _init_vita_reent();
-void _init_vita_malloc();
-void _init_vita_io();
+int uname(struct utsname *buf)
+{
+	if(buf == NULL)
+	{
+		errno = EFAULT;
+		return -1;
+	}
+	strncpy(buf->sysname, "vita", __UTSNAMELEN-1);
+	strncpy(buf->nodename, "localhost", __UTSNAMELEN-1);
 
-void _free_vita_io();
-void _free_vita_malloc();
-void _free_vita_reent();
-void _free_vita_heap();
+	SceKernelSystemSwVersion version = {0};
+	version.size = sizeof(version);
+	sceKernelGetSystemSwVersion(&version);
 
-unsigned int _get_vita_heap_size();
+	strncpy(buf->release, version.versionString, __UTSNAMELEN-1);
+	snprintf(buf->version, __UTSNAMELEN, "PSP2 Kernel/VSH Version %s", version.versionString);
+	strncpy(buf->machine, "armv7l", __UTSNAMELEN-1);
 
-void _free_vita_newlib();
-#endif // _VITAGLUE_H_
+	return 0;
+}
