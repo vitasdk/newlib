@@ -41,7 +41,7 @@ DEALINGS IN THE SOFTWARE.
 int pipe(int pipefd[2])
 {
     int ret;
-    ret = sceKernelCreateMsgPipe("newlib pipe", MSGPIPE_MEMTYPE_USER_MAIN, MSGPIPE_THREAD_ATTR_PRIO, 4096, NULL);
+    ret = sceKernelCreateMsgPipe("newlib pipe", MSGPIPE_MEMTYPE_USER_MAIN, MSGPIPE_THREAD_ATTR_PRIO, 4 * 4096, NULL);
 
     if (ret < 0)
     {

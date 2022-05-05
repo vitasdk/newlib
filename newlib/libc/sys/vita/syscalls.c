@@ -53,7 +53,7 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 		case VITA_DESCRIPTOR_PIPE:
 		{
 			size_t len = nbytes;
-			if (len > 4096) len = 4096;
+			if (len > 4 * 4096) len = 4 * 4096;
 			ret = sceKernelSendMsgPipe(fdmap->sce_uid, buf, len, 1, NULL, NULL);
 			if (ret == 0) ret = len;
 			break;
@@ -336,7 +336,7 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 		case VITA_DESCRIPTOR_PIPE:
 		{
 			size_t rlen = len;
-			if (rlen > 4096) rlen = 4096;
+			if (rlen > 4 * 4096) rlen = 4 * 4096;
 			ret = sceKernelReceiveMsgPipe(fdmap->sce_uid, ptr, rlen, 1, NULL, NULL);
 			if (ret == 0) ret = rlen;
 			break;
