@@ -50,6 +50,14 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
+		case VITA_DESCRIPTOR_PIPE:
+		{
+			size_t len = nbytes;
+			if (len > 4 * 4096) len = 4 * 4096;
+			ret = sceKernelSendMsgPipe(fdmap->sce_uid, buf, len, 1, NULL, NULL);
+			if (ret == 0) ret = len;
+			break;
+		}
 	}
 
 	__vita_fd_drop(fdmap);
@@ -181,6 +189,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
 		case VITA_DESCRIPTOR_DIRECTORY:
+		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
 	}
@@ -324,6 +333,14 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
+		case VITA_DESCRIPTOR_PIPE:
+		{
+			size_t rlen = len;
+			if (rlen > 4 * 4096) rlen = 4 * 4096;
+			ret = sceKernelReceiveMsgPipe(fdmap->sce_uid, ptr, rlen, 1, NULL, NULL);
+			if (ret == 0) ret = rlen;
+			break;
+		}
 	}
 
 	__vita_fd_drop(fdmap);
@@ -446,6 +463,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
 	}

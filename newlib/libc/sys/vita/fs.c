@@ -122,6 +122,7 @@ int fchmod(int fd, mode_t mode)
 			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EBADF);
 			break;
 	}
@@ -229,6 +230,7 @@ int fsync(int fd)
 			break;
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EINVAL);
 			break;
 	}
@@ -577,6 +579,7 @@ int fchdir(int fd)
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_PIPE:
 			__vita_fd_drop(fdmap);
 			errno = ENOTDIR;
 			return -1;
