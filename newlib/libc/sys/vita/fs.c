@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include <psp2/types.h>
 #include <psp2/io/stat.h>
+#include <psp2/io/fcntl.h>
 #include "vitaerror.h"
 #include "vitadescriptor.h"
 #include "vitafs.h"
