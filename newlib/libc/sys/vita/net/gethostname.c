@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2022 vitasdk
+Copyright (C) 2022, vitasdk
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
@@ -22,31 +22,51 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#include <errno.h>
-#include <sys/utsname.h>
-#include <string.h>
-#include <stdio.h>
+#include "../vitaerror.h"
+#include "../vitanet.h"
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <psp2/net/netctl.h>
 
-#include <psp2/kernel/modulemgr.h>
-
-int uname(struct utsname *buf)
+int gethostname(char *name, size_t len)
 {
-	if(buf == NULL)
+	_vita_net_init();
+	if (!name)
 	{
 		errno = EFAULT;
 		return -1;
 	}
-	strncpy(buf->sysname, "vita", __UTSNAMELEN-1);
-	gethostname(buf->nodename, __UTSNAMELEN-1);
+	if (len < 0)
+	{
+		errno = EINVAL;
+		return -1;
+	}
 
-	SceKernelSystemSwVersion version = {0};
-	version.size = sizeof(version);
-	sceKernelGetSystemSwVersion(&version);
+	memset(name, 0, len);
 
-	strncpy(buf->release, version.versionString, __UTSNAMELEN-1);
-	snprintf(buf->version, __UTSNAMELEN, "PSP2 Kernel/VSH Version %s", version.versionString);
-	strncpy(buf->machine, "armv7l", __UTSNAMELEN-1);
+	SceNetCtlInfo info;
+	int ret = sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_DHCP_HOSTNAME, &info);
 
+	if (ret < 0)
+	{
+		errno = __vita_scenet_errno_to_errno(ret);
+		return -1;
+	}
+
+	if (strlen(info.dhcp_hostname) > 0)
+	{
+		strncpy(name, info.dhcp_hostname, len-1);
+		return 0;
+	}
+
+	// fallback to "localhost"
+	strncpy(name, "localhost", len-1);
 	return 0;
+}
+
+int sethostname(const char *name, size_t len)
+{
+	errno = EPERM;
+	return -1;
 }
