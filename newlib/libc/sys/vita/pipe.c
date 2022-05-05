@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.
 #include <string.h>
 
 #include <psp2/types.h>
+#include <psp2/kernel/threadmgr.h>
 #include "vitaerror.h"
 #include "vitadescriptor.h"
 
