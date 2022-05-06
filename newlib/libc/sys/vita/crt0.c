@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 /* The maximum number of arguments that can be passed to main(). */
-#define ARGC_MAX 19
+#define ARGC_MAX 31
 
 int main(int argc, const char* argv[]);
 void __libc_init_array (void);
