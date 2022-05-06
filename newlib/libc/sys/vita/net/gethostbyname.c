@@ -4,11 +4,13 @@
 #include <errno.h>
 #include <psp2/net/net.h>
 #include "../vitaerror.h"
+#include "../vitanet.h"
 
 #define MAX_NAME 512
 
 struct hostent *gethostbyname(const char *name)
 {
+	_vita_net_init();
 	static struct hostent ent;
 	static char sname[MAX_NAME] = "";
 	static struct SceNetInAddr saddr = {0};
