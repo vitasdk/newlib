@@ -43,10 +43,14 @@ DEALINGS IN THE SOFTWARE.
 #endif
 
 static void *_vita_net_memory = NULL;
+static int _vita_net_initialized = 0;
 
 int _vita_net_init()
 {
 	int ret;
+
+	if (_vita_net_initialized) return 0;
+
 	SceNetInitParam net_init_param = {0};
 
 	if (sceSysmoduleIsLoaded(SCE_SYSMODULE_NET) != SCE_SYSMODULE_LOADED)
@@ -73,6 +77,7 @@ int _vita_net_init()
 	if (ret < 0)
 	{
 		free(_vita_net_memory);
+		_vita_net_memory = NULL;
 		if (ret != SCE_NET_ERROR_EBUSY)
 			return ret;
 	}
@@ -84,10 +89,17 @@ int _vita_net_init()
 		{
 			// something gone wrong, tear down completely, so it can be re-inited
 			// and we won't leak mem
-			sceNetTerm();
-			free(_vita_net_memory);
+			if (_vita_net_memory != NULL) // if we inited net successfully - cleanup
+			{
+				sceNetTerm();
+				free(_vita_net_memory);
+			}
+			return ret;
 		}
-		return ret;
 	}
+
+	_vita_net_initialized = 1;
+
+	return 0;
 }
 
