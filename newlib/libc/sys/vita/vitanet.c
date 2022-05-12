@@ -49,7 +49,7 @@ int _vita_net_init()
 {
 	int ret;
 
-	if (_vita_net_initialized) return 0;
+	if (!__sync_bool_compare_and_swap(&_vita_net_initialized, 0, 1))  return 0;
 
 	SceNetInitParam net_init_param = {0};
 
@@ -97,8 +97,6 @@ int _vita_net_init()
 			return ret;
 		}
 	}
-
-	_vita_net_initialized = 1;
 
 	return 0;
 }
