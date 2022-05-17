@@ -30,12 +30,15 @@ DEALINGS IN THE SOFTWARE.
 #include <stdlib.h>
 #include <sys/dirent.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/syslimits.h>
+#include <limits.h>
 #include <string.h>
 
 #include <psp2/types.h>
 #include <psp2/io/stat.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/devctl.h>
 #include "vitaerror.h"
 #include "vitadescriptor.h"
 #include "vitafs.h"
@@ -587,6 +590,74 @@ int fchdir(int fd)
 			break;
 		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = chdir(fdmap->filename);
+			__vita_fd_drop(fdmap);
+			return ret;
+	}
+	return 0;
+}
+
+int statvfs(const char *__path, struct statvfs *__buf)
+{
+	if (!__buf || !__path)
+	{
+		errno = EFAULT;
+		return -1;
+	}
+
+	char *realpath = __realpath(__path);
+	if (!realpath)
+	{
+		return -1; // errno already set
+	}
+
+	char drive[16] = {0};
+	int d = __get_drive(realpath);
+	if (d > 15) d = 15; // minus zero-termination
+	strncpy(drive, realpath, d);
+
+	SceIoDevInfo info;
+	memset(&info, 0, sizeof(SceIoDevInfo));
+	int ret = sceIoDevctl(drive, 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo));
+
+	__buf->f_bsize = info.cluster_size;
+	__buf->f_frsize = info.cluster_size;
+
+	__buf->f_blocks = info.max_size / info.cluster_size;
+	__buf->f_bfree = info.free_size / info.cluster_size;
+	__buf->f_bavail = info.free_size / info.cluster_size;
+
+	__buf->f_files = ULONG_MAX;
+	__buf->f_ffree = ULONG_MAX;
+	__buf->f_favail = ULONG_MAX;
+
+	__buf->f_fsid = 0; // zero for now. requires syncing with stat_t.st_dev
+	__buf->f_flag = ST_NOSUID;
+	__buf->f_namemax = 256;
+}
+
+int fstatvfs(int __fd, struct statvfs *__buf)
+{
+	int ret;
+	DescriptorTranslation *fdmap = __vita_fd_grab(__fd);
+
+	if (!fdmap)
+	{
+		errno = EBADF;
+		return -1;
+	}
+
+	switch (fdmap->type)
+	{
+		case VITA_DESCRIPTOR_TTY:
+		case VITA_DESCRIPTOR_SOCKET:
+		case VITA_DESCRIPTOR_PIPE:
+			__vita_fd_drop(fdmap);
+			errno = EBADF;
+			return -1;
+			break;
+		case VITA_DESCRIPTOR_FILE:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = statvfs(fdmap->filename, __buf);
 			__vita_fd_drop(fdmap);
 			return ret;
 	}
