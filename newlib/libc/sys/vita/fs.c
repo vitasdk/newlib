@@ -618,6 +618,11 @@ int statvfs(const char *__path, struct statvfs *__buf)
 	SceIoDevInfo info;
 	memset(&info, 0, sizeof(SceIoDevInfo));
 	int ret = sceIoDevctl(drive, 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo));
+	if (ret < 0)
+	{
+		errno = EIO;
+		return -1;
+	}
 
 	__buf->f_bsize = info.cluster_size;
 	__buf->f_frsize = info.cluster_size;
@@ -652,9 +657,11 @@ int fstatvfs(int __fd, struct statvfs *__buf)
 		case VITA_DESCRIPTOR_SOCKET:
 		case VITA_DESCRIPTOR_PIPE:
 			__vita_fd_drop(fdmap);
-			errno = EBADF;
-			return -1;
-			break;
+			memset(__buf, 0, sizeof(struct statvfs));
+			__buf->f_bsize = 4096;
+			__buf->f_frsize = 4096;
+			__buf->f_namemax = 256;
+			return 0;
 		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = statvfs(fdmap->filename, __buf);
