@@ -132,7 +132,7 @@ struct	stat
 #define	S_ISLNK(m)	(((m)&_IFMT) == _IFLNK)
 #define	S_ISSOCK(m)	(((m)&_IFMT) == _IFSOCK)
 
-#if defined(__CYGWIN__) || defined(__rtems__)
+#if defined(__CYGWIN__) || defined(__rtems__) || defined(__vita__)
 /* Special tv_nsec values for futimens(2) and utimensat(2). */
 #define UTIME_NOW	-2L
 #define UTIME_OMIT	-1L

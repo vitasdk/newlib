@@ -95,7 +95,7 @@ am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-basename.$(OBJEXT) lib_a-dirname.$(OBJEXT) \
 	lib_a-resource.$(OBJEXT) lib_a-sysconf.$(OBJEXT) \
 	lib_a-ids.$(OBJEXT) lib_a-secure_getenv.$(OBJEXT) \
-	lib_a-pipe.$(OBJEXT) \
+	lib_a-pipe.$(OBJEXT) lib_a-utime.$(OBJEXT)\
 	$(am__objects_1) $(am__objects_2)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -231,7 +231,7 @@ NET_SOURCES = net/gethostbyaddr.c net/gethostbyname.c net/getaddrinfo.c net/free
 STUB_SOURCES = chroot.c groups.c
 lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
-	basename.c dirname.c resource.c sysconf.c ids.c secure_getenv.c pipe.c \
+	basename.c dirname.c resource.c sysconf.c ids.c secure_getenv.c pipe.c utime.c\
 	${STUB_SOURCES} ${NET_SOURCES}
 lib_a_LIBADD = ${SOCKET_OBJS} ${NET_OBJS} ${DIRENT_OBJS}
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
@@ -493,6 +493,13 @@ lib_a-pipe.o: pipe.c
 
 lib_a-pipe.obj: pipe.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-pipe.obj `if test -f 'pipe.c'; then $(CYGPATH_W) 'pipe.c'; else $(CYGPATH_W) '$(srcdir)/pipe.c'; fi`
+
+lib_a-utime.o: utime.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-utime.o `test -f 'utime.c' || echo '$(srcdir)/'`utime.c
+
+lib_a-utime.obj: utime.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-utime.obj `if test -f 'utime.c'; then $(CYGPATH_W) 'utime.c'; else $(CYGPATH_W) '$(srcdir)/utime.c'; fi`
+
 
 lib_a-gethostbyaddr.o: net/gethostbyaddr.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostbyaddr.o `test -f 'net/gethostbyaddr.c' || echo '$(srcdir)/'`net/gethostbyaddr.c
