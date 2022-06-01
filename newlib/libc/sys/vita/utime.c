@@ -19,6 +19,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <utime.h>
 #include <fcntl.h>
@@ -30,7 +31,8 @@ DEALINGS IN THE SOFTWARE.
 #include "vitadescriptor.h"
 #include "vitafs.h"
 
-#define TRY(x) {rid=x; if (rid < 0) {errno = __vita_sce_errno_to_errno(rid, ERROR_GENERIC); return -1;}}
+#define TRY_UTIMES(x) do { rid=x; if (rid < 0) { free(full_path); errno = __vita_sce_errno_to_errno(rid, ERROR_GENERIC); return -1; } } while (0)
+#define TRY_FUTIMENS(x) do { rid=x; if (rid < 0) { __vita_fd_drop(fdmap); errno = __vita_sce_errno_to_errno(rid, ERROR_GENERIC); return -1; } } while (0)
 
 int
 utimes (const char *filename, const struct timeval times[2])
@@ -47,32 +49,21 @@ utimes (const char *filename, const struct timeval times[2])
         return -1;
     }
 
-    int ret = sceIoGetstat(full_path, &stat);
-    if (ret < 0)
-    {
-        free(full_path);
-        errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
-        return -1;
-    }
+    TRY_UTIMES(sceIoGetstat(full_path, &stat));
 
     if (times) {
-        TRY(sceRtcConvertTime_tToDateTime(times[0].tv_sec, &stat.st_atime));
-        TRY(sceRtcConvertTime_tToDateTime(times[1].tv_sec, &stat.st_mtime));
+        TRY_UTIMES(sceRtcConvertTime_tToDateTime(times[0].tv_sec, &stat.st_atime));
+        TRY_UTIMES(sceRtcConvertTime_tToDateTime(times[1].tv_sec, &stat.st_mtime));
         stat.st_atime.microsecond = times[0].tv_usec;
         stat.st_mtime.microsecond = times[1].tv_usec;
     }
     else {
-        TRY(sceRtcGetCurrentClockUtc(&stat.st_atime));
+        TRY_UTIMES(sceRtcGetCurrentClockUtc(&stat.st_atime));
         stat.st_mtime = stat.st_atime;
     }
     
-    ret = sceIoChstat(full_path, &stat, SCE_CST_AT | SCE_CST_MT);
-    if (ret < 0)
-    {
-        free(full_path);
-        errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
-        return -1;
-    }
+    TRY_UTIMES(sceIoChstat(full_path, &stat, SCE_CST_AT | SCE_CST_MT));
+
     free(full_path);
     return 0;
 }
@@ -99,7 +90,6 @@ futimens (int fd, const struct timespec times[2])
 {
     struct SceIoStat stat = {0};
     unsigned int bits = 0;
-    int ret = 0;
     int rid;
 
     DescriptorTranslation *fdmap = __vita_fd_grab(fd);
@@ -115,37 +105,30 @@ futimens (int fd, const struct timespec times[2])
         case VITA_DESCRIPTOR_TTY:
         case VITA_DESCRIPTOR_FILE:
         case VITA_DESCRIPTOR_DIRECTORY:
-            ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
+            TRY_FUTIMENS(sceIoGetstatByFd(fdmap->sce_uid, &stat));
             break;
         case VITA_DESCRIPTOR_SOCKET:
         case VITA_DESCRIPTOR_PIPE:
-            ret = __vita_make_sce_errno(EBADF);
+            TRY_FUTIMENS(__vita_make_sce_errno(EBADF));
             break;
-    }
-
-    if (ret < 0)
-    {
-        __vita_fd_drop(fdmap);
-        errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
-        return -1;
     }
 
     if (times) {
         SceDateTime dt[2];
         for (int i = 0; i < 2; i++) {
             if ((times[i].tv_nsec != UTIME_NOW) && (times[i].tv_nsec != UTIME_OMIT)) {
-                TRY(sceRtcConvertTime_tToDateTime(times[i].tv_sec, &dt[i]));
+                TRY_FUTIMENS(sceRtcConvertTime_tToDateTime(times[i].tv_sec, &dt[i]));
                 dt[i].microsecond = times[i].tv_nsec / 1000;
             } 
             else {
-                TRY(sceRtcGetCurrentClockUtc(&dt[i]));
+                TRY_FUTIMENS(sceRtcGetCurrentClockUtc(&dt[i]));
             }
         }
         stat.st_atime = dt[0];
         stat.st_mtime = dt[1];
     }
     else {
-        TRY(sceRtcGetCurrentClockUtc(&stat.st_atime));
+        TRY_FUTIMENS(sceRtcGetCurrentClockUtc(&stat.st_atime));
         stat.st_mtime = stat.st_atime;
     }
 
@@ -154,15 +137,9 @@ futimens (int fd, const struct timespec times[2])
     if (!times || times[1].tv_nsec != UTIME_OMIT)
         bits |= SCE_CST_MT;
 
-    ret = sceIoChstatByFd(fdmap->sce_uid, &stat, bits);
+    TRY_FUTIMENS(sceIoChstatByFd(fdmap->sce_uid, &stat, bits));
 
     __vita_fd_drop(fdmap);
-
-    if (ret < 0)
-    {
-        errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
-        return -1;
-    }
 
     return 0;
 }
