@@ -43,6 +43,7 @@ struct DIR_
 	int index;
 };
 
+#ifdef F_closedir
 int	closedir(DIR *dirp)
 {
 	if (!dirp || !dirp->fd)
@@ -62,7 +63,9 @@ int	closedir(DIR *dirp)
 	errno = 0;
 	return 0;
 }
+#endif
 
+#ifdef F_opendir
 DIR *__opendir_common(int fd)
 {
 	DIR *dirp = calloc(1, sizeof(DIR));
@@ -114,7 +117,9 @@ DIR *fdopendir(int fd)
 
 	return (__opendir_common(fd));
 }
+#endif
 
+#ifdef F_readdir
 struct dirent *readdir(DIR *dirp)
 {
 	if (!dirp)
@@ -150,7 +155,9 @@ struct dirent *readdir(DIR *dirp)
 	dirp->index++;
 	return dir;
 }
+#endif
 
+#ifdef F_rewinddir
 void rewinddir(DIR *dirp)
 {
 	if (!dirp)
@@ -182,7 +189,9 @@ void rewinddir(DIR *dirp)
 	dirp->index = 0;
 	errno = 0;
 }
+#endif
 
+#ifdef F_seekdir
 void seekdir(DIR *dirp, long int index)
 {
 	if (!dirp)
@@ -208,7 +217,9 @@ void seekdir(DIR *dirp, long int index)
 		}
 	}
 }
+#endif
 
+#ifdef F_telldir
 long int telldir(DIR *dirp)
 {
 	if (!dirp)
@@ -219,7 +230,9 @@ long int telldir(DIR *dirp)
 
 	return dirp->index;
 }
+#endif
 
+#ifdef F_dirfd
 int dirfd(DIR *dirp)
 {
 	if (!dirp)
@@ -230,7 +243,9 @@ int dirfd(DIR *dirp)
 
 	return dirp->fd;
 }
+#endif
 
+#ifdef F_readdir_r
 int readdir_r(DIR *restrict dirp, struct dirent *restrict entry, struct dirent **restrict result)
 {
 	*result = NULL;
@@ -247,7 +262,9 @@ int readdir_r(DIR *restrict dirp, struct dirent *restrict entry, struct dirent *
 	}
 	return 0;
 }
+#endif
 
+#ifdef F_scandir
 int
 alphasort(const struct dirent **d1, const struct dirent **d2)
 {
@@ -296,3 +313,4 @@ int scandir(const char *path, struct dirent ***res,
 	*res = names;
 	return cnt;
 }
+#endif
