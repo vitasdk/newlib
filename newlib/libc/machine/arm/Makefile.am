@@ -16,6 +16,8 @@ lib_a_SOURCES += memchr-stub.c
 lib_a_SOURCES += memchr.S
 lib_a_SOURCES += memcpy-stub.c
 lib_a_SOURCES += memcpy.S
+lib_a_SOURCES += memmove.c
+lib_a_SOURCES += memset.c
 lib_a_SOURCES += strlen-stub.c
 lib_a_SOURCES += strlen.S
 

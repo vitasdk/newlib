@@ -77,7 +77,8 @@ am_lib_a_OBJECTS = lib_a-setjmp.$(OBJEXT) lib_a-strcmp.$(OBJEXT) \
 	lib_a-aeabi_memset.$(OBJEXT) lib_a-aeabi_memset-soft.$(OBJEXT) \
 	lib_a-aeabi_memclr.$(OBJEXT) lib_a-memchr-stub.$(OBJEXT) \
 	lib_a-memchr.$(OBJEXT) lib_a-memcpy-stub.$(OBJEXT) \
-	lib_a-memcpy.$(OBJEXT) lib_a-strlen-stub.$(OBJEXT) \
+	lib_a-memcpy.$(OBJEXT) lib_a-memmove.$(OBJEXT) \
+	lib_a-memset.$(OBJEXT) lib_a-strlen-stub.$(OBJEXT) \
 	lib_a-strlen.$(OBJEXT)
 lib_a_OBJECTS = $(am_lib_a_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -192,7 +193,9 @@ pdfdir = @pdfdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
+runstatedir = @runstatedir@
 sbindir = @sbindir@
+shared_machine_dir = @shared_machine_dir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
 sys_dir = @sys_dir@
@@ -208,8 +211,8 @@ noinst_LIBRARIES = lib.a
 lib_a_SOURCES = setjmp.S strcmp.S strcpy.c aeabi_memcpy.c \
 	aeabi_memcpy-armv7a.S aeabi_memmove.c aeabi_memmove-soft.S \
 	aeabi_memset.c aeabi_memset-soft.S aeabi_memclr.c \
-	memchr-stub.c memchr.S memcpy-stub.c memcpy.S strlen-stub.c \
-	strlen.S
+	memchr-stub.c memchr.S memcpy-stub.c memcpy.S memmove.c \
+	memset.c strlen-stub.c strlen.S
 lib_a_CCASFLAGS = $(AM_CCASFLAGS)
 lib_a_CFLAGS = $(AM_CFLAGS)
 ACLOCAL_AMFLAGS = -I ../../.. -I ../../../..
@@ -378,6 +381,18 @@ lib_a-memcpy-stub.o: memcpy-stub.c
 
 lib_a-memcpy-stub.obj: memcpy-stub.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-memcpy-stub.obj `if test -f 'memcpy-stub.c'; then $(CYGPATH_W) 'memcpy-stub.c'; else $(CYGPATH_W) '$(srcdir)/memcpy-stub.c'; fi`
+
+lib_a-memmove.o: memmove.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-memmove.o `test -f 'memmove.c' || echo '$(srcdir)/'`memmove.c
+
+lib_a-memmove.obj: memmove.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-memmove.obj `if test -f 'memmove.c'; then $(CYGPATH_W) 'memmove.c'; else $(CYGPATH_W) '$(srcdir)/memmove.c'; fi`
+
+lib_a-memset.o: memset.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-memset.o `test -f 'memset.c' || echo '$(srcdir)/'`memset.c
+
+lib_a-memset.obj: memset.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-memset.obj `if test -f 'memset.c'; then $(CYGPATH_W) 'memset.c'; else $(CYGPATH_W) '$(srcdir)/memset.c'; fi`
 
 lib_a-strlen-stub.o: strlen-stub.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-strlen-stub.o `test -f 'strlen-stub.c' || echo '$(srcdir)/'`strlen-stub.c
