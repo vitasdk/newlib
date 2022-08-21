@@ -8,6 +8,7 @@
 #include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
+#include "fios2.h"
 
 #include "vitadescriptor.h"
 #include "vitaglue.h"
@@ -197,10 +198,18 @@ int __vita_fd_drop(DescriptorTranslation *map)
 
 		switch (map->type)
 		{
-			case VITA_DESCRIPTOR_FILE:
 			case VITA_DESCRIPTOR_TTY:
 			{
 				ret = sceIoClose(map->sce_uid);
+				if (map->filename)
+				{
+					free(map->filename);
+				}
+				break;
+			}
+			case VITA_DESCRIPTOR_FILE:
+			{
+				ret = sceFiosFHCloseSync(NULL, map->sce_uid);
 				if (map->filename)
 				{
 					free(map->filename);
