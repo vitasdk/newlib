@@ -31,7 +31,7 @@
 
 #if defined (__vita__)
 # include <psp2/kernel/clib.h>
-void memcpy (void *dest, const void *source, size_t n){
+void* memcpy (void *dest, const void *source, size_t n){
    return sceClibMemcpy(dest, source, n);
 }
 
