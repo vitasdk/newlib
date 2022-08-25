@@ -29,7 +29,13 @@
 
 #include "acle-compat.h"
 
-#if (defined (__OPTIMIZE_SIZE__) || defined (PREFER_SIZE_OVER_SPEED))
+#if defined (__vita__)
+# include <psp2/kernel/clib.h>
+void* memcpy (void *dest, const void *source, size_t n){
+	return sceClibMemcpy(dest, source, n);
+}
+
+#elif (defined (__OPTIMIZE_SIZE__) || defined (PREFER_SIZE_OVER_SPEED))
 # include "../../string/memcpy.c"
 #elif (__ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' \
        && defined (__ARM_FEATURE_UNALIGNED))
