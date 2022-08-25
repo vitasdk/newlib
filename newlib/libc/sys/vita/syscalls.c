@@ -283,9 +283,8 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 
 	if (is_dir) {
 		SceFiosDH handle = 0;
-		SceFiosOpenParams openParams = SCE_FIOS_OPENPARAMS_INITIALIZER;
-		openParams.openFlags = sce_flags;
-		ret = sceFiosDHOpenSync(NULL, &handle, full_path, &openParams);
+  		SceFiosBuffer buf = SCE_FIOS_BUFFER_INITIALIZER;
+		ret = sceFiosDHOpenSync(NULL, &handle, full_path, buf);
 		ret = ret < 0 ? ret : handle;
 	} else {
 		SceFiosFH handle = 0;

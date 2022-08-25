@@ -150,6 +150,7 @@ int sceFiosFHStatSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosStat *stat
 int sceFiosDHStatSync(const SceFiosOpAttr *attr, SceFiosDH fh, SceFiosStat *stat);
 
 int sceFiosDirectoryCreateSync(const SceFiosOpAttr *attr, const char *path);
+int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, SceFiosBuffer buffer);
 int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, const void *params);
 int sceFiosDHCloseSync(const SceFiosOpAttr *attr, SceFiosDH fh);
 
