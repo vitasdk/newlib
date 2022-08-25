@@ -32,7 +32,7 @@
 #if defined (__vita__)
 # include <psp2/kernel/clib.h>
 void* memcpy (void *dest, const void *source, size_t n){
-   return sceClibMemcpy(dest, source, n);
+	return sceClibMemcpy(dest, source, n);
 }
 
 #elif (defined (__OPTIMIZE_SIZE__) || defined (PREFER_SIZE_OVER_SPEED))
