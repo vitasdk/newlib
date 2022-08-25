@@ -130,6 +130,16 @@ typedef struct SceFiosStat {
   int64_t st_mode;
 } SceFiosStat;
 
+typedef struct SceFiosDirEntry {
+  SceFiosOffset fileSize;
+  uint32_t statFlags;
+  uint16_t nameLength;
+  uint16_t fullPathLength;
+  uint16_t offsetToName;
+  uint16_t reserved[3];
+  char fullPath[1024];
+} SceFiosDirEntry;
+
 int sceFiosInitialize(const SceFiosParams *params);
 void sceFiosTerminate();
 
@@ -151,7 +161,7 @@ int sceFiosDHStatSync(const SceFiosOpAttr *attr, SceFiosDH fh, SceFiosStat *stat
 
 int sceFiosDirectoryCreateSync(const SceFiosOpAttr *attr, const char *path);
 int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, SceFiosBuffer buffer);
-int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, const void *params);
+int sceFiosDHReadSync(const SceFiosOpAttr *attr, SceFiosDH dh, SceFiosDirEntry *dir);
 int sceFiosDHCloseSync(const SceFiosOpAttr *attr, SceFiosDH fh);
 
 

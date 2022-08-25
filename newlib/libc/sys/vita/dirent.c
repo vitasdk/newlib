@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/types.h>
 #include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
+#include "fios2.h"
 #include "vitadescriptor.h"
 #include "vitaerror.h"
 
@@ -135,8 +136,8 @@ struct dirent *readdir(DIR *dirp)
 		return NULL;
 	}
 
-	int res = sceIoDread(fdmap->sce_uid, (SceIoDirent *)&dirp->dir);
-
+	SceFiosDirEntry fios_dir_entry = {0};
+	int res = sceFiosDHReadSync(NULL, fdmap->sce_uid, &fios_dir_entry);
 	__vita_fd_drop(fdmap);
 
 	if (res < 0)
@@ -145,11 +146,24 @@ struct dirent *readdir(DIR *dirp)
 		return NULL;
 	}
 
-	if (res == 0)
+	//TODO end of listing
+
+	SceFiosStat fios_stat = {0};
+	res = sceFiosStatSync(NULL, fios_dir_entry.fullPath, &fios_stat);
+
+	if (res < 0)
 	{
-		// end-of-listing shouldn't change errno
+		errno = __vita_sce_errno_to_errno(res, ERROR_GENERIC);
 		return NULL;
 	}
+
+	strncpy(dirp->dir.d_name, fios_dir_entry.fullPath + fios_dir_entry.offsetToName, 256);
+	dirp->dir.d_stat.st_mode = fios_stat.st_mode;
+	dirp->dir.d_stat.st_attr = fios_stat.statFlags;
+	dirp->dir.d_stat.st_size = fios_stat.st_size;
+	sceFiosDateToSceDateTime(fios_stat.st_ctime, &dirp->dir.d_stat.st_ctime);
+	sceFiosDateToSceDateTime(fios_stat.st_atime, &dirp->dir.d_stat.st_atime);
+	sceFiosDateToSceDateTime(fios_stat.st_mtime, &dirp->dir.d_stat.st_mtime);
 
 	struct dirent *dir = &dirp->dir;
 	dirp->index++;
@@ -173,16 +187,18 @@ void rewinddir(DIR *dirp)
 		return;
 	}
 
-	SceUID dirfd = sceIoDopen(fdmap->filename); // filename contains full path, so it's okay to use in sce funcs
+	SceFiosDH dirfd;
+	SceFiosBuffer buf = SCE_FIOS_BUFFER_INITIALIZER;
+	int res = sceFiosDHOpenSync(NULL, &dirfd, fdmap->filename, buf); // filename contains full path, so it's okay to use in sce funcs
 
-	if (dirfd < 0)
+	if (res < 0)
 	{
 		__vita_fd_drop(fdmap);
 		errno = __vita_sce_errno_to_errno(dirfd, ERROR_GENERIC);
 		return;
 	}
 
-	sceIoDclose(fdmap->sce_uid);
+	sceFiosDHCloseSync(NULL, fdmap->sce_uid);
 	fdmap->sce_uid = dirfd;
 	__vita_fd_drop(fdmap);
 
