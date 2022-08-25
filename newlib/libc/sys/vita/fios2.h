@@ -148,6 +148,8 @@ int sceFiosDeleteSync(const SceFiosOpAttr *attr, const char *path);
 
 int sceFiosFHOpenSync(const SceFiosOpAttr *attr, SceFiosFH *fh, const char *path, const void *params);
 SceFiosSize sceFiosFHReadSync(const SceFiosOpAttr *attr, SceFiosFH fh, void *data, SceFiosSize size);
+SceFiosSize sceFiosFHPreadSync(const SceFiosOpAttr *attr, SceFiosFH fh, void *data, SceFiosSize size, SceFiosOffset offset);
+SceFiosSize sceFiosFHPwriteSync(const SceFiosOpAttr *attr, SceFiosFH fh, const void *data, SceFiosSize size, SceFiosOffset offset);
 SceFiosSize sceFiosFHWriteSync(const SceFiosOpAttr *attr, SceFiosFH fh, const void *data, SceFiosSize size);
 int sceFiosFHCloseSync(const SceFiosOpAttr *attr, SceFiosFH fh);
 
