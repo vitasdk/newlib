@@ -161,6 +161,9 @@ int sceFiosStatSync(const SceFiosOpAttr *attr, const char *path, SceFiosStat *st
 int sceFiosFHStatSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosStat *stat);
 int sceFiosDHStatSync(const SceFiosOpAttr *attr, SceFiosDH fh, SceFiosStat *stat);
 
+int sceFiosFHTruncateSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosSize size);
+int sceFiosFileTruncateSync(const SceFiosOpAttr *attr, const char *path, SceFiosSize size);
+
 int sceFiosDirectoryCreateSync(const SceFiosOpAttr *attr, const char *path);
 int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, SceFiosBuffer buffer);
 int sceFiosDHReadSync(const SceFiosOpAttr *attr, SceFiosDH dh, SceFiosDirEntry *dir);

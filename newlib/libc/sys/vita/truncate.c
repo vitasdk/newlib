@@ -25,8 +25,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include <errno.h>
 #include <sys/types.h>
-#include <psp2/io/dirent.h>
-#include <psp2/io/stat.h>
+#include "fios2.h"
 
 #include "vitadescriptor.h"
 #include "vitaerror.h"
@@ -34,11 +33,9 @@ DEALINGS IN THE SOFTWARE.
 int truncate(const char *path, off_t length)
 {
     struct _reent *reent = _REENT;
-	struct SceIoStat stat = {0};
-	stat.st_size = length;
 	int ret;
 
-	ret = sceIoChstat(path, &stat, SCE_CST_SIZE);
+	ret = sceFiosFileTruncateSync(NULL, path, length);
 
 	if (ret < 0)
 	{
@@ -53,8 +50,6 @@ int truncate(const char *path, off_t length)
 int ftruncate(int fd, off_t length)
 {
     struct _reent *reent = _REENT;
-	struct SceIoStat stat = {0};
-	stat.st_size = length;
 	int ret;
 	
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
@@ -68,7 +63,7 @@ int ftruncate(int fd, off_t length)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_FILE:
-			ret = sceIoChstatByFd(fdmap->sce_uid, &stat, SCE_CST_SIZE);
+			ret = sceFiosFHTruncateSync(NULL, fdmap->sce_uid, length);
 			break;
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
