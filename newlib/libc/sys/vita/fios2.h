@@ -152,12 +152,14 @@ SceFiosSize sceFiosFHPreadSync(const SceFiosOpAttr *attr, SceFiosFH fh, void *da
 SceFiosSize sceFiosFHPwriteSync(const SceFiosOpAttr *attr, SceFiosFH fh, const void *data, SceFiosSize size, SceFiosOffset offset);
 SceFiosSize sceFiosFHWriteSync(const SceFiosOpAttr *attr, SceFiosFH fh, const void *data, SceFiosSize size);
 int sceFiosFHCloseSync(const SceFiosOpAttr *attr, SceFiosFH fh);
+int sceFiosFHSyncSync(const SceFiosOpAttr *attr, SceFiosFH fh);
 
 SceFiosOffset sceFiosFHSeek(SceFiosFH fh, SceFiosOffset offset, SceFiosWhence whence);
 SceFiosOffset sceFiosFHTell(SceFiosFH fh);
 SceFiosSize sceFiosFHGetSize(SceFiosFH fh);
 
 int sceFiosStatSync(const SceFiosOpAttr *attr, const char *path, SceFiosStat *stat);
+int sceFiosChangeStatSync(const SceFiosOpAttr *attr, const char *path, SceFiosStat *stat, int bits);
 int sceFiosFHStatSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosStat *stat);
 int sceFiosDHStatSync(const SceFiosOpAttr *attr, SceFiosDH fh, SceFiosStat *stat);
 
@@ -165,10 +167,13 @@ int sceFiosFHTruncateSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosSize s
 int sceFiosFileTruncateSync(const SceFiosOpAttr *attr, const char *path, SceFiosSize size);
 
 int sceFiosDirectoryCreateSync(const SceFiosOpAttr *attr, const char *path);
+int sceFiosDirectoryDeleteSync(const SceFiosOpAttr *attr, const char *path);
 int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, SceFiosBuffer buffer);
 int sceFiosDHReadSync(const SceFiosOpAttr *attr, SceFiosDH dh, SceFiosDirEntry *dir);
-int sceFiosDHCloseSync(const SceFiosOpAttr *attr, SceFiosDH fh);
+int sceFiosDHCloseSync(const SceFiosOpAttr *attr, SceFiosDH dh);
+int sceFiosDHSyncSync(const SceFiosOpAttr *attr, SceFiosDH dh);
 
+int sceFiosDevctlSync(const SceFiosOpAttr *attr, const char *dev, unsigned int cmd, void *indata, int inlen, void *outdata, int outlen);
 
 int sceFiosIOFilterAdd(int index, void *pFilterCallback, void *pFilterContext);
 void sceFiosIOFilterCache();
