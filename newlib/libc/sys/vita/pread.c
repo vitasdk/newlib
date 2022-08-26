@@ -42,7 +42,7 @@ ssize_t pwrite (int __fd, const void *__buf, size_t __nbytes, off_t __offset)
 		return -1;
 	}
 
-	ret = sceFiosFHPwriteSync(fdmap->sce_uid, __buf, __nbytes, __offset);
+	ret = sceFiosFHPwriteSync(NULL, fdmap->sce_uid, __buf, __nbytes, __offset);
 
 	__vita_fd_drop(fdmap);
 
