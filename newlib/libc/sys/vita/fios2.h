@@ -161,7 +161,6 @@ SceFiosSize sceFiosFHGetSize(SceFiosFH fh);
 int sceFiosStatSync(const SceFiosOpAttr *attr, const char *path, SceFiosStat *stat);
 int sceFiosChangeStatSync(const SceFiosOpAttr *attr, const char *path, SceFiosStat *stat, int bits);
 int sceFiosFHStatSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosStat *stat);
-int sceFiosDHStatSync(const SceFiosOpAttr *attr, SceFiosDH fh, SceFiosStat *stat);
 
 int sceFiosFHTruncateSync(const SceFiosOpAttr *attr, SceFiosFH fh, SceFiosSize size);
 int sceFiosFileTruncateSync(const SceFiosOpAttr *attr, const char *path, SceFiosSize size);

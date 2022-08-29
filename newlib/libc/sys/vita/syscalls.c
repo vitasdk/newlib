@@ -484,7 +484,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 	{
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_DIRECTORY:
-			ret = sceFiosDHStatSync(NULL, fdmap->sce_uid, &stat);
+			ret = sceFiosStatSync(NULL, fdmap->filename, &stat);
 			break;
 		case VITA_DESCRIPTOR_FILE:
 			ret = sceFiosFHStatSync(NULL, fdmap->sce_uid, &stat);
