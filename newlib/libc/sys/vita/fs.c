@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.
 #include <psp2/io/stat.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/devctl.h>
+#include "fios2.h"
 #include "vitaerror.h"
 #include "vitadescriptor.h"
 #include "vitafs.h"
@@ -60,7 +61,7 @@ int rmdir(const char *pathname)
 		return -1;
 	}
 
-	if ((ret = sceIoRmdir(full_path)) < 0)
+	if ((ret = sceFiosDirectoryDeleteSync(NULL, full_path)) < 0)
 	{
 		free(full_path);
 		errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
@@ -78,14 +79,14 @@ int lstat(const char *path, struct stat *buf)
 
 int chmod(const char *pathname, mode_t mode)
 {
-	struct SceIoStat stat = {0};
+	struct SceFiosStat stat = {0};
 	char* full_path = __realpath(pathname);
 	if(!full_path)
 	{
 		// errno is set by __realpath
 		return -1;
 	}
-	int ret = sceIoGetstat(full_path, &stat);
+	int ret = sceFiosStatSync(NULL, full_path, &stat);
 	if (ret < 0)
 	{
 		free(full_path);
@@ -94,7 +95,7 @@ int chmod(const char *pathname, mode_t mode)
 	}
 
 	stat.st_mode = mode;
-	ret = sceIoChstat(full_path, &stat, SCE_CST_MODE);
+	ret = sceFiosChangeStatSync(NULL, full_path, &stat, SCE_CST_MODE);
 	if (ret < 0)
 	{
 		free(full_path);
@@ -121,10 +122,13 @@ int fchmod(int fd, mode_t mode)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_TTY:
-		case VITA_DESCRIPTOR_FILE:
-		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
 			break;
+		case VITA_DESCRIPTOR_FILE:
+		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = chmod(fdmap->filename, mode);
+			__vita_fd_drop(fdmap);
+			return ret;
 		case VITA_DESCRIPTOR_SOCKET:
 		case VITA_DESCRIPTOR_PIPE:
 			ret = __vita_make_sce_errno(EBADF);
@@ -156,7 +160,7 @@ int chown(const char *path, uid_t owner, gid_t group)
 {
 	// Implementation note: there's no real chown on vita
 	// We only check for path correctness
-	struct SceIoStat stat = {0};
+	struct SceFiosStat stat = {0};
 	char* full_path = __realpath(path);
 	if(!full_path)
 	{
@@ -164,7 +168,7 @@ int chown(const char *path, uid_t owner, gid_t group)
 		return -1;
 	}
 
-	int ret = sceIoGetstat(full_path, &stat);
+	int ret = sceFiosStatSync(NULL, full_path, &stat);
 	if (ret < 0)
 	{
 		free(full_path);
@@ -180,7 +184,7 @@ int fchownat(int fd, const char *path, uid_t owner, gid_t group, int flag)
 {
 	// Implementation note: there's no real chown on vita
 	// We only check for path correctness
-	struct SceIoStat stat = {0};
+	struct SceFiosStat stat = {0};
 	int ret = 0;
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
@@ -195,7 +199,7 @@ int fchownat(int fd, const char *path, uid_t owner, gid_t group, int flag)
 	{
 		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_DIRECTORY:
-			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
+			ret = sceFiosStatSync(NULL, fdmap->filename, &stat);
 			break;
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
@@ -229,8 +233,10 @@ int fsync(int fd)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_DIRECTORY:
+			ret = sceFiosSyncSync(NULL, fdmap->filename, 0);
+			break;
 		case VITA_DESCRIPTOR_FILE:
-			ret = sceIoSyncByFd(fdmap->sce_uid, 0);
+			ret = sceFiosFHSyncSync(NULL, fdmap->sce_uid);
 			break;
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
@@ -495,8 +501,8 @@ char *__realpath(const char *path)
 
 int __is_dir(const char *path)
 {
-	SceIoStat stat;
-	int ret = sceIoGetstat(path, &stat);
+	SceFiosStat stat;
+	int ret = sceFiosStatSync(NULL, path, &stat);
 	if (ret < 0)
 	{
 		return ret;
@@ -516,8 +522,8 @@ char *realpath(const char *path, char* resolved_path)
 		return NULL; // errno already set
 	}
 
-	SceIoStat stat;
-	int ret = sceIoGetstat(fullpath, &stat);
+	SceFiosStat stat;
+	int ret = sceFiosStatSync(NULL, fullpath, &stat);
 	if (ret < 0)
 	{
 		free(fullpath);
@@ -617,7 +623,7 @@ int statvfs(const char *__path, struct statvfs *__buf)
 
 	SceIoDevInfo info;
 	memset(&info, 0, sizeof(SceIoDevInfo));
-	int ret = sceIoDevctl(drive, 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo));
+	int ret = sceFiosDevctlSync(NULL, drive, 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo));
 	if (ret < 0)
 	{
 		errno = EIO;

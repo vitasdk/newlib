@@ -14,6 +14,8 @@
 #include <psp2/io/stat.h>
 #include <psp2/rtc.h>
 #include <psp2/net/net.h>
+#include "fios2.h"
+
 
 #include <psp2/kernel/processmgr.h>
 
@@ -39,9 +41,11 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 
 	switch (fdmap->type)
 	{
-		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_TTY:
 			ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
+			break;
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceFiosFHWriteSync(NULL, fdmap->sce_uid, buf, nbytes);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
 			type = ERROR_SOCKET;
@@ -184,7 +188,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_FILE:
-			ret = sceIoLseek32(fdmap->sce_uid, ptr, dir);
+			ret = sceFiosFHSeek(fdmap->sce_uid, ptr, dir);
 			break;
 		case VITA_DESCRIPTOR_TTY:
 		case VITA_DESCRIPTOR_SOCKET:
@@ -215,7 +219,7 @@ _mkdir_r (struct _reent * reent, const char * path, int mode)
 		reent->_errno = errno; // set by realpath
 		return -1;
 	}
-	if ((ret = sceIoMkdir(full_path, 0777)) < 0)
+	if ((ret = sceFiosDirectoryCreateSync(NULL, full_path)) < 0)
 	{
 		free(full_path);
 		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
@@ -277,7 +281,19 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 		return -1;
 	}
 
-	ret = is_dir ? sceIoDopen(full_path) : sceIoOpen(full_path, sce_flags, 0666);
+	if (is_dir) {
+		SceFiosDH handle = 0;
+  		SceFiosBuffer buf = SCE_FIOS_BUFFER_INITIALIZER;
+		ret = sceFiosDHOpenSync(NULL, &handle, full_path, buf);
+		ret = ret < 0 ? ret : handle;
+	} else {
+		SceFiosFH handle = 0;
+		SceFiosOpenParams openParams = SCE_FIOS_OPENPARAMS_INITIALIZER;
+		openParams.openFlags = sce_flags;
+		ret = sceFiosFHOpenSync(NULL, &handle, full_path, &openParams);
+		ret = ret < 0 ? ret : handle;
+	}
+	
 	if (ret < 0)
 	{
 		free(full_path);
@@ -291,7 +307,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	if (fd < 0)
 	{
 		free(full_path);
-		is_dir ? sceIoDclose(ret) : sceIoClose(ret);
+		is_dir ? sceFiosDHCloseSync(NULL, ret) : sceFiosFHCloseSync(NULL, ret);
 		reent->_errno = EMFILE;
 		return -1;
 	}
@@ -322,8 +338,10 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_TTY:
-		case VITA_DESCRIPTOR_FILE:
 			ret = sceIoRead(fdmap->sce_uid, ptr, len);
+			break;
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceFiosFHReadSync(NULL, fdmap->sce_uid, ptr, len);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
 			type = ERROR_SOCKET;
@@ -372,7 +390,7 @@ _unlink_r(struct _reent *reent, const char * path)
 		reent->_errno = errno; // set by realpath
 		return -1;
 	}
-	ret = sceIoRemove(full_path);
+	ret = sceFiosDeleteSync(NULL, full_path);
 	if (ret < 0)
 	{
 		free(full_path);
@@ -401,7 +419,7 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 		reent->_errno = errno; // set by realpath
 		return -1;
 	}
-	ret = sceIoRename(full_path_old, full_path_new);
+	ret = sceFiosRenameSync(NULL, full_path_old, full_path_new);
 	if (ret < 0)
 	{
 		free(full_path_old);
@@ -427,7 +445,7 @@ _times_r(struct _reent *reent, struct tms *ptms)
 }
 
 static void
-scestat_to_stat(struct SceIoStat *in, struct stat *out)
+scestat_to_stat(struct SceFiosStat *in, struct stat *out)
 {
 	memset(out, 0, sizeof(*out));
 	out->st_size = in->st_size;
@@ -435,15 +453,23 @@ scestat_to_stat(struct SceIoStat *in, struct stat *out)
 		out->st_mode |= _IFREG;
 	if (SCE_S_ISDIR(in->st_mode))
 		out->st_mode |= _IFDIR;
-	sceRtcGetTime_t(&in->st_atime, &out->st_atime);
-	sceRtcGetTime_t(&in->st_mtime, &out->st_mtime);
-	sceRtcGetTime_t(&in->st_ctime, &out->st_ctime);
+	
+	SceDateTime aux_date = {0};
+
+	sceFiosDateToSceDateTime(in->st_atime, &aux_date);
+	sceRtcGetTime_t(&aux_date, &out->st_atime);
+
+	sceFiosDateToSceDateTime(in->st_mtime, &aux_date);
+	sceRtcGetTime_t(&aux_date, &out->st_mtime);
+	
+	sceFiosDateToSceDateTime(in->st_ctime, &aux_date);
+	sceRtcGetTime_t(&aux_date, &out->st_ctime);
 }
 
 int
 _fstat_r(struct _reent *reent, int fd, struct stat *st)
 {
-	struct SceIoStat stat = {0};
+	struct SceFiosStat stat = {0};
 	int ret;
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
@@ -457,9 +483,11 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_TTY:
-		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_DIRECTORY:
-			ret = sceIoGetstatByFd(fdmap->sce_uid, &stat);
+			ret = sceFiosStatSync(NULL, fdmap->filename, &stat);
+			break;
+		case VITA_DESCRIPTOR_FILE:
+			ret = sceFiosFHStatSync(NULL, fdmap->sce_uid, &stat);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
 		case VITA_DESCRIPTOR_PIPE:
@@ -483,7 +511,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 int
 _stat_r(struct _reent *reent, const char *path, struct stat *st)
 {
-	struct SceIoStat stat = {0};
+	struct SceFiosStat stat = {0};
 	int ret;
 	char* full_path = __realpath(path);
 	if (!full_path)
@@ -491,7 +519,7 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 		reent->_errno = errno; // set by realpath
 		return -1;
 	}
-	if ((ret = sceIoGetstat(full_path, &stat)) < 0)
+	if ((ret = sceFiosStatSync(NULL, full_path, &stat)) < 0)
 	{
 		free(full_path);
 		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);

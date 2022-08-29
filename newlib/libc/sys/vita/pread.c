@@ -3,6 +3,7 @@
 #include <sys/unistd.h>
 
 #include <psp2/io/fcntl.h>
+#include "fios2.h"
 
 #include "vitadescriptor.h"
 #include "vitaerror.h"
@@ -17,7 +18,7 @@ ssize_t pread (int __fd, void *__buf, size_t __nbytes, off_t __offset)
 		return -1;
 	}
 
-	ret = sceIoPread(fdmap->sce_uid, __buf, __nbytes, __offset);
+	ret = sceFiosFHPreadSync(NULL, fdmap->sce_uid, __buf, __nbytes, __offset);
 
 	__vita_fd_drop(fdmap);
 
@@ -41,7 +42,7 @@ ssize_t pwrite (int __fd, const void *__buf, size_t __nbytes, off_t __offset)
 		return -1;
 	}
 
-	ret = sceIoPwrite(fdmap->sce_uid, __buf, __nbytes, __offset);
+	ret = sceFiosFHPwriteSync(NULL, fdmap->sce_uid, __buf, __nbytes, __offset);
 
 	__vita_fd_drop(fdmap);
 
