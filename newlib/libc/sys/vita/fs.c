@@ -233,7 +233,7 @@ int fsync(int fd)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_DIRECTORY:
-			ret = sceFiosDHSyncSync(NULL, fdmap->sce_uid);
+			ret = sceFiosSyncSync(NULL, fdmap->filename, 0);
 			break;
 		case VITA_DESCRIPTOR_FILE:
 			ret = sceFiosFHSyncSync(NULL, fdmap->sce_uid);

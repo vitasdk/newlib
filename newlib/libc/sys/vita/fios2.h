@@ -171,8 +171,8 @@ int sceFiosDirectoryDeleteSync(const SceFiosOpAttr *attr, const char *path);
 int sceFiosDHOpenSync(const SceFiosOpAttr *attr, SceFiosDH *dh, const char *path, SceFiosBuffer buffer);
 int sceFiosDHReadSync(const SceFiosOpAttr *attr, SceFiosDH dh, SceFiosDirEntry *dir);
 int sceFiosDHCloseSync(const SceFiosOpAttr *attr, SceFiosDH dh);
-int sceFiosDHSyncSync(const SceFiosOpAttr *attr, SceFiosDH dh);
 
+int sceFiosSyncSync(const SceFiosOpAttr *attr, const char* path, int flag);
 int sceFiosDevctlSync(const SceFiosOpAttr *attr, const char *dev, unsigned int cmd, void *indata, int inlen, void *outdata, int outlen);
 
 int sceFiosIOFilterAdd(int index, void *pFilterCallback, void *pFilterContext);
