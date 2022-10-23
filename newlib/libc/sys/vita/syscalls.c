@@ -401,6 +401,17 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 		reent->_errno = errno; // set by realpath
 		return -1;
 	}
+
+	// sceIoRename fails if `new` exists.
+	// But to conform with POSIX/BSD, we should remove `new` if it's file or empty dir
+	ret = sceIoRemove(full_path_new);
+	if (ret == 0x80010015) // EISDIR
+	{
+		// sceIoRmdir won't remove non-empty directory
+		// we don't care about return, since sceIoRename will return proper error code (EEXIST) in this case
+		sceIoRmdir(full_path_new);
+	}
+
 	ret = sceIoRename(full_path_old, full_path_new);
 	if (ret < 0)
 	{
