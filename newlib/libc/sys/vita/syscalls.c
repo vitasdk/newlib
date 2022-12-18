@@ -402,6 +402,15 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 		return -1;
 	}
 
+	// NOOP
+	if (strcmp(full_path_old, full_path_new) == 0)
+	{
+		free(full_path_old);
+		free(full_path_new);
+		reent->_errno = 0;
+		return 0;
+	}
+
 	// sceIoRename fails if `new` exists.
 	// But to conform with POSIX/BSD, we should remove `new` if it's file or empty dir
 	ret = sceIoRemove(full_path_new);
