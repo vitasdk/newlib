@@ -43,8 +43,8 @@ void _init_vita_heap(void)
 	}
 	else
 	{
-		// Create a memblock for the heap memory, 32MB
-		_newlib_heap_size = 32 * 1024 * 1024;
+		// Create a memblock for the heap memory, 128MB
+		_newlib_heap_size = 128 * 1024 * 1024;
 	}
 	_newlib_heap_memblock = sceKernelAllocMemBlock("Newlib heap", 0x0c20d060, _newlib_heap_size, 0);
 	if (_newlib_heap_memblock < 0)
