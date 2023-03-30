@@ -19,6 +19,13 @@ DescriptorTranslation __vita_fdmap_pool[MAX_OPEN_FILES];
 
 SceKernelLwMutexWork _newlib_fd_mutex __attribute__ ((aligned (8)));
 
+#define MAX_PATH_LENGTH 1024
+
+int64_t g_OpStorage[SCE_FIOS_OP_STORAGE_SIZE(64, MAX_PATH_LENGTH) / sizeof(int64_t) + 1];
+int64_t g_ChunkStorage[SCE_FIOS_CHUNK_STORAGE_SIZE(1024) / sizeof(int64_t) + 1];
+int64_t g_FHStorage[SCE_FIOS_FH_STORAGE_SIZE(32, MAX_PATH_LENGTH) / sizeof(int64_t) + 1];
+int64_t g_DHStorage[SCE_FIOS_DH_STORAGE_SIZE(32, MAX_PATH_LENGTH) / sizeof(int64_t) + 1];
+
 void _init_vita_io(void)
 {
 	int ret;
@@ -57,6 +64,21 @@ void _init_vita_io(void)
 		__vita_fdmap[STDERR_FILENO]->type = VITA_DESCRIPTOR_TTY;
 		__vita_fdmap[STDERR_FILENO]->ref_count = 1;
 	}
+
+	
+
+	SceFiosParams params = SCE_FIOS_PARAMS_INITIALIZER;
+	params.opStorage.pPtr = g_OpStorage;
+	params.opStorage.length = sizeof(g_OpStorage);
+	params.chunkStorage.pPtr = g_ChunkStorage;
+	params.chunkStorage.length = sizeof(g_ChunkStorage);
+	params.fhStorage.pPtr = g_FHStorage;
+	params.fhStorage.length = sizeof(g_FHStorage);
+	params.dhStorage.pPtr = g_DHStorage;
+	params.dhStorage.length = sizeof(g_DHStorage);  
+	params.pathMax = MAX_PATH_LENGTH;
+
+	ret = sceFiosInitialize(&params);
 
 	sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
 }
@@ -218,7 +240,7 @@ int __vita_fd_drop(DescriptorTranslation *map)
 			}
 			case VITA_DESCRIPTOR_DIRECTORY:
 			{
-				ret = sceIoDclose(map->sce_uid);
+				ret = sceFiosDHCloseSync(NULL, map->sce_uid);
 				if (map->filename)
 				{
 					free(map->filename);

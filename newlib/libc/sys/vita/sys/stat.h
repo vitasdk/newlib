@@ -11,6 +11,10 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/_timespec.h>
 
+#if defined(__vita__)
+#include <psp2common/kernel/iofilemgr.h>
+#endif
+
 /* dj's stat defines _STAT_H_ */
 #ifndef _STAT_H_
 
@@ -62,6 +66,16 @@ struct	stat
 
 #endif
 
+#if !defined(__vita__)
+#define	_IFMT		SCE_S_IFMT    /* type of file */
+#define		_IFDIR	SCE_S_IFDIR			    /* directory */
+#define		_IFCHR	0060000	    /* character special */
+#define		_IFBLK	0080000	    /* block special */
+#define		_IFREG	SCE_S_IFREG			    /* regular */
+#define		_IFLNK	SCE_S_IFLNK	/* symbolic link */
+#define		_IFSOCK	0140000	    /* socket */
+#define		_IFIFO	0010000	    /* fifo */
+#else
 #define	_IFMT		0170000	/* type of file */
 #define		_IFDIR	0040000	/* directory */
 #define		_IFCHR	0020000	/* character special */
@@ -70,6 +84,8 @@ struct	stat
 #define		_IFLNK	0120000	/* symbolic link */
 #define		_IFSOCK	0140000	/* socket */
 #define		_IFIFO	0010000	/* fifo */
+#endif
+
 
 #define 	S_BLKSIZE  1024 /* size of a block */
 

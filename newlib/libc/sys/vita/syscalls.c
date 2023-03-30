@@ -252,11 +252,29 @@ int _fcntl2sony(int flags)
 	return out;
 }
 
+int _fcntl2fios(int flags)
+{
+	int out = 0;
+	if (flags & O_RDWR)
+		out |= SCE_FIOS_O_RDWR;
+	else if (flags & O_WRONLY)
+		out |= SCE_FIOS_O_WRONLY;
+	else
+		out |= SCE_FIOS_O_RDONLY;
+	if (flags & O_APPEND)
+		out |= SCE_FIOS_O_APPEND;
+	if (flags & O_CREAT)
+		out |= SCE_FIOS_O_CREAT;
+	if (flags & O_TRUNC)
+		out |= SCE_FIOS_O_TRUNC;
+	return out;
+}
+
 int
 _open_r(struct _reent *reent, const char *file, int flags, int mode)
 {
 	int ret;
-	int sce_flags = _fcntl2sony(flags);
+	int sce_flags = _fcntl2fios(flags);
 	int is_dir = 0;
 
     // check flags
@@ -282,11 +300,17 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	}
 
 	if (is_dir) {
-		SceFiosDH handle = 0;
+				sceClibPrintf("ES UN DIR\n");
+
+		SceFiosDH handle = -1;
   		SceFiosBuffer buf = SCE_FIOS_BUFFER_INITIALIZER;
 		ret = sceFiosDHOpenSync(NULL, &handle, full_path, buf);
+		sceClibPrintf("ret %x\n", ret);
+
 		ret = ret < 0 ? ret : handle;
 	} else {
+				sceClibPrintf("NOL ES UN DIR\n");
+
 		SceFiosFH handle = 0;
 		SceFiosOpenParams openParams = SCE_FIOS_OPENPARAMS_INITIALIZER;
 		openParams.openFlags = sce_flags;
@@ -445,7 +469,21 @@ _times_r(struct _reent *reent, struct tms *ptms)
 }
 
 static void
-scestat_to_stat(struct SceFiosStat *in, struct stat *out)
+scestat_to_stat(struct SceIoStat *in, struct stat *out)
+{
+	memset(out, 0, sizeof(*out));
+	out->st_size = in->st_size;
+	if (SCE_S_ISREG(in->st_mode))
+		out->st_mode |= _IFREG;
+	if (SCE_S_ISDIR(in->st_mode))
+		out->st_mode |= _IFDIR;
+	sceRtcGetTime_t(&in->st_atime, &out->st_atime);
+	sceRtcGetTime_t(&in->st_mtime, &out->st_mtime);
+	sceRtcGetTime_t(&in->st_ctime, &out->st_ctime);
+}
+
+static void
+scefiosstat_to_stat(struct SceFiosStat *in, struct stat *out)
 {
 	memset(out, 0, sizeof(*out));
 	out->st_size = in->st_size;
@@ -470,6 +508,7 @@ int
 _fstat_r(struct _reent *reent, int fd, struct stat *st)
 {
 	struct SceFiosStat stat = {0};
+	struct SceIoStat sce_stat = {0};
 	int ret;
 
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
@@ -483,6 +522,8 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 	switch (fdmap->type)
 	{
 		case VITA_DESCRIPTOR_TTY:
+			ret = sceIoGetstatByFd(fdmap->sce_uid, &sce_stat);
+			break;
 		case VITA_DESCRIPTOR_DIRECTORY:
 			ret = sceFiosStatSync(NULL, fdmap->filename, &stat);
 			break;
@@ -503,7 +544,16 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 		return -1;
 	}
 
-	scestat_to_stat(&stat, st);
+	switch (fdmap->type)
+	{
+		case VITA_DESCRIPTOR_TTY:
+			scestat_to_stat(&sce_stat, st);
+			break;
+		default:
+			scefiosstat_to_stat(&stat, st);
+			break;
+	}
+
 	reent->_errno = 0;
 	return 0;
 }
@@ -526,7 +576,7 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 		return -1;
 	}
 	free(full_path);
-	scestat_to_stat(&stat, st);
+	scefiosstat_to_stat(&stat, st);
 	reent->_errno = 0;
 	return 0;
 }
