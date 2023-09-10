@@ -7,6 +7,7 @@
 
 int main(int argc, const char* argv[]);
 void __libc_init_array (void);
+void __libc_fini_array (void);
 
 void _init_vita_newlib(void)
 {
@@ -35,6 +36,7 @@ void _start(unsigned int args, void *argp)
 	int argc = 1;
 	int loc = 0;
 	char *ptr = argp;
+	int ret;
 
 	/* Turn our thread arguments into main()'s argc and argv[]. */
 	while(loc < args)
@@ -51,5 +53,7 @@ void _start(unsigned int args, void *argp)
 	argv[argc] = 0;
 	_init_vita_newlib();
 	__libc_init_array();
-	exit(main(argc, argv));
+	ret = main(argc, argv);
+	__libc_fini_array();
+	exit(ret);
 }
