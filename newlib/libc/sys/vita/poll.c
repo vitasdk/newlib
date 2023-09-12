@@ -103,9 +103,9 @@ int poll(struct pollfd _pfd[], nfds_t _nfds, int _timeout)
 			{
 				// regular files always poll true for in/out
 				if (_pfd[i].events & POLLIN)
-					_pfd[i].revents | POLLIN;
+					_pfd[i].revents |= POLLIN;
 				if (_pfd[i].events & POLLOUT)
-					_pfd[i].revents | POLLOUT;
+					_pfd[i].revents |= POLLOUT;
 				if ((_pfd[i].events & POLLIN) || (_pfd[i].events & POLLOUT))
 					res++;
 			}
