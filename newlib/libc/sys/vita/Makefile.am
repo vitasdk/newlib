@@ -8,7 +8,7 @@ AM_CCASFLAGS = $(INCLUDES)
 
 noinst_LIBRARIES = lib.a
 
-SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o
+SOCKET_OBJS = accept.o bind.o connect.o getpeername.o getsockname.o getsockopt.o listen.o recv.o recvfrom.o recvmsg.o send.o sendto.o sendmsg.o setsockopt.o shutdown.o socket.o socketpair.o
 DIRENT_OBJS = dirfd.o closedir.o opendir.o readdir.o readdir_r.o rewinddir.o scandir.o seekdir.o telldir.o 
 
 NET_SOURCES = net/gethostbyaddr.c \

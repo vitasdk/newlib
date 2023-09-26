@@ -28,7 +28,9 @@ DEALINGS IN THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/syslimits.h>
+#include <sys/socket.h>
 #include <string.h>
+#include <fcntl.h>
 
 #include <psp2/types.h>
 #include <psp2/kernel/threadmgr.h>
@@ -75,4 +77,26 @@ int pipe(int pipefd[2])
     pipefd[1] = fd2;
 
     return 0;
+}
+
+
+int pipe2(int pipefd[2], int flags) {
+    if (flags & O_NONBLOCK) {
+        if (socketpair(AF_INET, SOCK_STREAM, 0, pipefd) == -1) {
+            return -1;
+        }
+
+        int val = 1;
+        if (setsockopt(pipefd[0], SOL_SOCKET, SO_NONBLOCK, &val, sizeof(val)) == -1 ||
+            setsockopt(pipefd[1], SOL_SOCKET, SO_NONBLOCK, &val, sizeof(val)) == -1) {
+
+            close(pipefd[0]);
+            close(pipefd[1]);
+            return -1;
+        }
+
+        return 0;
+    } else {
+        return pipe(pipefd);
+    }
 }
