@@ -26,6 +26,8 @@ DEALINGS IN THE SOFTWARE.
 #include <sys/time.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
+#include <netinet/in.h>
 
 #include <psp2/net/net.h>
 #include <psp2/types.h>
@@ -489,5 +491,60 @@ int	socket(int domain, int type, int protocol)
 	__vita_fdmap[s]->sce_uid = res;
 	__vita_fdmap[s]->type = VITA_DESCRIPTOR_SOCKET;
 	return s;
+}
+#endif
+
+#ifdef F_socket
+int	socketpair(int domain, int type, int protocol, int sockfds[2])
+{
+	// Usually socketpair is used with AF_UNIX, simulate that with INET.
+	int listener;
+	if ((listener = socket(AF_INET, type, protocol)) == -1) {
+		return -1;
+	}
+
+	struct sockaddr_in server_addr;
+	socklen_t addr_len = sizeof(struct sockaddr_in);
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	server_addr.sin_port = 0;
+
+	if (bind(listener, (struct sockaddr*)&server_addr, addr_len) == -1) {
+		close(listener);
+		return -1;
+	}
+
+	if (listen(listener, 1) == -1) {
+		close(listener);
+		return -1;
+	}
+
+	if (getsockname(listener, (struct sockaddr *)&server_addr, &addr_len) == -1) {
+		close(listener);
+		return -1;
+	}
+
+	if ((sockfds[1] = socket(AF_INET, type, protocol)) == -1) {
+		close(listener);
+		return -1;
+	}
+
+	if (connect(sockfds[1], (struct sockaddr*)&server_addr, addr_len) == -1) {
+		close(sockfds[1]);
+		close(listener);
+		return -1;
+	}
+
+	if ((sockfds[0] = accept(listener, (struct sockaddr*)&server_addr, &addr_len)) == -1) {
+		close(sockfds[1]);
+		close(listener);
+		return -1;
+	}
+
+	close(listener);
+
+	return 0;
 }
 #endif

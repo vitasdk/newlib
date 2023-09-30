@@ -279,6 +279,7 @@ ssize_t sendmsg(int s, const struct msghdr *msg, int flags);
 int	setsockopt(int, int, int, const void *, socklen_t);
 int	shutdown(int, int);
 int	socket(int, int, int);
+int	socketpair(int, int, int, int *);
 
 #ifdef __cplusplus
 }
