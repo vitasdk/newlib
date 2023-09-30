@@ -82,6 +82,12 @@ int pipe(int pipefd[2])
 
 int pipe2(int pipefd[2], int flags) {
     if (flags & O_NONBLOCK) {
+        // FIXME this action is simulated async io using the socket.
+        // this implemenation has limitation that this cannot use on every environment
+        // such as adhoc network mode
+        // implemenation have to be changed to async sce*MsgPiple
+        //
+        // https://github.com/vitasdk/newlib/pull/101
         if (socketpair(AF_INET, SOCK_STREAM, 0, pipefd) == -1) {
             return -1;
         }
