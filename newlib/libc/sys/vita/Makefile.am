@@ -32,7 +32,7 @@ NET_SOURCES = net/gethostbyaddr.c \
 
 STUB_SOURCES = chroot.c groups.c
 
-lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c dirent.c \
+lib_a_SOURCES = syscalls.c access.c sbrk.c threading.c mlock.c io.c socket.c dup.c select.c error.c fcntl.c dirent.c \
 	lcltime_r.c sleep.c usleep.c truncate.c fs.c clock.c pread.c pathconf.c fpathconf.c poll.c monetary.c uname.c getentropy.c \
 	basename.c dirname.c resource.c sysconf.c ids.c secure_getenv.c pipe.c utime.c\
 	${STUB_SOURCES} ${NET_SOURCES}

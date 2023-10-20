@@ -703,7 +703,7 @@ newlib_cflags="${newlib_cflags} -DCLOCK_PROVIDED -DMALLOC_PROVIDED -DEXIT_PROVID
 	;;
   arm*vita*)
 	syscall_dir=syscalls
-	newlib_cflags="${newlib_cflags} -D__DYNAMIC_REENT__ -DREENTRANT_SYSCALLS_PROVIDED -DGETREENT_PROVIDED"
+	newlib_cflags="${newlib_cflags} -D__DYNAMIC_REENT__ -DREENTRANT_SYSCALLS_PROVIDED -DGETREENT_PROVIDED -DHAVE_FCNTL"
 	;;
   arm*-*-pe)
 	syscall_dir=syscalls
