@@ -512,39 +512,50 @@ int	socketpair(int domain, int type, int protocol, int sockfds[2])
 	server_addr.sin_port = 0;
 
 	if (bind(listener, (struct sockaddr*)&server_addr, addr_len) == -1) {
+		int save_errno = errno;
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	if (listen(listener, 1) == -1) {
+		int save_errno = errno;
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	if (getsockname(listener, (struct sockaddr *)&server_addr, &addr_len) == -1) {
+		int save_errno = errno;
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	if ((sockfds[1] = socket(AF_INET, type, protocol)) == -1) {
+		int save_errno = errno;
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	if (connect(sockfds[1], (struct sockaddr*)&server_addr, addr_len) == -1) {
+		int save_errno = errno;
 		close(sockfds[1]);
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	if ((sockfds[0] = accept(listener, (struct sockaddr*)&server_addr, &addr_len)) == -1) {
+		int save_errno = errno;
 		close(sockfds[1]);
 		close(listener);
+		errno = save_errno;
 		return -1;
 	}
 
 	close(listener);
-
 	return 0;
 }
 #endif
