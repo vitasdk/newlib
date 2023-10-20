@@ -134,7 +134,7 @@ int __vita_release_descriptor(int fd)
 	return res;
 }
 
-int __vita_duplicate_descriptor(int fd)
+int __vita_duplicate_descriptor(int fd, int minfd)
 {
 	int fd2 = -1;
 
@@ -142,9 +142,11 @@ int __vita_duplicate_descriptor(int fd)
 
 	if (is_fd_valid(fd))
 	{
+
 		// get free descriptor
 		// only allocate descriptors after stdin/stdout/stderr -> aka 0/1/2
-		for (fd2 = 3; fd2 < MAX_OPEN_FILES; ++fd2)
+		minfd = (minfd < 3) ? 3 : minfd;
+		for (fd2 = minfd; fd2 < MAX_OPEN_FILES; ++fd2)
 		{
 			if (__vita_fdmap[fd2] == NULL)
 			{

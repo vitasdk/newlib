@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.
 
 int dup(int oldfd)
 {
-	int fd = __vita_duplicate_descriptor(oldfd);
+	int fd = __vita_duplicate_descriptor(oldfd, 0);
 
 	if (fd < 0)
 	{

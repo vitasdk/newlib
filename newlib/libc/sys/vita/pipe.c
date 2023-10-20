@@ -67,7 +67,7 @@ int pipe(int pipefd[2])
     __vita_fdmap[fd]->sce_uid = ret;
     __vita_fdmap[fd]->type = VITA_DESCRIPTOR_PIPE;
 
-    int fd2 = __vita_duplicate_descriptor(fd);
+    int fd2 = __vita_duplicate_descriptor(fd, 0);
     if (fd2 < 0)
     {
         sceKernelDeleteMsgPipe(ret);
