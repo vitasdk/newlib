@@ -34,6 +34,8 @@ DEALINGS IN THE SOFTWARE.
 
 #include <psp2/types.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/net/net.h>
+
 #include "vitaerror.h"
 #include "vitadescriptor.h"
 
@@ -81,28 +83,38 @@ int pipe(int pipefd[2])
 
 
 int pipe2(int pipefd[2], int flags) {
-    if (flags & O_NONBLOCK) {
-        // FIXME this action is simulated async io using the socket.
-        // this implemenation has limitation that this cannot use on every environment
-        // such as adhoc network mode
-        // implemenation have to be changed to async sce*MsgPiple
-        //
-        // https://github.com/vitasdk/newlib/pull/101
-        if (socketpair(AF_INET, SOCK_STREAM, 0, pipefd) == -1) {
-            return -1;
-        }
-
-        int val = 1;
-        if (setsockopt(pipefd[0], SOL_SOCKET, SO_NONBLOCK, &val, sizeof(val)) == -1 ||
-            setsockopt(pipefd[1], SOL_SOCKET, SO_NONBLOCK, &val, sizeof(val)) == -1) {
-
-            close(pipefd[0]);
-            close(pipefd[1]);
-            return -1;
-        }
-
-        return 0;
-    } else {
-        return pipe(pipefd);
+    // FIXME this action is simulated async io using the socket.
+    // this implementation has limitation that this cannot use on every environment
+    // such as adhoc network mode
+    // implementation have to be changed to async sce*MsgPiple
+    //
+    // https://github.com/vitasdk/newlib/pull/101
+    if (socketpair(AF_INET, SOCK_STREAM, 0, pipefd) == -1) {
+        return -1;
     }
+
+    for (int i=0; i<2; i++) {
+        // Free associated resources as soon as close is called
+        SceNetLinger val = { .l_onoff = 1, .l_linger = 0, };
+        if (setsockopt(pipefd[i], SOL_SOCKET, SO_LINGER, &val, sizeof(val)) == -1) {
+            goto failure;
+        }
+    }
+
+    if (flags & O_NONBLOCK) {
+        for (int i=0; i<2; i++) {
+            int val = 1;
+            if (setsockopt(pipefd[i], SOL_SOCKET, SO_NONBLOCK, &val, sizeof(val)) == -1) {
+                goto failure;
+            }
+        }
+    }
+
+    return 0;
+failure: ;
+    int save_errno = errno;
+    close(pipefd[0]);
+    close(pipefd[1]);
+    errno = save_errno;
+    return -1;
 }
