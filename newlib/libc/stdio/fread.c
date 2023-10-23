@@ -238,6 +238,48 @@ _fread_r (struct _reent * ptr,
 	      _newlib_flockfile_exit (fp);
 	      return (total - resid) / size;
 	    }
+	  if ((fp->_p == fp->_bf._base) && (resid > fp->_r * 2)) // Ensure the data is being read from the file buffer 
+	   {
+	      (void) memcpy ((void *) p, (void *) fp->_p, (size_t) fp->_r);
+	      fp->_p += fp->_r;
+	      p += fp->_r;
+	      resid -= fp->_r;
+	      fp->_r = 0;
+	      /* Finally read directly into user's buffer if needed.  */
+	      while (resid > 0)
+		{
+		  int rc = 0;
+		  /* save fp buffering state */
+		  void *old_base = fp->_bf._base;
+		  void * old_p = fp->_p;
+		  int old_size = fp->_bf._size;
+		  /* allow __refill to use user's buffer */
+		  fp->_bf._base = (unsigned char *) p;
+		  fp->_bf._size = resid;
+		  fp->_p = (unsigned char *) p;
+		  rc = __srefill_r (ptr, fp);
+		  /* restore fp buffering back to original state */
+		  fp->_bf._base = old_base;
+		  fp->_bf._size = old_size;
+		  fp->_p = old_p;
+		  resid -= fp->_r;
+		  p += fp->_r;
+		  fp->_r = 0;
+		  if (rc)
+		    {
+#ifdef __SCLE
+		    if (fp->_flags & __SCLE)
+		        {
+		          _newlib_flockfile_exit (fp);
+		          return crlf_r (ptr, fp, buf, total-resid, 1) / size;
+		        }
+#endif
+		      _newlib_flockfile_exit (fp);
+		      return (total - resid) / size;
+		    }
+		}
+	      break;
+	   }
 	}
       (void) memcpy ((void *) p, (void *) fp->_p, resid);
       fp->_r -= resid;
