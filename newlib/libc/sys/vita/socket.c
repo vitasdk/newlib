@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <netinet/in.h>
+#include <unistd.h>
 
 #include <psp2/net/net.h>
 #include <psp2/types.h>
