@@ -22,7 +22,7 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
-#include <sys/dirent.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <malloc.h>
