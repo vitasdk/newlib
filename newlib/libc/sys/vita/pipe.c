@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.
 #include <sys/socket.h>
 #include <string.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <psp2/types.h>
 #include <psp2/kernel/threadmgr.h>
