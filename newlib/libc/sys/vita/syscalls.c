@@ -41,6 +41,8 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 	{
 		case VITA_DESCRIPTOR_FILE:
 		case VITA_DESCRIPTOR_TTY:
+			if (fdmap->flags & O_APPEND)
+				sceIoLseek(fdmap->sce_uid, 0, SCE_SEEK_END);
 			ret = sceIoWrite(fdmap->sce_uid, buf, nbytes);
 			break;
 		case VITA_DESCRIPTOR_SOCKET:
@@ -300,6 +302,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	__vita_fdmap[fd]->sce_uid = ret;
 	__vita_fdmap[fd]->type = is_dir ? VITA_DESCRIPTOR_DIRECTORY : VITA_DESCRIPTOR_FILE;
 	__vita_fdmap[fd]->filename = strdup(full_path);
+	__vita_fdmap[fd]->flags = flags;
 
 	free(full_path);
 

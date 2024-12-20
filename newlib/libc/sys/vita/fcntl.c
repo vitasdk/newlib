@@ -26,6 +26,8 @@ DEALINGS IN THE SOFTWARE.
 #include <fcntl.h>
 #include <stdarg.h>
 #include <sys/socket.h>
+#include <stdio.h>
+#include <errno.h>
 
 #include <psp2/net/net.h>
 #include <psp2/types.h>
@@ -33,6 +35,9 @@ DEALINGS IN THE SOFTWARE.
 #include "vitadescriptor.h"
 #include "vitaerror.h"
 #include "vitanet.h"
+
+extern FILE  *__sfp (struct _reent *);
+#define SETFL_FLAGS (O_NONBLOCK | O_APPEND | O_DIRECT | O_ASYNC | O_SYNC | O_DSYNC)
 
 int _fcntl_r(struct _reent *reent, int fd, int cmd, ...)
 {
@@ -70,14 +75,13 @@ int _fcntl_r(struct _reent *reent, int fd, int cmd, ...)
 	}
 
 	// The only existing flag is FD_CLOEXEC, and it is unsupported,
-	// so F_GETFD always returns zero.
-	if (cmd == F_GETFD)
+	// so F_GETFD/F_SETFD always returns zero.
+	if (cmd == F_GETFD || cmd == F_SETFD)
 	{
 		__vita_fd_drop(fdmap);
 		return 0;
 	}
 
-	// Only net sockets are supported for F_GETFL/F_SETFL
 	if (fdmap->type == VITA_DESCRIPTOR_SOCKET)
 	{
 		if (cmd == F_GETFL)
@@ -114,7 +118,37 @@ int _fcntl_r(struct _reent *reent, int fd, int cmd, ...)
 		}
 	}
 
+	if (fdmap->type == VITA_DESCRIPTOR_FILE)
+	{
+		if (cmd == F_GETFL)
+		{
+			int flags = fdmap->flags;
+			__vita_fd_drop(fdmap);
+			return flags;
+		}
+
+		if (cmd == F_SETFL)
+		{
+			// File access modes should be ignored
+			arg = arg & SETFL_FLAGS;
+			// But should be kept as is if they were set by open
+			arg |= (fdmap->flags & ~SETFL_FLAGS);
+
+			fdmap->flags = arg;
+			__vita_fd_drop(fdmap);
+			// update native descriptor flags too
+			register FILE *fp;
+			if ((fp = __sfp (reent)) == 0)
+			{
+				errno = EINVAL;
+				return -1;
+			}
+			fp->_flags = arg;
+			return 0;
+		}
+	}
+
 	__vita_fd_drop(fdmap);
-	errno = ENOTSUP;
+	errno = EBADF;
 	return -1;
 }

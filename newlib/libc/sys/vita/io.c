@@ -105,6 +105,7 @@ int __vita_acquire_descriptor(void)
 				{
 					__vita_fdmap[fd] = &__vita_fdmap_pool[i];
 					__vita_fdmap[fd]->ref_count = 1;
+					__vita_fdmap[fd]->flags = 0;
 					sceKernelUnlockLwMutex(&_newlib_fd_mutex, 1);
 					return fd;
 				}

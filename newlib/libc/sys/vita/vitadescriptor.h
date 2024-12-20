@@ -43,6 +43,7 @@ typedef struct
 	DescriptorTypes type;
 	int ref_count;
 	char* filename;
+	int flags;
 } DescriptorTranslation;
 
 extern DescriptorTranslation *__vita_fdmap[];
