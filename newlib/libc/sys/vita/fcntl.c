@@ -37,7 +37,7 @@ DEALINGS IN THE SOFTWARE.
 #include "vitanet.h"
 
 extern FILE  *__sfp (struct _reent *);
-#define SETFL_FLAGS (O_NONBLOCK | O_APPEND | O_DIRECT | O_ASYNC | O_SYNC | O_DSYNC)
+#define SETFL_FLAGS (O_NONBLOCK | O_APPEND | O_DIRECT | O_SYNC )
 
 int _fcntl_r(struct _reent *reent, int fd, int cmd, ...)
 {
