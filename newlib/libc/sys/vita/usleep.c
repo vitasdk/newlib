@@ -29,5 +29,7 @@ DEALINGS IN THE SOFTWARE.
 
 int usleep(unsigned useconds)
 {
-	return sceKernelDelayThread(useconds);
+	if (useconds > 0)
+		sceKernelDelayThread(useconds);
+	return 0;
 }
