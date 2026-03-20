@@ -34,10 +34,11 @@
 #include <psp2/net/net.h>
 
 #define IPPROTO_IP		SCE_NET_IPPROTO_IP
-#define IPPROTO_ICMP		SCE_NET_IPPROTO_ICMP
-#define IPPROTO_IGMP		SCE_NET_IPPROTO_IGMP
+#define IPPROTO_ICMP	SCE_NET_IPPROTO_ICMP
+#define IPPROTO_IGMP	SCE_NET_IPPROTO_IGMP
 #define IPPROTO_TCP		SCE_NET_IPPROTO_TCP
 #define IPPROTO_UDP		SCE_NET_IPPROTO_UDP
+#define IPPROTO_IPV6	41
 
 typedef uint32_t in_addr_t;
 typedef uint16_t in_port_t;
@@ -142,4 +143,7 @@ struct ip_mreq {
 	struct	in_addr imr_multiaddr;	/* IP multicast address of group */
 	struct	in_addr imr_interface;	/* local IP address of interface */
 };
+
+#define IPV6_V6ONLY 27
+
 #endif

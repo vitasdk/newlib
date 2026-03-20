@@ -28,6 +28,7 @@ NET_SOURCES = net/gethostbyaddr.c \
 	net/inet_net_pton.c \
 	net/inet_makeaddr.c \
 	net/gethostname.c \
+	net/getnameinfo.c \
 	vitanet.c
 
 STUB_SOURCES = chroot.c groups.c
