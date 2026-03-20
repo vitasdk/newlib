@@ -79,6 +79,7 @@ am__objects_2 = lib_a-gethostbyaddr.$(OBJEXT) \
 	lib_a-inet_network.$(OBJEXT) lib_a-inet_net_ntop.$(OBJEXT) \
 	lib_a-inet_aton.$(OBJEXT) lib_a-inet_net_pton.$(OBJEXT) \
 	lib_a-inet_makeaddr.$(OBJEXT) lib_a-gethostname.$(OBJEXT) \
+	lib_a-getnameinfo.$(OBJEXT) \
 	lib_a-vitanet.$(OBJEXT)
 am_lib_a_OBJECTS = lib_a-syscalls.$(OBJEXT) lib_a-access.$(OBJEXT) \
 	lib_a-sbrk.$(OBJEXT) lib_a-threading.$(OBJEXT) \
@@ -242,6 +243,7 @@ NET_SOURCES = net/gethostbyaddr.c \
 	net/inet_net_pton.c \
 	net/inet_makeaddr.c \
 	net/gethostname.c \
+	net/getnameinfo.c \
 	vitanet.c
 
 STUB_SOURCES = chroot.c groups.c
@@ -624,6 +626,12 @@ lib_a-gethostname.o: net/gethostname.c
 
 lib_a-gethostname.obj: net/gethostname.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-gethostname.obj `if test -f 'net/gethostname.c'; then $(CYGPATH_W) 'net/gethostname.c'; else $(CYGPATH_W) '$(srcdir)/net/gethostname.c'; fi`
+
+lib_a-getnameinfo.o: net/getnameinfo.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-getnameinfo.o `test -f 'net/getnameinfo.c' || echo '$(srcdir)/'`net/getnameinfo.c
+
+lib_a-getnameinfo.obj: net/getnameinfo.c
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-getnameinfo.obj `if test -f 'net/getnameinfo.c'; then $(CYGPATH_W) 'net/getnameinfo.c'; else $(CYGPATH_W) '$(srcdir)/net/getnameinfo.c'; fi`
 
 lib_a-vitanet.o: vitanet.c
 	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lib_a_CFLAGS) $(CFLAGS) -c -o lib_a-vitanet.o `test -f 'vitanet.c' || echo '$(srcdir)/'`vitanet.c
