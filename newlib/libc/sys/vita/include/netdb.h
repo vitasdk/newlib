@@ -117,6 +117,7 @@ struct servent *getservbyname(const char *name, const char *proto);
 int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
 void freeaddrinfo(struct addrinfo *res);
 int getnameinfo(const struct sockaddr *restrict addr, socklen_t addrlen, char* host, socklen_t hostlen, char* serv, socklen_t servlen,int flags);
+const char *gai_strerror(int ecode);
 #ifdef __cplusplus
 }
 #endif
