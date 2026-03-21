@@ -37,7 +37,7 @@ int gethostname(char *name, size_t len)
 		errno = EFAULT;
 		return -1;
 	}
-	if (len < 0)
+	if (len <= 0)
 	{
 		errno = EINVAL;
 		return -1;
