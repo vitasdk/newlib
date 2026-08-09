@@ -339,6 +339,10 @@ ssize_t	send(int s, const void *buf, size_t len, int flags)
 		return -1;
 	}
 
+	static const char dummy = 0;
+	if (len == 0 && buf == NULL)
+		buf = &dummy;
+
 	int res = sceNetSend(fdmap->sce_uid, buf, len, flags);
 
 	__vita_fd_drop(fdmap);
@@ -365,6 +369,10 @@ ssize_t	sendto(int s, const void *buf,
 		errno = EBADF;
 		return -1;
 	}
+
+	static const char dummy = 0;
+	if (len == 0 && buf == NULL)
+		buf = &dummy;
 
 	int res = sceNetSendto(fdmap->sce_uid, buf, len, flags, (SceNetSockaddr *)dest_addr, (unsigned int)addrlen);
 

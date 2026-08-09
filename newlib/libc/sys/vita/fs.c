@@ -310,7 +310,7 @@ char *getcwd(char *buf, size_t size)
 	return buf;
 }
 
-// modified from bionic
+// modified from bionic - hardened with standard ISO C primitives
 char *__resolve_path(const char *path, char resolved[PATH_MAX])
 {
 	char *p, *q, *s;
@@ -323,12 +323,24 @@ char *__resolve_path(const char *path, char resolved[PATH_MAX])
 		if (path[1] == '\0')
 			return (resolved);
 		resolved_len = 1;
-		left_len = strlcpy(left, path + 1, sizeof(left));
+		left_len = strlen(path + 1);
+		if (left_len >= sizeof(left))
+		{
+			errno = ENAMETOOLONG;
+			return (NULL);
+		}
+		memcpy(left, path + 1, left_len + 1);
 	}
 	else
 	{
 		resolved_len = 0;
-		left_len = strlcpy(left, path, sizeof(left));
+		left_len = strlen(path);
+		if (left_len >= sizeof(left))
+		{
+			errno = ENAMETOOLONG;
+			return (NULL);
+		}
+		memcpy(left, path, left_len + 1);
 	}
 	if (left_len >= sizeof(left) || resolved_len >= PATH_MAX)
 	{
@@ -346,14 +358,15 @@ char *__resolve_path(const char *path, char resolved[PATH_MAX])
 		 */
 		p = strchr(left, '/');
 		s = p ? p : left + left_len;
-		if (s - left >= sizeof(next_token))
+		size_t token_len = s - left;
+		if (token_len >= sizeof(next_token))
 		{
 			errno = ENAMETOOLONG;
 			return (NULL);
 		}
-		memcpy(next_token, left, s - left);
-		next_token[s - left] = '\0';
-		left_len -= s - left;
+		memcpy(next_token, left, token_len);
+		next_token[token_len] = '\0';
+		left_len -= token_len;
 		if (p != NULL)
 			memmove(left, s + 1, left_len + 1);
 		if (resolved[resolved_len - 1] != '/')
@@ -387,12 +400,13 @@ char *__resolve_path(const char *path, char resolved[PATH_MAX])
 		/*
 		 * Append the next path component. 
 		 */
-		resolved_len = strlcat(resolved, next_token, PATH_MAX);
-		if (resolved_len >= PATH_MAX)
+		if (resolved_len + token_len >= PATH_MAX)
 		{
 			errno = ENAMETOOLONG;
 			return (NULL);
 		}
+		memcpy(resolved + resolved_len, next_token, token_len + 1);
+		resolved_len += token_len;
 	}
 	/*
 	 * Remove trailing slash except when the resolved pathname
