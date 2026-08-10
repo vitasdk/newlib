@@ -219,10 +219,10 @@ set_posix_access (mode_t attr, uid_t uid, gid_t gid,
 	  aclbufp[3].a_type = DEF_USER_OBJ;
 	  aclbufp[3].a_id = ACL_UNDEFINED_ID;
 	  aclbufp[3].a_perm = (attr >> 6) & S_IRWXO;
-	  aclbufp[4].a_type = GROUP_OBJ;
+	  aclbufp[4].a_type = DEF_GROUP_OBJ;
 	  aclbufp[4].a_id = ACL_UNDEFINED_ID;
 	  aclbufp[4].a_perm = (attr >> 3) & S_IRWXO;
-	  aclbufp[5].a_type = OTHER_OBJ;
+	  aclbufp[5].a_type = DEF_OTHER_OBJ;
 	  aclbufp[5].a_id = ACL_UNDEFINED_ID;
 	  aclbufp[5].a_perm = attr & S_IRWXO;
 	  nentries += MIN_ACL_ENTRIES;
@@ -256,7 +256,21 @@ set_posix_access (mode_t attr, uid_t uid, gid_t gid,
 	      }
 	  }
 	if (!aclsid[idx])
-	  aclsid[idx] = sidfromuid (aclbufp[idx].a_id, &cldap);
+	  {
+	    struct passwd *pw = internal_getpwuid (aclbufp[idx].a_id, &cldap);
+	    if (pw)
+	      {
+		/* Don't allow to pass special accounts as USER, only as
+		   USER_OBJ, GROUP_OBJ, or GROUP */
+#define BUILTIN	"U-BUILTIN\\"
+#define NT_AUTH "U-NT AUTHORITY\\"
+#define NT_SVC  "U-NT SERVICE\\"
+		if (strncmp (pw->pw_gecos, BUILTIN, strlen (BUILTIN)) != 0
+		    && strncmp (pw->pw_gecos, NT_AUTH, strlen (NT_AUTH)) != 0
+		    && strncmp (pw->pw_gecos, NT_SVC, strlen (NT_SVC)) != 0)
+		  aclsid[idx] = (PSID) ((pg_pwd *) pw)->sid;
+	      }
+	  }
 	break;
       case GROUP_OBJ:
 	aclsid[idx] = group;
@@ -595,6 +609,10 @@ setacl (HANDLE handle, path_conv &pc, int nentries, aclent_t *aclbufp,
 #define DENY_W 020000
 #define DENY_X 010000
 #define DENY_RWX (DENY_R | DENY_W | DENY_X)
+/* Temporary bit to indicate that an incoming Windows ACE is valid for
+   the object as well (so it's not an INHERIT_ONLY ACE).  Used by
+   get_posix_access to create useful default perms. */
+#define FULL_ACE 0100000
 
 /* New style ACL means, just read the bits and store them away.  Don't
    create masked values on your own. */
@@ -661,7 +679,8 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
   mode_t attr = 0;
   aclent_t *lacl = NULL;
   cygpsid ace_sid, *aclsid;
-  int pos, type, id, idx;
+  int pos = 0, type, idx;
+  id_t id;
 
   bool owner_eq_group;
   bool just_created = false;
@@ -874,8 +893,10 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
 	  if (type == USER_OBJ)
 	    owner_eq_group = true;
 	}
+      bool default_only_ace = true;
       if (!(ace->Header.AceFlags & INHERIT_ONLY || type & ACL_DEFAULT))
 	{
+	  default_only_ace = false;
 	  if (type == USER_OBJ)
 	    {
 	      /* If we get a second entry for the owner SID, it's either a
@@ -990,15 +1011,16 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
 	      aclsid[pos] = ace_sid;
 	      if (!new_style)
 		{
+		  /* Add flag that we're generating object and default ACL
+		     entry from the same Windows ACE and so permissions are
+		     supposed to be the same. */
+		  if (!default_only_ace
+		      && type & (USER_OBJ | USER | GROUP_OBJ | GROUP))
+		    lacl[pos].a_perm |= FULL_ACE;
 		  /* Fix up DEF_CLASS_OBJ value. */
 		  if (type & (USER | GROUP))
 		    {
 		      has_def_class_perm = true;
-		      /* Accommodate Windows: Never add SYSTEM and Admins to
-			 CLASS_OBJ.  Unless (implicitly) if they are the
-			 GROUP_OBJ entry. */
-		      if (ace_sid != well_known_system_sid
-			  && ace_sid != well_known_admins_sid)
 		      def_class_perm |= lacl[pos].a_perm;
 		    }
 		  /* And note the position of the DEF_GROUP_OBJ entry. */
@@ -1008,20 +1030,96 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
 	    }
 	}
     }
-  /* If this is a just created file, and this is an ACL with only standard
-     entries, or if standard POSIX permissions are missing (probably no
-     inherited ACEs so created from a default DACL), assign the permissions
-     specified by the file creation mask.  The values get masked by the
-     actually requested permissions by the caller per POSIX 1003.1e draft 17. */
-  if (just_created)
+
+  /* For old-style or non-Cygwin ACLs, check for merging permissions. */
+  if (!new_style)
     {
-      mode_t perms = (S_IRWXU | S_IRWXG | S_IRWXO) & ~cygheap->umask;
-      if (standard_ACEs_only || !saw_user_obj)
-	lacl[0].a_perm = (perms >> 6) & S_IRWXO;
-      if (standard_ACEs_only || !saw_group_obj)
-	lacl[1].a_perm = (perms >> 3) & S_IRWXO;
-      if (standard_ACEs_only || !saw_other_obj)
-	lacl[2].a_perm = perms & S_IRWXO;
+      /* Make sure `pos' contains the number of used entries in lacl. */
+      if ((pos = searchace (lacl, MAX_ACL_ENTRIES, 0)) < 0)
+	pos = MAX_ACL_ENTRIES;
+      /* First loop handles object permissions */
+      for (idx = 0; idx < pos; ++idx)
+	{
+	  mode_t perm;
+
+	  if (lacl[idx].a_type & (USER_OBJ | USER)
+	      && !(lacl[idx].a_type & ACL_DEFAULT))
+	    {
+
+	      /* Don't merge if the user already has all permissions, or... */
+	      if (lacl[idx].a_perm == S_IRWXO)
+		continue;
+	      /* ...the sum of perms is less than or equal the user's perms. */
+	      perm = lacl[idx].a_perm
+		     | (has_class_perm ? class_perm : lacl[1].a_perm)
+		     | lacl[2].a_perm;
+	      if (perm == lacl[idx].a_perm)
+		continue;
+	      /* Otherwise, if we utilize the Windows user DB, use Authz to
+		 make sure all user permissions are correctly reflecting the
+		 Windows permissions. */
+	      if (cygheap->pg.nss_pwd_db ()
+		  && authz_get_user_attribute (&perm, psd, aclsid[idx]))
+		lacl[idx].a_perm = perm;
+	      /* Otherwise we only check the current user.  If the user entry
+		 has a deny ACE, don't check. */
+	      else if (lacl[idx].a_id == myself->uid
+		       && !(lacl[idx].a_perm & DENY_RWX))
+		{
+		  /* Sum up all permissions of groups the user is member of,
+		     plus everyone perms, and merge them to user perms.  */
+		  BOOL ret;
+
+		  perm = lacl[2].a_perm & S_IRWXO;
+		  for (int gidx = 1; gidx < pos; ++gidx)
+		    if (lacl[gidx].a_type & (GROUP_OBJ | GROUP)
+			&& CheckTokenMembership (cygheap->user.issetuid ()
+						 ? cygheap->user.imp_token ()
+						 : NULL, aclsid[gidx], &ret)
+			&& ret)
+		      perm |= lacl[gidx].a_perm & S_IRWXO;
+		  lacl[idx].a_perm |= perm;
+		}
+	    }
+	  /* For all groups, if everyone has more permissions, add everyone
+	     perms to group perms.  Skip groups with deny ACE. */
+	  else if (lacl[idx].a_type & (GROUP_OBJ | GROUP)
+		   && !(lacl[idx].a_type & ACL_DEFAULT)
+		   && !(lacl[idx].a_perm & DENY_RWX))
+	    lacl[idx].a_perm |= lacl[2].a_perm & S_IRWXO;
+	}
+      /* Second loop handles default permissions in case we get object
+	 and default perms from the same Windows ACE. */
+      for (idx = 0; idx < pos; ++idx)
+	{
+	  int obj_idx = -1;
+
+	  if (!(lacl[idx].a_perm & FULL_ACE))
+	    continue;
+
+	  type = lacl[idx].a_type & (USER_OBJ | USER | GROUP_OBJ | GROUP);
+	  id = (type & (USER_OBJ | GROUP_OBJ)) ? ACL_UNDEFINED_ID
+					       : lacl[idx].a_id;
+	  switch (type)
+	    {
+	    case USER_OBJ:
+	    case USER:
+	      obj_idx = searchace (lacl, pos, USER_OBJ, id);
+	      if (obj_idx < 0)
+		obj_idx = searchace (lacl, pos, USER,
+				     lacl[idx].a_id);
+	      break;
+	    case GROUP_OBJ:
+	    case GROUP:
+	      obj_idx = searchace (lacl, pos, GROUP_OBJ, id);
+	      if (obj_idx < 0)
+		obj_idx = searchace (lacl, pos, GROUP,
+				     lacl[idx].a_id);
+	      break;
+	    }
+	    if (obj_idx >= 0 && obj_idx <= pos)
+	      lacl[idx].a_perm |= lacl[obj_idx].a_perm;
+	}
     }
   /* If this is an old-style or non-Cygwin ACL, and secondary user and group
      entries exist in the ACL, fake a matching CLASS_OBJ entry. The CLASS_OBJ
@@ -1058,7 +1156,7 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
       if (!(types_def & USER_OBJ))
 	{
 	  lacl[pos].a_type = DEF_USER_OBJ;
-	  lacl[pos].a_id = uid;
+	  lacl[pos].a_id = ACL_UNDEFINED_ID;
 	  lacl[pos].a_perm = lacl[0].a_perm;
 	  aclsid[pos] = well_known_creator_owner_sid;
 	  pos++;
@@ -1066,8 +1164,11 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
       if (!(types_def & GROUP_OBJ) && pos < MAX_ACL_ENTRIES)
 	{
 	  lacl[pos].a_type = DEF_GROUP_OBJ;
-	  lacl[pos].a_id = gid;
+	  lacl[pos].a_id = ACL_UNDEFINED_ID;
 	  lacl[pos].a_perm = lacl[1].a_perm;
+	  /* If owner == group, the owner perms should be used. */
+	  if (owner_eq_group)
+	    lacl[pos].a_perm |= lacl[0].a_perm;
 	  /* Note the position of the DEF_GROUP_OBJ entry. */
 	  def_pgrp_pos = pos;
 	  aclsid[pos] = well_known_creator_group_sid;
@@ -1079,7 +1180,6 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
 	  lacl[pos].a_id = ACL_UNDEFINED_ID;
 	  lacl[pos].a_perm = lacl[2].a_perm;
 	  aclsid[pos] = well_known_world_sid;
-	  pos++;
 	}
     }
   /* If this is an old-style or non-Cygwin ACL, and secondary user default
@@ -1098,66 +1198,26 @@ get_posix_access (PSECURITY_DESCRIPTOR psd,
       aclsid[pos] = well_known_null_sid;
     }
 
-  /* Make sure `pos' contains the number of used entries in lacl. */
-  if ((pos = searchace (lacl, MAX_ACL_ENTRIES, 0)) < 0)
-    pos = MAX_ACL_ENTRIES;
-
-  /* For old-style or non-Cygwin ACLs, check for merging permissions. */
-  if (!just_created && !new_style)
-    for (idx = 0; idx < pos; ++idx)
-      {
-	if (lacl[idx].a_type & (USER_OBJ | USER)
-	    && !(lacl[idx].a_type & ACL_DEFAULT))
-	  {
-	    mode_t perm;
-
-	    /* Don't merge if the user already has all permissions, or... */
-	    if (lacl[idx].a_perm == S_IRWXO)
-	      continue;
-	    /* ...if the sum of perms is less than or equal the user's perms. */
-	    perm = lacl[idx].a_perm
-		   | (has_class_perm ? class_perm : lacl[1].a_perm)
-		   | lacl[2].a_perm;
-	    if (perm == lacl[idx].a_perm)
-	      continue;
-	    /* Otherwise, if we use the Windows user DB, utilize Authz to make
-	       sure all user permissions are correctly reflecting the Windows
-	       permissions. */
-	    if (cygheap->pg.nss_pwd_db ()
-		&& authz_get_user_attribute (&perm, psd, aclsid[idx]))
-	      lacl[idx].a_perm = perm;
-	    /* Otherwise we only check the current user.  If the user entry
-	       has a deny ACE, don't check. */
-	    else if (lacl[idx].a_id == myself->uid
-		     && !(lacl[idx].a_perm & DENY_RWX))
-	      {
-		/* Sum up all permissions of groups the user is member of, plus
-		   everyone perms, and merge them to user perms.  */
-		BOOL ret;
-
-		perm = lacl[2].a_perm & S_IRWXO;
-		for (int gidx = 1; gidx < pos; ++gidx)
-		  if (lacl[gidx].a_type & (GROUP_OBJ | GROUP)
-		      && CheckTokenMembership (cygheap->user.issetuid ()
-					       ? cygheap->user.imp_token () : NULL,
-					       aclsid[gidx], &ret)
-		      && ret)
-		    perm |= lacl[gidx].a_perm & S_IRWXO;
-		lacl[idx].a_perm |= perm;
-	      }
-	  }
-	/* For all groups, if everyone has more permissions, add everyone
-	   perms to group perms.  Skip groups with deny ACE. */
-	else if (lacl[idx].a_type & (GROUP_OBJ | GROUP)
-		 && !(lacl[idx].a_type & ACL_DEFAULT)
-		 && !(lacl[idx].a_perm & DENY_RWX))
-	  lacl[idx].a_perm |= lacl[2].a_perm & S_IRWXO;
-      }
   /* If owner SID == group SID (Microsoft Accounts) merge group perms into
      user perms but leave group perms intact.  That's a fake, but it allows
      to keep track of the POSIX group perms without much effort. */
   if (owner_eq_group)
     lacl[0].a_perm |= lacl[1].a_perm;
+  /* If this is a just created file, and this is an ACL with only standard
+     entries, or if standard POSIX permissions are missing (probably no
+     inherited ACEs so created from a default DACL), assign the permissions
+     specified by the file creation mask.  The values get masked by the
+     actually requested permissions by the caller per POSIX 1003.1e draft 17. */
+  if (just_created)
+    {
+      mode_t perms = (S_IRWXU | S_IRWXG | S_IRWXO) & ~cygheap->umask;
+      if (standard_ACEs_only || !saw_user_obj)
+	lacl[0].a_perm = (perms >> 6) & S_IRWXO;
+      if (standard_ACEs_only || !saw_group_obj)
+	lacl[1].a_perm = (perms >> 3) & S_IRWXO;
+      if (standard_ACEs_only || !saw_other_obj)
+	lacl[2].a_perm = perms & S_IRWXO;
+    }
   /* Construct POSIX permission bits.  Fortunately we know exactly where
      to fetch the affecting bits from, at least as long as the array
      hasn't been sorted. */
@@ -1173,6 +1233,9 @@ out:
   attr_ret = attr;
   if (aclbufp)
     {
+      /* Make sure `pos' contains the number of used entries in lacl. */
+      if ((pos = searchace (lacl, MAX_ACL_ENTRIES, 0)) < 0)
+	pos = MAX_ACL_ENTRIES;
       if (pos > nentries)
 	{
 	  set_errno (ENOSPC);

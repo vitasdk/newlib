@@ -26,7 +26,9 @@ details. */
 # define UNLEN 256
 #endif
 
-#define TLS_STACK_SIZE 256
+/* Room for two full frames including an extra sigdelayed, plus an
+   empty slot so stackptr never grows beyond the stack. */
+#define TLS_STACK_SIZE 5
 
 #include "cygthread.h"
 
@@ -93,10 +95,10 @@ struct _local_storage
   int dl_error;
   char dl_buffer[256];
 
-  /* path.cc */
+  /* mount.cc */
   struct mntent mntbuf;
   int iteration;
-  unsigned available_drives;
+  class dos_drive_mappings *drivemappings;
   char mnt_type[80];
   char mnt_opts[80];
   char mnt_fsname[CYG_MAX_PATH];
@@ -135,6 +137,7 @@ struct _local_storage
 
   /* thread.cc */
   HANDLE cw_timer;
+  bool cw_timer_inuse;
 
   tls_pathbuf pathbufs;
   char ttybuf[32];
@@ -194,19 +197,32 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   class cygthread *_ctinfo;
   class san *andreas;
   waitq wq;
-  int current_sig;
-  unsigned incyg;
+  volatile int current_sig;
+  volatile unsigned incyg;
   volatile unsigned stacklock;
   __tlsstack_t *stackptr;
   __tlsstack_t stack[TLS_STACK_SIZE];
   unsigned initialized;
+  volatile bool suspend_on_exception;
+  volatile bool in_singlestep_handler;
 
 public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   void init_thread (void *, DWORD (*) (void *, void *));
   static void call (DWORD (*) (void *, void *), void *);
   void remove (DWORD);
-  void push (__tlsstack_t addr) {*stackptr++ = (__tlsstack_t) addr;}
-  __tlsstack_t pop ();
+  void push (__tlsstack_t addr)
+  {
+    /* Make sure stackptr never points beyond stack (to initialized). */
+    if (stackptr < (__tlsstack_t *) stack + TLS_STACK_SIZE - 1)
+      *stackptr++ = (__tlsstack_t) addr;
+  }
+  __tlsstack_t pop ()
+  {
+    /* Make sure stackptr never points below stack (to itself). */
+    if (stackptr > stack)
+      --stackptr;
+    return *stackptr;
+  }
   __tlsstack_t retaddr () {return stackptr[-1];}
   bool isinitialized () const
   {
@@ -215,7 +231,7 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   bool interrupt_now (CONTEXT *, siginfo_t&, void *, struct sigaction&);
   void interrupt_setup (siginfo_t&, void *, struct sigaction&);
 
-  bool inside_kernel (CONTEXT *);
+  bool inside_kernel (CONTEXT *, bool inside_cygwin = false);
   void signal_debugger (siginfo_t&);
 
 #ifdef CYGTLS_HANDLE
@@ -228,8 +244,11 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   {
     while (InterlockedExchange (&stacklock, 1))
       {
-#ifdef __x86_64__
+#if defined(__x86_64__)
 	__asm__ ("pause");
+#elif defined(__aarch64__)
+	__asm__ ("dmb ishst\n"
+                 "yield");
 #else
 #error unimplemented for this target
 #endif
@@ -274,7 +293,7 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   {
     will_wait_for_signal = false;
   }
-  void handle_SIGCONT (threadlist_t * &);
+  void handle_SIGCONT ();
   static void cleanup_early(struct _reent *);
 private:
   void call2 (DWORD (*) (void *, void *), void *, void *);
@@ -307,7 +326,13 @@ public:
        address of the _except block to restore the context correctly.
        See comment preceeding myfault_altstack_handler in exception.cc. */
     ret = (DWORD64) _ret;
+#if defined(__x86_64__)
     __asm__ volatile ("movq %%rsp,%0": "=o" (frame));
+#elif defined(__aarch64__)
+    __asm__ volatile ("mov %0, sp" : "=r" (frame));
+#else
+#error unimplemented for this target
+#endif
   }
   ~san () __attribute__ ((always_inline))
   {

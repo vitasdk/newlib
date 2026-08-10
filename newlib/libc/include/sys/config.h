@@ -4,12 +4,17 @@
 #include <machine/ieeefp.h>  /* floating point macros */
 #include <sys/features.h>	/* POSIX defs */
 
-#ifdef __aarch64__
+#if defined(__aarch64__) || defined(__mips__)
 #define MALLOC_ALIGNMENT 16
 #endif
 
 #ifdef __AMDGCN__
 #define __DYNAMIC_REENT__
+#endif
+
+#ifdef __nvptx__
+#define _READ_WRITE_RETURN_TYPE _ssize_t
+#define _READ_WRITE_BUFSIZE_TYPE __size_t
 #endif
 
 /* exceptions first */

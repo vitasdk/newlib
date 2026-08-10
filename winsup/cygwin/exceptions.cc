@@ -28,24 +28,8 @@ details. */
 #include "ntdll.h"
 #include "exception.h"
 #include "posix_timer.h"
+#include "register.h"
 #include "gcc_seh.h"
-
-/* Define macros for CPU-agnostic register access.  The _CX_foo
-   macros are for access into CONTEXT, the _MC_foo ones for access into
-   mcontext. The idea is to access the registers in terms of their job,
-   not in terms of their name on the given target. */
-#ifdef __x86_64__
-#define _CX_instPtr	Rip
-#define _CX_stackPtr	Rsp
-#define _CX_framePtr	Rbp
-/* For special register access inside mcontext. */
-#define _MC_retReg	rax
-#define _MC_instPtr	rip
-#define _MC_stackPtr	rsp
-#define _MC_uclinkReg	rbx	/* MUST be callee-saved reg */
-#else
-#error unimplemented for this target
-#endif
 
 #define CALL_HANDLER_RETRY_OUTER 10
 #define CALL_HANDLER_RETRY_INNER 10
@@ -230,7 +214,7 @@ cygwin_exception::dump_exception ()
 	}
     }
 
-#ifdef __x86_64__
+#if defined(__x86_64__)
   if (exception_name)
     small_printf ("Exception: %s at rip=%012X\r\n", exception_name, ctx->Rip);
   else
@@ -250,6 +234,31 @@ cygwin_exception::dump_exception ()
   small_printf ("cs=%04x ds=%04x es=%04x fs=%04x gs=%04x ss=%04x\r\n",
 		ctx->SegCs, ctx->SegDs, ctx->SegEs, ctx->SegFs,
 		ctx->SegGs, ctx->SegSs);
+#elif defined(__aarch64__)
+  if (exception_name)
+    small_printf ("Exception: %s at pc=%012X\r\n", exception_name, ctx->Pc);
+  else
+    small_printf ("Signal %d at pc=%012X\r\n", e->ExceptionCode, ctx->Pc);
+  small_printf ("x0=%016X x1=%016X x2=%016X x3=%016X\r\n",
+		ctx->X0, ctx->X1, ctx->X2, ctx->X3);
+  small_printf ("x4=%016X x5=%016X x6=%016X x7=%016X\r\n",
+		ctx->X4, ctx->X5, ctx->X6, ctx->X7);
+  small_printf ("x8=%016X x9=%016X x10=%016X x11=%016X\r\n",
+		ctx->X8, ctx->X9, ctx->X10, ctx->X11);
+  small_printf ("x12=%016X x13=%016X x14=%016X x15=%016X\r\n",
+		ctx->X12, ctx->X13, ctx->X14, ctx->X15);
+  small_printf ("x16=%016X x17=%016X x18=%016X x19=%016X\r\n",
+		ctx->X16, ctx->X17, ctx->X18, ctx->X19);
+  small_printf ("x20=%016X x21=%016X x22=%016X x23=%016X\r\n",
+		ctx->X20, ctx->X21, ctx->X22, ctx->X23);
+  small_printf ("x24=%016X x25=%016X x26=%016X x27=%016X\r\n",
+		ctx->X24, ctx->X25, ctx->X26, ctx->X27);
+  small_printf ("x28=%016X fp=%016X lr=%016X sp=%016X\r\n",
+		ctx->X28, ctx->Fp, ctx->Lr, ctx->Sp);
+  small_printf ("program=%W, pid %u, thread %s\r\n",
+		myself->progname, myself->pid, mythreadname ());
+  small_printf ("fpcr=%016X fpsr=%016X\r\n",
+		ctx->Fpcr, ctx->Fpsr);
 #else
 #error unimplemented for this target
 #endif
@@ -440,7 +449,7 @@ cygwin_exception::dumpstack ()
 }
 
 bool
-_cygtls::inside_kernel (CONTEXT *cx)
+_cygtls::inside_kernel (CONTEXT *cx, bool inside_cygwin)
 {
   int res;
   MEMORY_BASIC_INFORMATION m;
@@ -462,6 +471,8 @@ _cygtls::inside_kernel (CONTEXT *cx)
   else if (h == hntdll)
     res = true;				/* Calling GetModuleFilename on ntdll.dll
 					   can hang */
+  else if (h == cygwin_hmodule && inside_cygwin)
+    res = true;
   else if (h == user_data->hmodule)
     res = false;
   else if (!GetModuleFileNameW (h, checkdir,
@@ -595,7 +606,7 @@ try_to_debug ()
     {
       extern void break_here ();
       break_here ();
-      return 1;
+      return 0;
     }
 
   /* Otherwise, invoke the JIT debugger, if set */
@@ -659,7 +670,7 @@ exception::handle (EXCEPTION_RECORD *e, exception_list *frame, CONTEXT *in,
 
   /* If we're exiting, tell Windows to keep looking for an
      exception handler.  */
-  if (exit_state || e->ExceptionFlags)
+  if (exit_state || (e->ExceptionFlags & ~EXCEPTION_SOFTWARE_ORIGINATE))
     return ExceptionContinueSearch;
 
   siginfo_t si = {};
@@ -810,6 +821,8 @@ exception::handle (EXCEPTION_RECORD *e, exception_list *frame, CONTEXT *in,
   else if (try_to_debug ())
     {
       debugging = 1;
+      /* If a JIT debugger just attached, replay the exception for the benefit
+	 of that */
       return ExceptionContinueExecution;
     }
 
@@ -882,7 +895,7 @@ sig_handle_tty_stop (int sig, siginfo_t *, void *)
   /* Silently ignore attempts to suspend if there is no accommodating
      cygwin parent to deal with this behavior. */
   if (!myself->cygstarted)
-    myself->process_state &= ~PID_STOPPED;
+    InterlockedAnd ((LONG *) &myself->process_state, ~PID_STOPPED);
   else
     {
       _my_tls.incyg = 1;
@@ -912,6 +925,24 @@ sig_handle_tty_stop (int sig, siginfo_t *, void *)
 }
 } /* end extern "C" */
 
+#ifdef __x86_64__
+static LONG CALLBACK
+singlestep_handler (EXCEPTION_POINTERS *ep)
+{
+  if (_my_tls.suspend_on_exception)
+    {
+      _my_tls.in_singlestep_handler = true;
+      RtlWakeAddressSingle ((void *) &_my_tls.in_singlestep_handler);
+      while (_my_tls.suspend_on_exception)
+	; /* Don't call yield() to prevent the thread
+	     from being suspended in the kernel. */
+      if (ep->ExceptionRecord->ExceptionCode == (DWORD) STATUS_SINGLE_STEP)
+	return EXCEPTION_CONTINUE_EXECUTION;
+    }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 bool
 _cygtls::interrupt_now (CONTEXT *cx, siginfo_t& si, void *handler,
 			struct sigaction& siga)
@@ -925,6 +956,44 @@ _cygtls::interrupt_now (CONTEXT *cx, siginfo_t& si, void *handler,
     interrupted = false;
   else
     {
+#ifdef __x86_64__
+      /* When the Rip points to an instruction that causes an exception,
+	 modifying Rip and calling ResumeThread() may sometimes result in
+	 a crash. To prevent this, advance execution by a single instruction
+	 by setting the trap flag (TF) before calling ResumeThread(). This
+	 will trigger either STATUS_SINGLE_STEP or the exception caused by
+	 the instruction that Rip originally pointed to. By suspending the
+	 targeted thread within singlestep_handler(), Rip no longer points
+	 to the problematic instruction, allowing safe handling of the
+	 interrupt.  As a result, Rip can be adjusted appropriately,
+	 and the thread can resume execution without unexpected crashes. */
+      if (!inside_kernel (cx, true))
+	{
+	  HANDLE h_veh = AddVectoredExceptionHandler (0, singlestep_handler);
+	  cx->EFlags |= 0x100; /* Set TF (setup single step execution) */
+	  SetThreadContext (*this, cx);
+	  suspend_on_exception = true;
+	  in_singlestep_handler = false;
+	  bool bool_false = false;
+	  NTSTATUS status = STATUS_SUCCESS;
+	  ResumeThread (*this);
+	  while (!in_singlestep_handler && NT_SUCCESS (status))
+	    {
+	      LARGE_INTEGER timeout;
+	      timeout.QuadPart = -100000ULL; /* 10ms */
+	      status = RtlWaitOnAddress (&in_singlestep_handler, &bool_false,
+					 sizeof (bool), &timeout);
+	      if (status == STATUS_TIMEOUT)
+		break;
+	    }
+	  SuspendThread (*this);
+	  GetThreadContext (*this, cx);
+	  RemoveVectoredExceptionHandler (h_veh);
+	  suspend_on_exception = false;
+	  if (!NT_SUCCESS (status) || status == STATUS_TIMEOUT)
+	    return false; /* Not interrupted */
+	}
+#endif
       DWORD64 &ip = cx->_CX_instPtr;
       push (ip);
       interrupt_setup (si, handler, siga);
@@ -948,7 +1017,7 @@ _cygtls::interrupt_setup (siginfo_t& si, void *handler, struct sigaction& siga)
   if (handler == sig_handle_tty_stop)
     {
       myself->stopsig = 0;
-      myself->process_state |= PID_STOPPED;
+      InterlockedOr ((LONG *) &myself->process_state, PID_STOPPED);
     }
 
   infodata = si;
@@ -1281,6 +1350,7 @@ set_process_mask_delta ()
   else
     oldmask = _my_tls.sigmask;
   newmask = (oldmask | _my_tls.deltamask) & ~SIG_NONMASKABLE;
+  _my_tls.deltamask = 0;
   sigproc_printf ("oldmask %lx, newmask %lx, deltamask %lx", oldmask, newmask,
 		  _my_tls.deltamask);
   _my_tls.sigmask = newmask;
@@ -1420,39 +1490,22 @@ api_fatal_debug ()
 
 /* Attempt to carefully handle SIGCONT when we are stopped. */
 void
-_cygtls::handle_SIGCONT (threadlist_t * &tl_entry)
+_cygtls::handle_SIGCONT ()
 {
   if (NOTSTATE (myself, PID_STOPPED))
     return;
 
+  lock ();
+  current_sig = SIGCONT;
+  set_signal_arrived (); /* alert sig_handle_tty_stop */
+  unlock ();
+
+  /* Make sure that SIGCONT has been recognized before exiting the loop. */
+  while (current_sig == SIGCONT)
+    yield ();
+
   myself->stopsig = 0;
-  myself->process_state &= ~PID_STOPPED;
-  /* Carefully tell sig_handle_tty_stop to wake up.
-     Make sure that any pending signal is handled before trying to
-     send a new one.  Then make sure that SIGCONT has been recognized
-     before exiting the loop.  */
-  bool sigsent = false;
-  while (1)
-    if (current_sig)	/* Assume that it's ok to just test sig outside of a
-			   lock since setup_handler does it this way.  */
-      {
-	cygheap->unlock_tls (tl_entry);
-	yield ();	/* Attempt to schedule another thread.  */
-	tl_entry = cygheap->find_tls (_main_tls);
-      }
-    else if (sigsent)
-      break;		/* SIGCONT has been recognized by other thread */
-    else
-      {
-	current_sig = SIGCONT;
-	set_signal_arrived (); /* alert sig_handle_tty_stop */
-	sigsent = true;
-      }
-  /* Clear pending stop signals */
-  sig_clear (SIGSTOP, false);
-  sig_clear (SIGTSTP, false);
-  sig_clear (SIGTTIN, false);
-  sig_clear (SIGTTOU, false);
+  InterlockedAnd ((LONG *) &myself->process_state, ~PID_STOPPED);
 }
 
 int
@@ -1468,7 +1521,7 @@ sigpacket::process ()
 
   /* Don't try to send signals if we're just starting up since signal masks
      may not be available.  */
-  if (!cygwin_finished_initializing)
+  if (!cygwin_finished_initializing || exit_state > ES_EXIT_STARTING)
     {
       rc = -1;
       goto done;
@@ -1480,9 +1533,15 @@ sigpacket::process ()
 
   if (si.si_signo == SIGCONT)
     {
-      tl_entry = cygheap->find_tls (_main_tls);
-      _main_tls->handle_SIGCONT (tl_entry);
-      cygheap->unlock_tls (tl_entry);
+      /* Carefully tell sig_handle_tty_stop to wake up.
+	 Make sure that any pending signal is handled before trying to
+	 send a new one. */
+      if (_main_tls->current_sig)
+	{
+	  rc = -1;
+	  goto done;
+	}
+      _main_tls->handle_SIGCONT ();
     }
 
   /* SIGKILL is special.  It always goes through.  */
@@ -1493,7 +1552,10 @@ sigpacket::process ()
     }
   else if (ISSTATE (myself, PID_STOPPED))
     {
-      rc = -1;		/* Don't send signals when stopped */
+      if (si.si_signo == SIGSTOP)
+	rc = 1;		/* Ignore (discard) SIGSTOP */
+      else
+	rc = -1;	/* Don't send signals when stopped */
       goto done;
     }
   else if (!sigtls)
@@ -1511,12 +1573,15 @@ sigpacket::process ()
       if (tl_entry)
 	{
 	  tls = tl_entry->thread;
+	  tl_entry->thread->lock ();
 	  if (sigismember (&tls->sigwait_mask, si.si_signo))
 	    issig_wait = true;
-	  else if (!sigismember (&tls->sigmask, si.si_signo))
+	  else if (!sigismember (&tls->sigmask, si.si_signo)
+		   && !sigismember (&tls->deltamask, si.si_signo))
 	    issig_wait = false;
 	  else
 	    tls = NULL;
+	  tl_entry->thread->unlock ();
 	}
     }
 
@@ -1552,15 +1617,7 @@ sigpacket::process ()
   if (si.si_signo == SIGKILL)
     goto exit_sig;
   if (si.si_signo == SIGSTOP)
-    {
-      sig_clear (SIGCONT, false);
-      goto stop;
-    }
-
-  /* Clear pending SIGCONT on stop signals */
-  if (si.si_signo == SIGTSTP || si.si_signo == SIGTTIN
-      || si.si_signo == SIGTTOU)
-    sig_clear (SIGCONT, false);
+    goto stop;
 
   if (handler == (void *) SIG_DFL)
     {
@@ -1676,11 +1733,13 @@ altstack_wrapper (int sig, siginfo_t *siginfo, ucontext_t *sigctx,
 int
 _cygtls::call_signal_handler ()
 {
+  ucontext_t context1 = context;
+
   int this_sa_flags = SA_RESTART;
   while (1)
     {
       lock ();
-      if (!current_sig)
+      if (!current_sig || exit_state > ES_EXIT_STARTING)
 	{
 	  unlock ();
 	  break;
@@ -1708,15 +1767,15 @@ _cygtls::call_signal_handler ()
       siginfo_t thissi = infodata;
       void (*thisfunc) (int, siginfo_t *, void *) = func;
 
-      ucontext_t *thiscontext = NULL, context_copy;
+      ucontext_t *thiscontext = NULL;
 
       /* Only make a context for SA_SIGINFO handlers */
       if (this_sa_flags & SA_SIGINFO)
 	{
-	  context.uc_link = 0;
-	  context.uc_flags = 0;
+	  context1.uc_link = 0;
+	  context1.uc_flags = 0;
 	  if (thissi.si_cyg)
-	    memcpy (&context.uc_mcontext,
+	    memcpy (&context1.uc_mcontext,
 		    ((cygwin_exception *) thissi.si_cyg)->context (),
 		    sizeof (CONTEXT));
 	  else
@@ -1724,19 +1783,14 @@ _cygtls::call_signal_handler ()
 	      /* Software-generated signal.  We're fetching the current
 		 context, unwind to the caller and in case we're called
 		 from sigdelayed, fix the instruction pointer accordingly. */
-	      context.uc_mcontext.ctxflags = CONTEXT_FULL;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-	      RtlCaptureContext ((PCONTEXT) &context.uc_mcontext);
+	      RtlCaptureContext ((PCONTEXT) &context1.uc_mcontext);
 #pragma GCC diagnostic pop
-	      __unwind_single_frame ((PCONTEXT) &context.uc_mcontext);
+	      __unwind_single_frame ((PCONTEXT) &context1.uc_mcontext);
 	      if (stackptr > stack)
 		{
-#ifdef __x86_64__
-		  context.uc_mcontext.rip = retaddr ();
-#else
-#error unimplemented for this target
-#endif
+		  context1.uc_mcontext._MC_instPtr = retaddr ();
 		}
 	    }
 
@@ -1744,36 +1798,41 @@ _cygtls::call_signal_handler ()
 	      && !_my_tls.altstack.ss_flags
 	      && _my_tls.altstack.ss_sp)
 	    {
-	      context.uc_stack = _my_tls.altstack;
-	      context.uc_stack.ss_flags = SS_ONSTACK;
+	      context1.uc_stack = _my_tls.altstack;
+	      context1.uc_stack.ss_flags = SS_ONSTACK;
 	    }
 	  else
 	    {
-	      context.uc_stack.ss_sp = NtCurrentTeb ()->Tib.StackBase;
-	      context.uc_stack.ss_flags = 0;
+	      context1.uc_stack.ss_sp = NtCurrentTeb ()->Tib.StackBase;
+	      context1.uc_stack.ss_flags = 0;
 	      if (!NtCurrentTeb ()->DeallocationStack)
-		context.uc_stack.ss_size
+		context1.uc_stack.ss_size
 		  = (uintptr_t) NtCurrentTeb ()->Tib.StackLimit
 		    - (uintptr_t) NtCurrentTeb ()->Tib.StackBase;
 	      else
-		context.uc_stack.ss_size
+		context1.uc_stack.ss_size
 		  = (uintptr_t) NtCurrentTeb ()->DeallocationStack
 		    - (uintptr_t) NtCurrentTeb ()->Tib.StackBase;
 	    }
-	  context.uc_sigmask = context.uc_mcontext.oldmask = this_oldmask;
+	  context1.uc_sigmask = context1.uc_mcontext.oldmask = this_oldmask;
 
-	  context.uc_mcontext.cr2 = (thissi.si_signo == SIGSEGV
-				     || thissi.si_signo == SIGBUS)
-				    ? (uintptr_t) thissi.si_addr : 0;
+	  context1.uc_mcontext.cr2 = (thissi.si_signo == SIGSEGV
+				      || thissi.si_signo == SIGBUS)
+				     ? (uintptr_t) thissi.si_addr : 0;
 
-	  thiscontext = &context;
-	  context_copy = context;
+	  thiscontext = &context1;
 	}
 
       int this_errno = saved_errno;
       reset_signal_arrived ();
-      incyg = false;
+      incyg = 0;
       current_sig = 0;	/* Flag that we can accept another signal */
+
+      /* We have to fetch the original return address from the signal stack
+        prior to calling the signal handler.  This avoids filling up the
+        signal stack if the signal handler longjumps (longjmp/setcontext). */
+      __tlsstack_t orig_retaddr = pop ();
+      __tlsstack_t *orig_stackptr = stackptr;
       unlock ();	/* unlock signal stack */
 
       /* Alternate signal stack requested for this signal and alternate signal
@@ -1801,6 +1860,13 @@ _cygtls::call_signal_handler ()
 	     to 16 byte. */
 	  uintptr_t new_sp = ((uintptr_t) _my_tls.altstack.ss_sp
 			      + _my_tls.altstack.ss_size) & ~0xf;
+	  /* Copy context1 to the alternate signal stack area, because the
+	     context1 allocated in the normal stack area is not accessible
+	     from the signal handler that uses alternate signal stack. */
+	  thiscontext = (ucontext_t *) ((new_sp - sizeof (ucontext_t)) & ~0xf);
+	  memcpy (thiscontext, &context1, sizeof (ucontext_t));
+	  new_sp = (uintptr_t) thiscontext;
+
 	  /* In assembler: Save regs on new stack, move to alternate stack,
 	     call thisfunc, revert stack regs. */
 #ifdef __x86_64__
@@ -1844,27 +1910,42 @@ _cygtls::call_signal_handler ()
 #else
 #error unimplemented for this target
 #endif
+	  memcpy (&context1, thiscontext, sizeof (ucontext_t));
 	}
       else
 	/* No alternate signal stack requested or available, just call
 	   signal handler. */
 	thisfunc (thissig, &thissi, thiscontext);
 
-      incyg = true;
+      lock ();
+      switch (stackptr - orig_stackptr)
+	{
+	case 2:	/* sigdelayed + added retaddr, pop sigdelayed */
+	  pop ();
+	  fallthrough;
+	case 1:	/* added retaddr */
+	  {
+	    __tlsstack_t added_retaddr = pop();
+	    push (orig_retaddr);
+	    push (added_retaddr);
+	  }
+	  break;
+	case 0:
+	  push (orig_retaddr);
+	  break;
+	default:
+	  api_fatal ("Signal stack corrupted (%D)?", stackptr - orig_stackptr);
+	}
+      unlock ();
+
+      incyg = 1;
 
       set_signal_mask (_my_tls.sigmask, (this_sa_flags & SA_SIGINFO)
-					? context.uc_sigmask : this_oldmask);
+					? context1.uc_sigmask : this_oldmask);
       if (this_errno >= 0)
 	set_errno (this_errno);
-      if (this_sa_flags & SA_SIGINFO)
-	{
-	  /* If more than just the sigmask in the context has been changed by
-	     the signal handler, call setcontext. */
-	  context_copy.uc_sigmask = context.uc_sigmask;
-	  if (memcmp (&context, &context_copy, sizeof context) != 0)
-	    setcontext (&context);
-	}
     }
+  context = context1;
 
   /* FIXME: Since 2011 this return statement always returned 1 (meaning
      SA_RESTART is effective) if the thread we're running in is not the
@@ -1905,7 +1986,6 @@ setcontext (const ucontext_t *ucp)
 {
   PCONTEXT ctx = (PCONTEXT) &ucp->uc_mcontext;
   set_signal_mask (_my_tls.sigmask, ucp->uc_sigmask);
-  _my_tls.incyg = true;
   RtlRestoreContext (ctx, NULL);
   /* If we got here, something was wrong. */
   set_errno (EINVAL);
@@ -1916,7 +1996,6 @@ extern "C" int
 getcontext (ucontext_t *ucp)
 {
   PCONTEXT ctx = (PCONTEXT) &ucp->uc_mcontext;
-  ctx->ContextFlags = CONTEXT_FULL;
   RtlCaptureContext (ctx);
   __unwind_single_frame (ctx);
   /* Successful getcontext is supposed to return 0.  If we don't set the

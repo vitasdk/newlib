@@ -406,7 +406,7 @@ sched_setscheduler (pid_t pid, int policy,
       return -1;
     }
 
-  pinfo p (pid ? pid : getpid ());
+  pinfo p ((pid ? pid : getpid ()), PID_MAP_RW);
   if (!p)
     {
       set_errno (ESRCH);
@@ -587,9 +587,16 @@ __sched_getaffinity_sys (pid_t pid, size_t sizeof_set, cpu_set_t *set)
 	  goto done;
 	}
 
-      KAFFINITY miscmask = groupmask (__get_cpus_per_group ());
+      KAFFINITY fullmask = groupmask (__get_cpus_per_group ());
+      /* if process is multi-group, we don't have processor visibility. */
+      /*TODO We could provide the missing Windows visibility by book-keeping
+        each thread's current group and mask in our thread overhead, updating
+        them on sched_set_thread_affinity() calls. We could then assemble the
+        total mask here by looping through all threads. */
+      if (groupcount > 1)
+	procmask = fullmask;
       for (int i = 0; i < groupcount; i++)
-	setgroup (sizeof_set, set, grouparray[i], miscmask);
+	setgroup (sizeof_set, set, grouparray[i], fullmask & procmask);
     }
   else
     status = ESRCH;
@@ -661,7 +668,8 @@ sched_setaffinity (pid_t pid, size_t sizeof_set, const cpu_set_t *set)
   if (p)
     {
       process = pid && pid != myself->pid ?
-		OpenProcess (PROCESS_SET_INFORMATION, FALSE,
+		OpenProcess (PROCESS_SET_INFORMATION |
+			     PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
 			     p->dwProcessId) : GetCurrentProcess ();
       if (!GetProcessGroupAffinity (process, &groupcount, grouparray))
 	{

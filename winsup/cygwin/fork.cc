@@ -187,7 +187,6 @@ frok::child (volatile char * volatile here)
 
   ForceCloseHandle1 (fork_info->forker_finished, forker_finished);
 
-  pthread::atforkchild ();
   cygbench ("fork-child");
   ld_preload ();
   fixup_hooks_after_fork ();
@@ -199,6 +198,7 @@ frok::child (volatile char * volatile here)
   CloseHandle (hParent);
   hParent = NULL;
   cygwin_finished_initializing = true;
+  pthread::atforkchild ();
   return 0;
 }
 
@@ -329,6 +329,7 @@ frok::parent (volatile char * volatile stack_here)
   /* NEVER, EVER, call a function which in turn calls malloc&friends while this
      malloc lock is active! */
   __malloc_lock ();
+  cygheap->lock ();
   bool locked = true;
 
   /* Remove impersonation */
@@ -483,6 +484,7 @@ frok::parent (volatile char * volatile stack_here)
 		   impure, impure_beg, impure_end,
 		   NULL);
 
+  cygheap->unlock ();
   __malloc_unlock ();
   locked = false;
   if (!rc)
@@ -568,7 +570,10 @@ cleanup:
   if (fix_impersonation)
     cygheap->user.reimpersonate ();
   if (locked)
-    __malloc_unlock ();
+    {
+      cygheap->unlock ();
+      __malloc_unlock ();
+    }
 
   /* Remember to de-allocate the fd table. */
   if (hchild)
@@ -660,8 +665,10 @@ dofork (void **proc, bool *with_forkables)
     ischild = !!setjmp (grouped.ch.jmp);
 
     volatile char * volatile stackp;
-#ifdef __x86_64__
+#if defined(__x86_64__)
     __asm__ volatile ("movq %%rsp,%0": "=r" (stackp));
+#elif defined(__aarch64__)
+    __asm__ volatile ("mov %0, sp" : "=r" (stackp));
 #else
 #error unimplemented for this target
 #endif
@@ -678,8 +685,9 @@ dofork (void **proc, bool *with_forkables)
 
   if (ischild)
     {
-      myself->process_state |= PID_ACTIVE;
-      myself->process_state &= ~(PID_INITIALIZING | PID_EXITED | PID_REAPED);
+      InterlockedOr ((LONG *) &myself->process_state, PID_ACTIVE);
+      InterlockedAnd ((LONG *) &myself->process_state,
+		      ~(PID_INITIALIZING | PID_EXITED | PID_REAPED));
     }
   else if (res < 0)
     {

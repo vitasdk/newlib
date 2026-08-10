@@ -18,7 +18,12 @@ details. */
 #undef u_long
 #define u_long __ms_u_long
 #include <w32api/ws2tcpip.h>
+/* 2025-06-09: win32api headers v13 now define a cmsghdr type which clashes with
+   our socket.h. Arrange not to see it here. */
+#undef cmsghdr
+#define cmsghdr __ms_cmsghdr
 #include <w32api/mswsock.h>
+#undef cmsghdr
 #include <w32api/iphlpapi.h>
 #define gethostname cygwin_gethostname
 #include <unistd.h>
@@ -2006,8 +2011,9 @@ cygwin_if_nametoindex (const char *name)
     for (pap = pa0; pap; pap = pap->Next)
       if (strcmp (name, pap->AdapterName) == 0)
 	{
+	  unsigned idx = pap->IfIndex;
 	  free (pa0);
-	  return pap->IfIndex;
+	  return idx;
 	}
   if (pa0)
     free (pa0);

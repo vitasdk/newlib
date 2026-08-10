@@ -1654,7 +1654,7 @@ fhandler_disk_file::open (int flags, mode_t mode)
 }
 
 int
-fhandler_disk_file::close ()
+fhandler_disk_file::close (int flag)
 {
   /* Close extra pread/pwrite handle, if it exists. */
   if (prw_handle)
@@ -2789,7 +2789,7 @@ fhandler_disk_file::fs_ioc_setflags (uint64_t flags)
 	  goto out;
 	}
     }
-  if ((flags & FS_COMPRESSED_FL) != (old_flags & FS_COMPRESSED_FL))
+  if ((flags & FS_COMPR_FL) != (old_flags & FS_COMPR_FL))
     {
       if (fh != get_handle ())
 	NtClose (fh);
@@ -2809,7 +2809,7 @@ fhandler_disk_file::fs_ioc_setflags (uint64_t flags)
 	      goto out;
 	    }
 	}
-      comp = (flags & FS_COMPRESSED_FL)
+      comp = (flags & FS_COMPR_FL)
 	     ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
       status = NtFsControlFile (fh, NULL, NULL, NULL, &io,
 				FSCTL_SET_COMPRESSION, &comp, sizeof comp,

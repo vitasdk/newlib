@@ -10,7 +10,7 @@ details. */
    the Cygwin shared library".  This version is used to track important
    changes to the DLL and is mainly informative in nature. */
 
-#define CYGWIN_VERSION_DLL_MAJOR 3006
+#define CYGWIN_VERSION_DLL_MAJOR 3007
 #define CYGWIN_VERSION_DLL_MINOR 0
 
 /* CYGWIN_VERSION_DLL_COMBINED gives us a single number representing the
@@ -35,6 +35,9 @@ details. */
 
 #define CYGWIN_VERSION_CHECK_FOR_EXTRA_TM_MEMBERS \
   (CYGWIN_VERSION_USER_API_VERSION_COMBINED >= 272)
+
+#define CYGWIN_VERSION_CHECK_FOR_CXX17_OVERLOADS(u) \
+  (CYGWIN_VERSION_PER_PROCESS_API_VERSION_COMBINED (u) >= 359)
 
 /* API_MAJOR 0.0: Initial version.  API_MINOR changes:
     1: Export cygwin32_ calls as cygwin_ as well.
@@ -490,12 +493,18 @@ details. */
   353: Implement fdclosedir.
   354: Implement posix_getdents.
   355: Implement setproctitle.
+  356: Export posix_spawn_file_actions_addchdir and
+       posix_spawn_file_actions_addfchdir.
+  357: Export posix_close.
+  358: Export acl_get_fd_np, acl_get_link_np, acl_get_perm_np,
+       acl_is_trivial_np, acl_set_fd_np, acl_set_link_np, acl_strip_np.
+  359: Export wrappers for C++14 and C++17 new and delete overloads.
 
   Note that we forgot to bump the api for ualarm, strtoll, strtoull,
   sigaltstack, sethostname. */
 
 #define CYGWIN_VERSION_API_MAJOR 0
-#define CYGWIN_VERSION_API_MINOR 355
+#define CYGWIN_VERSION_API_MINOR 359
 
 /* There is also a compatibity version number associated with the shared memory
    regions.  It is incremented when incompatible changes are made to the shared

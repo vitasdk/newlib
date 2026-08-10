@@ -40,7 +40,11 @@ AM_PROG_AS
 AC_LANG(C)
 AC_LANG(C++)
 
-AC_ARG_WITH([cross-bootstrap],[AS_HELP_STRING([--with-cross-bootstrap],[do not build programs using the MinGW toolchain or check for MinGW libraries (useful for bootstrapping a cross-compiler)])],[],[with_cross_bootstrap=no])
+AC_ARG_WITH([mingw-progs],
+  [AS_HELP_STRING([--without-mingw-progs],
+    [do not build programs using the MinGW toolchain])],
+  [],
+  [with_mingw_progs=yes])
 
 AC_CYGWIN_INCLUDES
 
@@ -57,6 +61,23 @@ AC_CHECK_TOOL(RANLIB, ranlib, ranlib)
 AC_CHECK_TOOL(STRIP, strip, strip)
 AC_CHECK_TOOL(WINDRES, windres, windres)
 
+required_w32api_version=13
+AC_MSG_CHECKING([w32api-headers version])
+AC_COMPILE_IFELSE([
+  AC_LANG_SOURCE([[
+    #include <_mingw.h>
+
+    #if __MINGW64_VERSION_MAJOR < $required_w32api_version
+    #error "w32api-headers version >= $required_w32api_version required"
+    #endif
+ ]])
+],[
+  AC_MSG_RESULT([yes])
+],[
+  AC_MSG_RESULT([no, >= $required_w32api_version required])
+  AC_MSG_ERROR([required w32api-headers version not met])
+])
+
 AC_ARG_ENABLE(debugging,
 [AS_HELP_STRING([--enable-debugging],[Build a cygwin DLL which has more consistency checking for debugging])],
 [case "${enableval}" in
@@ -69,17 +90,31 @@ DLL_ENTRY="dll_entry"
 
 case "$target_cpu" in
    x86_64)	;;
+   aarch64)	;;
    *)		AC_MSG_ERROR([Invalid target processor "$target_cpu"]) ;;
 esac
 
 AC_SUBST(DLL_ENTRY)
 
 AM_CONDITIONAL(TARGET_X86_64, [test $target_cpu = "x86_64"])
+AM_CONDITIONAL(TARGET_AARCH64, [test $target_cpu = "aarch64"])
 
 AC_ARG_ENABLE(doc,
 	      [AS_HELP_STRING([--disable-doc], [do not build documentation])],,
 	      enable_doc=yes)
 AM_CONDITIONAL(BUILD_DOC, [test $enable_doc != "no"])
+
+# Disabling build of cygserver and utils is needed for zero-bootstrap build of
+# stage 1 Cygwin toolchain where the linker is not able to produce executables
+# yet.
+AC_ARG_ENABLE(cygserver,
+	      [AS_HELP_STRING([--disable-cygserver], [do not build cygserver])],,
+	      enable_cygserver=yes)
+AM_CONDITIONAL(BUILD_CYGSERVER, [test $enable_cygserver != "no"])
+AC_ARG_ENABLE(utils,
+	      [AS_HELP_STRING([--disable-utils], [do not build utils])],,
+	      enable_utils=yes)
+AM_CONDITIONAL(BUILD_UTILS, [test $enable_utils != "no"])
 
 AC_CHECK_PROGS([DOCBOOK2XTEXI], [docbook2x-texi db2x_docbook2texi])
 if test -z "$DOCBOOK2XTEXI" ; then
@@ -101,13 +136,13 @@ if test -z "$XMLTO"; then
     fi
 fi
 
-if test "x$with_cross_bootstrap" != "xyes"; then
+if test "x$with_mingw_progs" != "xno"; then
     AC_CHECK_PROGS(MINGW_CXX, ${target_cpu}-w64-mingw32-g++)
     test -n "$MINGW_CXX" || AC_MSG_ERROR([no acceptable MinGW g++ found in \$PATH])
     AC_CHECK_PROGS(MINGW_CC, ${target_cpu}-w64-mingw32-gcc)
     test -n "$MINGW_CC" || AC_MSG_ERROR([no acceptable MinGW gcc found in \$PATH])
 fi
-AM_CONDITIONAL(CROSS_BOOTSTRAP, [test "x$with_cross_bootstrap" != "xyes"])
+AM_CONDITIONAL(MINGW_PROGS, [test "x$with_mingw_progs" != "xno"])
 
 AC_EXEEXT
 

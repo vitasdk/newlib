@@ -30,6 +30,9 @@ details. */
 #define MIN_CTRL_C_SLOP 50
 #endif
 
+#define BY_TCFLOW 2
+#define BY_VSTOP  1
+
 typedef void *HPCON;
 
 #include "devices.h"
@@ -43,7 +46,8 @@ class tty_min
 
 public:
   pid_t pgid;
-  bool output_stopped;		/* FIXME: Maybe do this with a mutex someday? */
+  volatile int output_stopped;	/* FIXME: Maybe do this with a mutex someday? */
+  volatile int input_stopped;
   fh_devices ntty;
   ULONGLONG last_ctrl_c;	/* tick count of last ctrl-c */
   bool is_console;
@@ -135,7 +139,6 @@ private:
   bool master_is_running_as_service;
   bool req_xfer_input;
   xfer_dir pty_input_state;
-  bool mask_flusho;
   bool discard_input;
   bool stop_fwd_thread;
 

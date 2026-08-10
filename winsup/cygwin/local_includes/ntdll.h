@@ -268,6 +268,7 @@ typedef enum _FILE_INFORMATION_CLASS
   FileLinkInformationExBypassAccessCheck,	// 73
   FileStorageReserveIdInformation,		// 74
   FileCaseSensitiveInformationForceAccessCheck,	// 75
+  FileKnownFolderInformation,			// 76
   FileMaximumInformation
 } FILE_INFORMATION_CLASS, *PFILE_INFORMATION_CLASS;
 
@@ -489,26 +490,6 @@ typedef struct _FILE_DISPOSITION_INFORMATION_EX	// 64
   ULONG Flags;
 } FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
 
-typedef struct _FILE_STAT_INFORMATION		// 68
-{
-  LARGE_INTEGER FileId;
-  LARGE_INTEGER CreationTime;
-  LARGE_INTEGER LastAccessTime;
-  LARGE_INTEGER LastWriteTime;
-  LARGE_INTEGER ChangeTime;
-  LARGE_INTEGER AllocationSize;
-  LARGE_INTEGER EndOfFile;
-  ULONG FileAttributes;
-  ULONG ReparseTag;
-  ULONG NumberOfLinks;
-  ACCESS_MASK EffectiveAccess;
-} FILE_STAT_INFORMATION, *PFILE_STAT_INFORMATION;
-
-typedef struct _FILE_CASE_SENSITIVE_INFORMATION	// 71
-{
-  ULONG Flags;
-} FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
-
 enum {
   FILE_LINK_REPLACE_IF_EXISTS				= 0x01,
   FILE_LINK_POSIX_SEMANTICS				= 0x02,
@@ -539,13 +520,6 @@ enum
   FILE_RENAME_PRESERVE_AVAILABLE_SPACE			= 0x30,
   FILE_RENAME_IGNORE_READONLY_ATTRIBUTE			= 0x40
 };
-
-#if (__MINGW64_VERSION_MAJOR < 11)
-enum
-{
-  FILE_CS_FLAG_CASE_SENSITIVE_DIR			= 0x01
-};
-#endif
 
 enum
 {
@@ -1361,7 +1335,8 @@ typedef enum _THREADINFOCLASS
   ThreadBasicInformation = 0,
   ThreadTimes = 1,
   ThreadImpersonationToken = 5,
-  ThreadQuerySetWin32StartAddress = 9
+  ThreadQuerySetWin32StartAddress = 9,
+  ThreadSuspendCount = 35
 } THREADINFOCLASS, *PTHREADINFOCLASS;
 
 typedef struct _THREAD_BASIC_INFORMATION
@@ -1654,6 +1629,8 @@ extern "C"
 					 BOOLEAN);
   WCHAR RtlUpcaseUnicodeChar (WCHAR);
   NTSTATUS RtlUpcaseUnicodeString (PUNICODE_STRING, PUNICODE_STRING, BOOLEAN);
+  VOID RtlWakeAddressSingle (PVOID);
+  NTSTATUS RtlWaitOnAddress (volatile void *, PVOID, SIZE_T, PLARGE_INTEGER);
   NTSTATUS RtlWriteRegistryValue (ULONG, PCWSTR, PCWSTR, ULONG, PVOID, ULONG);
 
 #ifdef __cplusplus

@@ -23,7 +23,7 @@ details. */
    is affected as well, but we can't transform it as long as we accept Win32
    paths as input. */
 static const WCHAR tfx_chars[] = {
- 0xf000 |   0, 0xf000 |   1, 0xf000 |   2, 0xf000 |   3,
+            0, 0xf000 |   1, 0xf000 |   2, 0xf000 |   3,
  0xf000 |   4, 0xf000 |   5, 0xf000 |   6, 0xf000 |   7,
  0xf000 |   8, 0xf000 |   9, 0xf000 |  10, 0xf000 |  11,
  0xf000 |  12, 0xf000 |  13, 0xf000 |  14, 0xf000 |  15,
@@ -62,7 +62,7 @@ static const WCHAR tfx_chars[] = {
    converting back space and dot on filesystems only supporting DOS
    filenames. */
 static const WCHAR tfx_rev_chars[] = {
- 0xf000 |   0, 0xf000 |   1, 0xf000 |   2, 0xf000 |   3,
+            0, 0xf000 |   1, 0xf000 |   2, 0xf000 |   3,
  0xf000 |   4, 0xf000 |   5, 0xf000 |   6, 0xf000 |   7,
  0xf000 |   8, 0xf000 |   9, 0xf000 |  10, 0xf000 |  11,
  0xf000 |  12, 0xf000 |  13, 0xf000 |  14, 0xf000 |  15,
@@ -109,7 +109,7 @@ transform_chars_af_unix (PWCHAR out, const char *path, __socklen_t len)
 {
   len -= sizeof (__sa_family_t);
   for (const unsigned char *p = (const unsigned char *) path; len-- > 0; ++p)
-    *out++ = (*p <= 0x7f) ? tfx_chars[*p] : *p;
+    *out++ = (*p <= 0x7f) ? (*p == 0) ? 0xf000 : tfx_chars[*p] : *p;
   return out;
 }
 
@@ -145,6 +145,13 @@ c32rtomb (char *s, char32_t wc, mbstate_t *ps)
        was a null wide character (L'').  wcrtomb will do that for us*/
     if (wc <= 0xffff || !s)
       return wcrtomb (s, (wchar_t) wc, ps);
+
+    /* Check for character outside valid UNICODE planes */
+    if (wc > 0x10ffff)
+      {
+	_REENT_ERRNO(_REENT) = EILSEQ;
+	return (size_t)(-1);
+      }
 
     wchar_t wc_arr[2];
     const wchar_t *wcp = wc_arr;
@@ -965,8 +972,17 @@ _sys_wcstombs (char *dst, size_t len, const wchar_t *src, size_t nwc,
 
       /* Convert UNICODE private use area.  Reverse functionality for the
 	 ASCII area <= 0x7f (only for path names) is transform_chars above.
+
 	 Reverse functionality for invalid bytes in a multibyte sequence is
-	 in _sys_mbstowcs below. */
+	 in _sys_mbstowcs below.
+
+	 FIXME? The conversion of invalid bytes from the private use area
+	 like we do here is not actually necessary.  If we skip it, the
+	 generated multibyte string is not identical to the original multibyte
+	 string, but it's equivalent in the sense, that another mbstowcs will
+	 generate the same wide-char string.  It would also be identical to
+	 the same string converted by wcstombs.  And while the original
+	 multibyte string can't be converted by mbstowcs, this string can. */
       if (is_path && (pw & 0xff00) == 0xf000
 	  && (((cwc = (pw & 0xff)) <= 0x7f && tfx_rev_chars[cwc] >= 0xf000)
 	      || (cwc >= 0x80 && MB_CUR_MAX > 1)))
@@ -1071,6 +1087,7 @@ _sys_mbstowcs (mbtowc_p f_mbtowc, wchar_t *dst, size_t dlen, const char *src,
 {
   wchar_t *ptr = dst;
   unsigned const char *pmbs = (unsigned const char *) src;
+  unsigned const char *got_high_surrogate = NULL;
   size_t count = 0;
   size_t len = dlen;
   int bytes;
@@ -1142,16 +1159,58 @@ _sys_mbstowcs (mbtowc_p f_mbtowc, wchar_t *dst, size_t dlen, const char *src,
 
 	     Invalid bytes in a multibyte sequence are converted to
 	     the private use area which is already used to store ASCII
-	     chars invalid in Windows filenames.  This technque allows
+	     chars invalid in Windows filenames.  This technique allows
 	     to store them in a symmetric way. */
-	  bytes = 1;
-	  if (dst)
-	    *ptr = L'\xf000' | *pmbs;
+
+	  /* Special case high surrogate: if we already converted the first
+	     3 bytes of a sequence to a high surrogate, and only then encounter
+	     a non-matching forth byte, the sequence is simply cut short.  In
+	     that case not the currently handled 4th byte is the invalid
+	     sequence, but the 3 bytes converted to the high surrogate.  So we
+	     have to backtrack to the high surrogate and convert it to a
+	     sequence of bytes in the private use area.  Next, reset the
+	     mbstate and retry to convert starting at the current byte. */
+	  if (got_high_surrogate)
+	    {
+	      if (dst)
+		{
+		  --ptr;
+		  *ptr++ = L'\xf000' | *got_high_surrogate++;
+		  /* we know len > 0 at this point */
+		  *ptr++ = L'\xf000' | *got_high_surrogate++;
+		}
+	      --len;
+	      if (len > 0)
+		{
+		  if (dst)
+		    *ptr++ = L'\xf000' | *got_high_surrogate++;
+		  --len;
+		}
+	      count += 2; /* Actually 3, but we already counted one when
+			     generating the high surrogate. */
+	      memset (&ps, 0, sizeof ps);
+	      continue;
+	    }
+	  /* Never convert ASCII NUL */
+	  if (*pmbs)
+	    {
+	      bytes = 1;
+	      if (dst)
+		*ptr = L'\xf000' | *pmbs;
+	    }
 	  memset (&ps, 0, sizeof ps);
 	}
 
+      got_high_surrogate = NULL;
       if (bytes > 0)
 	{
+	  /* Check if we got the high surrogate from a UTF-8 4 byte sequence.
+	     This is used above to handle an invalid 4 byte sequence cut short
+	     at byte 3. */
+	  /* FIXME: do we need an equivalent check for gb18030? */
+	  if (bytes == 3 && ps.__count == 4 && f_mbtowc == __utf8_mbtowc)
+	    got_high_surrogate = pmbs;
+
 	  pmbs += bytes;
 	  nms -= bytes;
 	  ++count;

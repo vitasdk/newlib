@@ -34,7 +34,9 @@ struct per_module
 typedef enum
 {
   DLL_NONE,
-  DLL_SELF, /* main-program.exe, cygwin1.dll */
+  DLL_SELF,	/* main-program.exe, cygwin1.dll */
+  DLL_NATIVE,	/* dlopen'ed native DLLs.  reload after fork, but otherwise
+		   do nothing, just as with DLL_SELF. */
   DLL_LINK,
   DLL_LOAD,
   DLL_ANY
@@ -57,7 +59,6 @@ struct dll
   PWCHAR forkable_ntname;
   WCHAR ntname[1]; /* must be the last data member */
 
-  void detach ();
   int init ();
   bool stat_real_file_once ();
   void nominate_forkable (PCWCHAR);
@@ -131,7 +132,7 @@ public:
   int reload_on_fork;
   dll *operator [] (PCWCHAR ntname);
   dll *alloc (HINSTANCE, per_process *, dll_type);
-  dll *find (void *);
+  dll *find (void *, bool = false);
   void detach (void *);
   void init ();
   void load_after_fork (HANDLE);

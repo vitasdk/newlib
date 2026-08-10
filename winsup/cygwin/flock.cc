@@ -109,10 +109,6 @@
 #include <sys/queue.h>
 #include <wchar.h>
 
-#define F_WAIT 0x10	/* Wait until lock is granted */
-#define F_FLOCK 0x20	/* Use flock(2) semantics for lock */
-#define F_POSIX	0x40	/* Use POSIX semantics for lock */
-
 #ifndef OFF_MAX
 #define OFF_MAX LLONG_MAX
 #endif
@@ -228,12 +224,13 @@ struct lockfattr_t
 class lockf_t
 {
   public:
-    uint16_t	    lf_flags; /* Semantics: F_POSIX, F_FLOCK, F_WAIT */
+    uint16_t	    lf_flags; /* Semantics: F_OFD, F_POSIX, F_FLOCK, F_WAIT */
     uint16_t	    lf_type;  /* Lock type: F_RDLCK, F_WRLCK */
     off_t	    lf_start; /* Byte # of the start of the lock */
     off_t	    lf_end;   /* Byte # of the end of the lock (-1=EOF) */
     int64_t         lf_id;    /* Cygwin PID for POSIX locks, a unique id per
-				 file table entry for BSD flock locks. */
+				 file table entry for OFD and BSD flock
+				 locks. */
     DWORD	    lf_wid;   /* Win PID of the resource holding the lock */
     uint16_t	    lf_ver;   /* Version number of the lock.  If a released
 				 lock event yet exists because another process
@@ -267,7 +264,6 @@ class lockf_t
     /* Used to store own lock list in the cygheap. */
     void *operator new (size_t size)
     { return cmalloc (HEAP_FHANDLER, sizeof (lockf_t)); }
-    /* Never call on node->i_all_lf! */
     void operator delete (void *p)
     { cfree (p); }
 
@@ -280,6 +276,11 @@ class lockf_t
     void del_lock_obj (HANDLE fhdl, bool signal = false);
 };
 
+/* Max. number of lockf_t structs in the __i_all buffer so that an inode_t
+   fits into a 64K cygheap chunk. */
+#define MAX_LOCKF_CNT	((intptr_t)((NT_MAX_PATH * sizeof (WCHAR)) \
+				    / sizeof (lockf_t)) - 1)
+
 /* Per inode_t class */
 class inode_t
 {
@@ -287,17 +288,22 @@ class inode_t
 
   public:
     LIST_ENTRY (inode_t) i_next;
-    lockf_t		*i_lockf;  /* List of locks of this process. */
-    lockf_t		*i_all_lf; /* Temp list of all locks for this file. */
+    lockf_t		*i_lockf;  /* List of locks held by this process. */
+    lockf_t		*i_all_lf; /* List of all locks on this file.  Always
+				      points to __i_all below.  The indirection
+				      is required by list handling. */
 
     dev_t		 i_dev;    /* Device ID */
     ino_t		 i_ino;    /* inode number */
 
   private:
-    HANDLE		 i_dir;
-    HANDLE		 i_mtx;
+    HANDLE		 i_dir;    /* Directory in NT namespace holding symlinks
+				      representing locks on this file. */
+    HANDLE		 i_mtx;	   /* Mutex controlling access to locks on
+				      this file. */
     uint32_t		 i_cnt;    /* # of threads referencing this instance. */
-    uint32_t		 i_lock_cnt; /* # of locks for this file */
+    uint32_t		 i_lock_cnt; /* # of locks on this file */
+    lockf_t		 __i_all[MAX_LOCKF_CNT];
 
   public:
     inode_t (dev_t dev, ino_t ino);
@@ -373,12 +379,12 @@ inode_t::del_my_locks (long long id, HANDLE fhdl)
       else if (id && lock->lf_id == id)
 	{
 	  int cnt = 0;
-	  cygheap_fdenum cfd (true);
+	  cygheap_fdenum cfd (false);
 	  while (cfd.next () >= 0)
 	    if (cfd->get_unique_id () == lock->lf_id && ++cnt > 1)
 	      break;
-	  /* Delete BSD flock lock when no other fd in this process references
-	     it anymore. */
+	  /* Delete OFD and BSD flock lock when no other fd in this process
+	     references it anymore. */
 	  if (cnt <= 1)
 	    {
 	      *prev = n_lock;
@@ -435,7 +441,7 @@ fixup_lockf_after_exec (bool exec)
     {
       node->notused ();
       int cnt = 0;
-      cygheap_fdenum cfd (true);
+      cygheap_fdenum cfd (false);
       while (cfd.next () >= 0)
 	if (cfd->get_dev () == node->i_dev
 	    && cfd->get_ino () == node->i_ino
@@ -506,7 +512,7 @@ inode_t::get (dev_t dev, ino_t ino, bool create_if_missing, bool lock)
 }
 
 inode_t::inode_t (dev_t dev, ino_t ino)
-: i_lockf (NULL), i_all_lf (NULL), i_dev (dev), i_ino (ino), i_cnt (0L),
+: i_lockf (NULL), i_all_lf (__i_all), i_dev (dev), i_ino (ino), i_cnt (0L),
   i_lock_cnt (0)
 {
   HANDLE parent_dir;
@@ -538,10 +544,6 @@ inode_t::inode_t (dev_t dev, ino_t ino)
    list in the i_all_lf member.  This list is searched in lf_getblock
    for locks which potentially block our lock request. */
 
-/* Number of lockf_t structs which fit in the temporary buffer. */
-#define MAX_LOCKF_CNT	((intptr_t)((NT_MAX_PATH * sizeof (WCHAR)) \
-				    / sizeof (lockf_t)))
-
 bool
 lockf_t::from_obj_name (inode_t *node, lockf_t **head, const wchar_t *name)
 {
@@ -550,8 +552,9 @@ lockf_t::from_obj_name (inode_t *node, lockf_t **head, const wchar_t *name)
   /* "%02x-%01x-%016X-%016X-%016X-%08x-%04x",
      lf_flags, lf_type, lf_start, lf_end, lf_id, lf_wid, lf_ver */
   lf_flags = wcstol (name, &endptr, 16);
-  if ((lf_flags & ~(F_FLOCK | F_POSIX)) != 0
-      || ((lf_flags & (F_FLOCK | F_POSIX)) == (F_FLOCK | F_POSIX)))
+  /* Make sure exactly one semantics flag is set. */
+  if ((lf_flags & ~(F_FLOCK | F_POSIX | F_OFD)) != 0
+      || ((lf_flags & (lf_flags - 1)) != 0))
     return false;
   lf_type = wcstol (endptr + 1, &endptr, 16);
   if ((lf_type != F_RDLCK && lf_type != F_WRLCK) || !endptr || *endptr != L'-')
@@ -636,8 +639,8 @@ POBJECT_ATTRIBUTES
 lockf_t::create_lock_obj_attr (lockfattr_t *attr, ULONG flags, void *sd_buf)
 {
   __small_swprintf (attr->name, LOCK_OBJ_NAME_FMT,
-		    lf_flags & (F_POSIX | F_FLOCK), lf_type, lf_start, lf_end,
-		    lf_id, lf_wid, lf_ver);
+		    lf_flags & (F_OFD | F_POSIX | F_FLOCK),
+		    lf_type, lf_start, lf_end, lf_id, lf_wid, lf_ver);
   RtlInitCountedUnicodeString (&attr->uname, attr->name,
 			       LOCK_OBJ_NAME_LEN * sizeof (WCHAR));
   InitializeObjectAttributes (&attr->attr, &attr->uname, flags, lf_inode->i_dir,
@@ -689,7 +692,7 @@ create_lock_in_parent (PVOID param)
   /* Check if we have an open file handle with the same unique id. */
   {
     cnt = 0;
-    cygheap_fdenum cfd (true);
+    cygheap_fdenum cfd (false);
     while (cfd.next () >= 0)
       if (cfd->get_unique_id () == newlock.lf_id && ++cnt > 0)
 	break;
@@ -738,7 +741,8 @@ delete_lock_in_parent (PVOID param)
       {
 	for (prev = &node->i_lockf, lock = *prev; lock; lock = *prev)
 	  {
-	    if ((lock->lf_flags & F_FLOCK) && IsEventSignalled (lock->lf_obj))
+	    if ((lock->lf_flags & (F_OFD | F_FLOCK))
+		&& IsEventSignalled (lock->lf_obj))
 	      {
 		*prev = lock->lf_next;
 		delete lock;
@@ -793,8 +797,8 @@ lockf_t::create_lock_obj ()
 	}
     }
   while (!NT_SUCCESS (status));
-  /* For BSD locks, notify the parent process. */
-  if (lf_flags & F_FLOCK)
+  /* For OFD and BSD locks, notify the parent process. */
+  if (lf_flags & (F_OFD | F_FLOCK))
     {
       HANDLE parent_proc, parent_thread, parent_lf_obj;
 
@@ -869,20 +873,20 @@ lockf_t::del_lock_obj (HANDLE fhdl, bool signal)
   if (lf_obj)
     {
       /* Only signal the event if it's either a POSIX lock, or, in case of
-	 BSD flock locks, if it's an explicit unlock or if the calling fhandler
-	 holds the last reference to the file table entry.  The file table
-	 entry in UNIX terms is equivalent to the FILE_OBJECT in Windows NT
-	 terms.  It's what the handle/descriptor references when calling
-	 CreateFile/open.  Calling DuplicateHandle/dup only creates a new
-	 handle/descriptor to the same FILE_OBJECT/file table entry. */
+	 OFD and BSD flock locks, if it's an explicit unlock or if the calling
+	 fhandler holds the last reference to the file table entry.  The file
+	 table entry in UNIX terms is equivalent to the FILE_OBJECT in
+	 Windows NT terms.  It's what the handle/descriptor references when
+	 calling CreateFile/open.  Calling DuplicateHandle/dup only creates a
+	 new handle/descriptor to the same FILE_OBJECT/file table entry. */
       if ((lf_flags & F_POSIX) || signal
 	  || (fhdl && get_obj_handle_count (fhdl) <= 1))
 	{
 	  NTSTATUS status = NtSetEvent (lf_obj, NULL);
 	  if (!NT_SUCCESS (status))
 	    system_printf ("NtSetEvent, %y", status);
-	  /* For BSD locks, notify the parent process. */
-	  if (lf_flags & F_FLOCK)
+	  /* For OFD and BSD locks, notify the parent process. */
+	  if (lf_flags & (F_OFD | F_FLOCK))
 	    {
 	      HANDLE parent_proc, parent_thread;
 
@@ -947,21 +951,29 @@ fhandler_base::lock (int a_op, struct flock *fl)
   off_t start, end, oadd;
   int error = 0;
 
-  short a_flags = fl->l_type & (F_POSIX | F_FLOCK);
+  short a_flags = fl->l_type & (F_OFD | F_POSIX | F_FLOCK);
   short type = fl->l_type & (F_RDLCK | F_WRLCK | F_UNLCK);
 
   if (!a_flags)
-    a_flags = F_POSIX; /* default */
+    {
+      set_errno (EINVAL);
+      return -1;
+    }
 
   /* FIXME: For BSD flock(2) we need a valid, per file table entry OS handle.
      Therefore we can't allow using flock(2) on nohandle devices. */
-  if ((a_flags & F_FLOCK) && nohandle ())
+  if ((a_flags & (F_OFD | F_FLOCK)) && nohandle ())
     {
       set_errno (EINVAL);
-      debug_printf ("BSD locking on nohandle and old-style console devices "
-		    "not supported");
+      debug_printf ("OFD or BSD locking on nohandle and old-style console "
+		    "devices not supported");
       return -1;
     }
+
+  /* Simplify further checks. We don't need to differ the OPs, the semantics
+     are in fl->l_type anyway. */
+  if (a_op >= F_OFD_GETLK && a_op <= F_OFD_SETLKW)
+    a_op = a_op - (F_OFD_GETLK - F_GETLK);
 
   if (a_op == F_SETLKW)
     {
@@ -976,14 +988,14 @@ fhandler_base::lock (int a_op, struct flock *fl)
 	break;
       case F_RDLCK:
 	/* flock semantics don't specify a requirement that the file has
-	   been opened with a specific open mode, in contrast to POSIX locks
-	   which require that a file is opened for reading to place a read
-	   lock and opened for writing to place a write lock. */
+	   been opened with a specific open mode, in contrast to OFD and
+	   POSIX locks which require that a file is opened for reading to
+	   place a read lock and opened for writing to place a write lock. */
 	/* CV 2013-10-22: Test POSIX R/W mode flags rather than Windows R/W
 	   access flags.  The reason is that POSIX mode flags are set for
 	   all types of fhandlers, while Windows access flags are only set
 	   for most of the actual Windows device backed fhandlers. */
-	if ((a_flags & F_POSIX)
+	if ((a_flags & (F_OFD | F_POSIX))
 	    && ((get_flags () & O_ACCMODE) == O_WRONLY))
 	  {
 	    debug_printf ("request F_RDLCK on O_WRONLY file: EBADF");
@@ -993,7 +1005,7 @@ fhandler_base::lock (int a_op, struct flock *fl)
 	break;
       case F_WRLCK:
 	/* See above comment. */
-	if ((a_flags & F_POSIX)
+	if ((a_flags & (F_OFD | F_POSIX))
 	    && ((get_flags () & O_ACCMODE) == O_RDONLY))
 	  {
 	    debug_printf ("request F_WRLCK on O_RDONLY file: EBADF");
@@ -1132,8 +1144,8 @@ restart:	/* Entry point after a restartable signal came in. */
    * Create the lockf_t structure
    */
   lockf_t *lock = new lockf_t (node, head, a_flags, type, start, end,
-			       (a_flags & F_FLOCK) ? get_unique_id ()
-						   : getpid (),
+			       (a_flags & (F_OFD | F_FLOCK))
+			       ? get_unique_id () : getpid (),
 			       myself->dwProcessId, 0);
   if (!lock)
     {
@@ -1145,16 +1157,23 @@ restart:	/* Entry point after a restartable signal came in. */
   switch (a_op)
     {
     case F_SETLK:
+    case F_OFD_SETLK:
       error = lf_setlock (lock, node, &clean, get_handle ());
       break;
 
     case F_UNLCK:
+      /* lf_clearlock() is called from here as well as from lf_setlock().
+	 lf_setlock() already calls get_all_locks_list(), so we don't call it
+	 from lf_clearlock() but rather here to avoid calling the (potentially
+	 timeconsuming) function twice if called through lf_setlock(). */
+      node->get_all_locks_list ();
       error = lf_clearlock (lock, &clean, get_handle ());
       lock->lf_next = clean;
       clean = lock;
       break;
 
     case F_GETLK:
+    case F_OFD_GETLK:
       error = lf_getlock (lock, node, fl);
       lock->lf_next = clean;
       clean = lock;
@@ -1209,7 +1228,6 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
   lockf_t **head = lock->lf_head;
   lockf_t **prev, *overlap;
   int ovcase, priority, old_prio, needtolink;
-  tmp_pathbuf tp;
 
   /*
    * Set the priority
@@ -1220,8 +1238,6 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
   /*
    * Scan lock list for this file looking for locks that would block us.
    */
-  /* Create temporary space for the all locks list. */
-  node->i_all_lf = (lockf_t *) (void *) tp.w_get ();
   while ((block = lf_getblock(lock, node)))
     {
       HANDLE obj = block->lf_obj;
@@ -1252,9 +1268,10 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 		waiting for one of our locks.  This method isn't overly
 		intelligent.  If it turns out to be too dumb, we might
 		have to remove it or to find another method. */
-      if (lock->lf_flags & F_POSIX)
+      if (lock->lf_flags & (F_OFD | F_POSIX))
 	for (lockf_t *lk = node->i_lockf; lk; lk = lk->lf_next)
-	  if ((lk->lf_flags & F_POSIX) && get_obj_handle_count (lk->lf_obj) > 1)
+	  if ((lk->lf_flags & (F_OFD | F_POSIX))
+	      && get_obj_handle_count (lk->lf_obj) > 1)
 	    {
 	      NtClose (obj);
 	      return EDEADLK;
@@ -1272,6 +1289,10 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	  lock->lf_type = F_WRLCK;
 	}
 
+      /* Copy Windows PID to local var so we don't access the all locks
+	 list outside of locking. */
+      DWORD lf_wid = block->lf_wid;
+
       /*
        * Add our lock to the blocked list and sleep until we're free.
        * Remember who blocked us (for deadlock detection).
@@ -1288,7 +1309,7 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
       HANDLE proc = NULL;
       if (lock->lf_flags & F_POSIX)
 	{
-	  proc = OpenProcess (SYNCHRONIZE, FALSE, block->lf_wid);
+	  proc = OpenProcess (SYNCHRONIZE, FALSE, lf_wid);
 	  if (!proc)
 	    timeout = 0L;
 	  else
@@ -1533,9 +1554,6 @@ lf_clearlock (lockf_t *unlock, lockf_t **clean, HANDLE fhdl)
     return 0;
 
   inode_t *node = lf->lf_inode;
-  tmp_pathbuf tp;
-  node->i_all_lf = (lockf_t *) tp.w_get ();
-  node->get_all_locks_list (); /* Update lock count */
   uint32_t lock_cnt = node->get_lock_count ();
   bool first_loop = true;
 
@@ -1621,10 +1639,7 @@ static int
 lf_getlock (lockf_t *lock, inode_t *node, struct flock *fl)
 {
   lockf_t *block;
-  tmp_pathbuf tp;
 
-  /* Create temporary space for the all locks list. */
-  node->i_all_lf = (lockf_t *) (void * ) tp.w_get ();
   if ((block = lf_getblock (lock, node)))
     {
       if (block->lf_obj)
@@ -1706,11 +1721,16 @@ lf_findoverlap (lockf_t *lf, lockf_t *lock, int type, lockf_t ***prev,
   end = lock->lf_end;
   while (lf != NOLOCKF)
     {
-      if (((type & SELF) && lf->lf_id != lock->lf_id)
-	  || ((type & OTHERS) && lf->lf_id == lock->lf_id)
-	  /* As on Linux: POSIX locks and BSD flock locks don't interact. */
-	  || (lf->lf_flags & (F_POSIX | F_FLOCK))
-	     != (lock->lf_flags & (F_POSIX | F_FLOCK)))
+      /* As on Linux: POSIX/OFD locks and BSD flock locks don't interact. */
+      bool bsd_flock = (lf->lf_flags & F_FLOCK) != (lock->lf_flags & F_FLOCK);
+
+      /* We're "self" only if the semantics and the id matches.  OFD and POSIX
+         locks potentially block each other.  This is true even for OFD and
+	 POSIX locks created by the same process. */
+      bool self = ((lf->lf_flags & ~F_WAIT) == (lock->lf_flags & ~F_WAIT))
+		  && (lf->lf_id == lock->lf_id);
+
+      if (bsd_flock || ((type & SELF) && !self) || ((type & OTHERS) && self))
 	{
 	  *prev = &lf->lf_next;
 	  *overlap = lf = lf->lf_next;
@@ -1859,8 +1879,7 @@ flock (int fd, int operation)
 	  set_errno (EINVAL);
 	  __leave;
 	}
-      if (!cfd->mandatory_locking ())
-	fl.l_type |= F_FLOCK;
+      fl.l_type |= F_FLOCK;
       res = cfd->mandatory_locking () ? cfd->mand_lock (cmd, &fl)
 				      : cfd->lock (cmd, &fl);
       if ((res == -1) && ((get_errno () == EAGAIN) || (get_errno () == EACCES)))
@@ -1906,7 +1925,7 @@ lockf (int filedes, int function, off_t size)
 	  fl.l_type = F_WRLCK;
 	  break;
 	case F_TEST:
-	  fl.l_type = F_WRLCK;
+	  fl.l_type = F_POSIX | F_WRLCK;
 	  if (cfd->lock (F_GETLK, &fl) == -1)
 	    __leave;
 	  if (fl.l_type == F_UNLCK || fl.l_pid == getpid ())
@@ -1920,6 +1939,7 @@ lockf (int filedes, int function, off_t size)
 	  __leave;
 	  /* NOTREACHED */
 	}
+      fl.l_type |= F_POSIX;
       res = cfd->mandatory_locking () ? cfd->mand_lock (cmd, &fl)
 				      : cfd->lock (cmd, &fl);
     }
@@ -2022,6 +2042,8 @@ fhandler_disk_file::mand_lock (int a_op, struct flock *fl)
      the entire file, even when file grows later. */
   if (length.QuadPart == 0)
     length.QuadPart = UINT64_MAX;
+  /* Filter lock types */
+  fl->l_type &= (F_RDLCK | F_WRLCK | F_UNLCK);
   /* Action! */
   if (fl->l_type == F_UNLCK)
     {

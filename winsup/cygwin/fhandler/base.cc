@@ -474,6 +474,9 @@ fhandler_base::open_with_arch (int flags, mode_t mode)
       if (!open_setup (flags))
 	api_fatal ("open_setup failed, %E");
     }
+  /* For pty and console, PATH_OPEN flag has not been set in open().
+     So set it here unconditionally. */
+  pc.set_isopen ();
 
   close_on_exec (flags & O_CLOEXEC);
   /* A unique ID is necessary to recognize fhandler entries which are
@@ -526,8 +529,9 @@ fhandler_base::open (int flags, mode_t mode)
   ULONG file_attributes = 0;
   ULONG shared = (get_major () == DEV_TAPE_MAJOR ? 0 : FILE_SHARE_VALID_FLAGS);
   ULONG create_disposition;
+  FILE_BASIC_INFORMATION fbi;
   OBJECT_ATTRIBUTES attr;
-  IO_STATUS_BLOCK io;
+  IO_STATUS_BLOCK io, io_bi;
   NTSTATUS status;
   PFILE_FULL_EA_INFORMATION p = NULL;
   ULONG plen = 0;
@@ -719,16 +723,35 @@ fhandler_base::open (int flags, mode_t mode)
 	goto done;
    }
 
-  if (io.Information == FILE_CREATED)
+  if (get_device () == FH_FS && (flags & O_CREAT))
     {
-      /* Correct file attributes are needed for later use in, e.g. fchmod. */
-      FILE_BASIC_INFORMATION fbi;
+      /* Fix up file attributes if we just made an attempt to create the file.
 
-      if (!NT_SUCCESS (NtQueryInformationFile (fh, &io, &fbi, sizeof fbi,
+	 Originally we only did that in the FILE_CREATED case below, but that's
+	 insufficient:
+
+	 If two threads try to create the same file at the same time, it's
+	 possible that path_conv::check returns the file as non-existant, i. e.,
+	 pc.file_attributes () returns INVALID_FILE_ATTRIBUTES, 0xffffffff.
+	 However, one of the NtCreateFile will beat the other, so only one of
+	 them returns with FILE_CREATED.
+
+	 The other fhandler_base::open() will instead run into the O_TRUNC
+	 conditional (further below), blindly check for the SPARSE attribute
+	 and remove that bit.  The result is that the attributes will be
+	 0xfffffdff, i.e., everything but SPARSE.  Most annoying is that
+	 pc.isdir() will return TRUE.  Hilarity ensues.
+
+	 Note that we use a different IO_STATUS_BLOCK, so as not to overwrite
+	 io.Information... */
+      if (!NT_SUCCESS (NtQueryInformationFile (fh, &io_bi, &fbi, sizeof fbi,
 					       FileBasicInformation)))
 	fbi.FileAttributes = file_attributes | FILE_ATTRIBUTE_ARCHIVE;
       pc.file_attributes (fbi.FileAttributes);
+    }
 
+  if (io.Information == FILE_CREATED)
+    {
       /* Always create files using a NULL SD.  Create correct permission bits
 	 afterwards, maintaining the owner and group information just like
 	 chmod.  This is done for two reasons.
@@ -752,18 +775,17 @@ fhandler_base::open (int flags, mode_t mode)
 	set_created_file_access (fh, pc, mode);
     }
 
-  /* If you O_TRUNC a file on Linux, the data is truncated, but the EAs are
-     preserved.  If you open a file on Windows with FILE_OVERWRITE{_IF} or
-     FILE_SUPERSEDE, all streams are truncated, including the EAs.  So we don't
-     use the FILE_OVERWRITE{_IF} flags, but instead just open the file and set
-     the size of the data stream explicitely to 0.  Apart from being more Linux
-     compatible, this implementation has the pleasant side-effect to be more
-     than 5% faster than using FILE_OVERWRITE{_IF} (tested on W7 32 bit). */
   if ((flags & O_TRUNC)
       && (flags & O_ACCMODE) != O_RDONLY
       && io.Information != FILE_CREATED
       && get_device () == FH_FS)
     {
+      /* If you O_TRUNC a file on Linux, the data is truncated, but the EAs are
+	 preserved.  If you open a file on Windows with FILE_OVERWRITE{_IF} or
+	 FILE_SUPERSEDE, all streams are truncated, including the EAs.  So we
+	 don't use FILE_OVERWRITE{_IF} but just open the file and truncate the
+	 data stream to size 0.  Apart from being more Linux compatible, this
+	 has the pleasant side-effect to be more than 5% faster. */
       FILE_END_OF_FILE_INFORMATION feofi = { EndOfFile:{ QuadPart:0 } };
       status = NtSetInformationFile (fh, &io, &feofi, sizeof feofi,
 				     FileEndOfFileInformation);
@@ -1144,7 +1166,7 @@ fhandler_base::lseek (off_t offset, int whence)
 	    return -1;
 	  }
 	/* Per Linux man page, ENXIO if offset is beyond EOF */
-	if (offset > fsi.EndOfFile.QuadPart)
+	if (offset >= fsi.EndOfFile.QuadPart)
 	  {
 	    set_errno (ENXIO);
 	    return -1;
@@ -1255,7 +1277,7 @@ fhandler_base::pwrite (void *, size_t, off_t, void *)
 }
 
 int
-fhandler_base::close_with_arch ()
+fhandler_base::close_with_arch (int flag)
 {
   int res;
   fhandler_base *fh;
@@ -1285,7 +1307,7 @@ fhandler_base::close_with_arch ()
     }
 
   cleanup ();
-  res = fh->close ();
+  res = fh->close (flag);
   if (archetype)
     {
       cygheap->fdtab.delete_archetype (archetype);
@@ -1304,7 +1326,7 @@ fhandler_base::cleanup ()
 }
 
 int
-fhandler_base::close ()
+fhandler_base::close (int flag)
 {
   int res = -1;
 
@@ -1333,6 +1355,8 @@ fhandler_base::ioctl (unsigned int cmd, void *buf)
       break;
     case FIONREAD:
     case TIOCSCTTY:
+    case TIOCGWINSZ:
+    case TIOCSWINSZ:
       set_errno (ENOTTY);
       res = -1;
       break;
@@ -1395,7 +1419,7 @@ fhandler_base::fstatvfs (struct statvfs *sfs)
 }
 
 int
-fhandler_base::init (HANDLE f, DWORD a, mode_t bin)
+fhandler_base::init (HANDLE f, DWORD a, mode_t bin, int64_t dummy)
 {
   set_handle (f);
   access = a;
@@ -1475,7 +1499,19 @@ int fhandler_base::fcntl (int cmd, intptr_t arg)
 	{
 	  struct flock *fl = (struct flock *) arg;
 	  fl->l_type &= F_RDLCK | F_WRLCK | F_UNLCK;
+	  fl->l_type |= F_POSIX;
 	  res = mandatory_locking () ? mand_lock (cmd, fl) : lock (cmd, fl);
+	}
+      break;
+    case F_OFD_GETLK:
+    case F_OFD_SETLK:
+    case F_OFD_SETLKW:
+	{
+	  struct flock *fl = (struct flock *) arg;
+	  fl->l_type &= F_RDLCK | F_WRLCK | F_UNLCK;
+	  fl->l_type |= F_OFD;
+	  /* No mandatory locking support for OFD locks. */
+	  res = lock (cmd, fl);
 	}
       break;
     default:
@@ -1577,7 +1613,6 @@ fhandler_base::fhandler_base () :
   ra.raixget = 0;
   ra.raixput = 0;
   ra.rabuflen = 0;
-  isclosed (false);
 }
 
 /* Normal I/O destructor */

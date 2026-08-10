@@ -153,8 +153,7 @@ internal_getlogin (cygheap_user &user)
      and the primary group in the token. */
   pwd = internal_getpwsid (user.sid (), &cldap);
   pgrp = internal_getgrsid (user.groups.pgsid, &cldap);
-  if (!cygheap->pg.nss_cygserver_caching ())
-    internal_getgroups (0, NULL, &cldap);
+  internal_getgroups (0, NULL, &cldap);
   if (!pwd)
     debug_printf ("user not found in passwd DB");
   else
@@ -170,13 +169,17 @@ internal_getlogin (cygheap_user &user)
 	 group of a local user ("None", localized), we have to find the SID
 	 of that group and try to override the token primary group.  Also
 	 makes sure we're not on a domain controller, where account_sid ()
-	 == primary_sid (). */
+	 == primary_sid ().
+	 CV 2025-12-05: Microsoft Accounts as well as AzureAD accounts have
+	 the primary group SID in their user token set to their own user SID.
+	 Allow to override them as well. */
       gsid = cygheap->dom.account_sid ();
       gsid.append (DOMAIN_GROUP_RID_USERS);
       if (!pgrp
-	  || (myself->gid != pgrp->gr_gid
+	  || (pwd->pw_gid != pgrp->gr_gid
 	      && cygheap->dom.account_sid () != cygheap->dom.primary_sid ()
-	      && RtlEqualSid (gsid, user.groups.pgsid)))
+	      && (gsid == user.groups.pgsid
+		  || user.sid () == user.groups.pgsid)))
 	{
 	  if (gsid.getfromgr (grp = internal_getgrgid (pwd->pw_gid, &cldap)))
 	    {
@@ -209,7 +212,10 @@ internal_getlogin (cygheap_user &user)
 			myself->gid = pwd->pw_gid = pgrp->gr_gid;
 		    }
 		  else
-		    user.groups.pgsid = gsid;
+		    {
+		      user.groups.pgsid = gsid;
+		      myself->gid = pwd->pw_gid;
+		    }
 		  clear_procimptoken ();
 		}
 	    }
@@ -1983,6 +1989,23 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
       break;
     case SID_arg:
       sid = *arg.sid;
+
+      /* SIDs we want to filter out before hitting LookupAccountSidW.
+	 If the latency of the AD connection is high, LookupAccountSidW
+	 might take a long time before returning with ERROR_NONE_MAPPED. */
+
+      /* Capability SIDs, just drop out, we don't handle them */
+      if (sid_id_auth (sid) == 15 /* SECURITY_APP_PACKAGE_AUTHORITY */
+	  && sid_sub_auth (sid, 0) == SECURITY_CAPABILITY_BASE_RID)
+	return NULL;
+      /* IIS APPPOOL */
+      if (sid_id_auth (sid) == 5 /* SECURITY_NT_AUTHORITY */
+	  && sid_sub_auth (sid, 0) == SECURITY_APPPOOL_ID_BASE_RID)
+	break;
+      /* Samba user/group SIDs */
+      if (sid_id_auth (sid) == 22)
+	break;
+
       ret = LookupAccountSidW (NULL, sid, name, &nlen, dom, &dlen, &acc_type);
       if (!ret
 	  && cygheap->dom.member_machine ()
@@ -2539,7 +2562,11 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
 	      if (pgrp)
 		{
 		  /* Set primary group from the "Description" field.  Prepend
-		     account domain if this is a domain member machine. */
+		     account domain if this is a domain member machine.  Do
+		     this first, to find a local group even if a domain
+		     group with this name exists.  Only if that doesn't
+		     result in a valid group, try the group name without prefix
+		     to catch builtin and alias groups. */
 		  char gname[2 * DNLEN + strlen (pgrp) + 1], *gp = gname;
 		  struct group *gr;
 
@@ -2551,7 +2578,9 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
 		      *gp++ = NSS_SEPARATOR_CHAR;
 		    }
 		  stpcpy (gp, pgrp);
-		  if ((gr = internal_getgrnam (gname, cldap)))
+		  if ((gr = internal_getgrnam (gname, cldap)) ||
+		      (cygheap->dom.member_machine ()
+		       && (gr = internal_getgrnam (pgrp, cldap))))
 		    gid = gr->gr_gid;
 		}
 	      char *e;

@@ -31,7 +31,10 @@ STATUS_PIPE_EMPTY simply means there's no data to be read. */
 		   || _s == STATUS_PIPE_EMPTY; })
 
 fhandler_pipe_fifo::fhandler_pipe_fifo ()
-  : fhandler_base (), pipe_buf_size (DEFAULT_PIPEBUFSIZE), pipe_mtx (NULL)
+  : fhandler_base (),
+    status (),
+    pipe_buf_size (DEFAULT_PIPEBUFSIZE),
+    pipe_mtx (NULL)
 {
 }
 
@@ -323,7 +326,6 @@ fhandler_pipe::raw_read (void *ptr, size_t& len)
       ULONG_PTR nbytes_now = 0;
       ULONG len1 = (ULONG) (len - nbytes);
       DWORD select_sem_timeout = 0;
-      bool real_non_blocking_mode = false;
 
       FILE_PIPE_LOCAL_INFORMATION fpli;
       status = NtQueryInformationFile (get_handle (), &io,
@@ -390,7 +392,10 @@ fhandler_pipe::raw_read (void *ptr, size_t& len)
       status = NtReadFile (get_handle (), NULL, NULL, NULL, &io, ptr,
 			   len1, NULL, NULL);
       if (real_non_blocking_mode)
-	set_pipe_non_blocking (false);
+	{
+	  set_pipe_non_blocking (false);
+	  real_non_blocking_mode = false;
+	}
       if (isclosed ())  /* A signal handler might have closed the fd. */
 	{
 	  set_errno (EBADF);
@@ -440,7 +445,6 @@ ssize_t
 fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 {
   size_t nbytes = 0;
-  ULONG chunk;
   NTSTATUS status = STATUS_SUCCESS;
   IO_STATUS_BLOCK io;
   HANDLE evt;
@@ -450,7 +454,11 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
     return 0;
 
   ssize_t avail = pipe_buf_size;
-  bool real_non_blocking_mode = false;
+
+  /* Workaround for native ninja. Native ninja creates pipe with size == 0,
+     and starts cygwin process with that pipe. */
+  if (avail == 0)
+    avail = PIPE_BUF;
 
   if (pipe_mtx) /* pipe_mtx is NULL in the fifo case */
     {
@@ -483,14 +491,14 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 				       FilePipeLocalInformation);
       if (NT_SUCCESS (status))
 	{
-	  if (fpli.WriteQuotaAvailable != 0)
+	  if (fpli.WriteQuotaAvailable == fpli.InboundQuota)
 	    avail = fpli.WriteQuotaAvailable;
-	  else /* WriteQuotaAvailable == 0 */
+	  else /* WriteQuotaAvailable != InboundQuota */
 	    { /* Refer to the comment in select.cc: pipe_data_available(). */
 	      /* NtSetInformationFile() in set_pipe_non_blocking(true) seems
 		 to fail with STATUS_PIPE_BUSY if the pipe is not empty.
-		 In this case, the pipe is really full if WriteQuotaAvailable
-		 is zero. Otherwise, the pipe is empty. */
+		 In this case, WriteQuotaAvailable indicates real pipe space.
+		 Otherwise, the pipe is empty. */
 	      status = fh->set_pipe_non_blocking (true);
 	      if (NT_SUCCESS (status))
 		/* Pipe should be empty because reader is waiting for data. */
@@ -498,9 +506,14 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 		fh->set_pipe_non_blocking (false);
 	      else if (status == STATUS_PIPE_BUSY)
 		{
-		  /* Full */
-		  set_errno (EAGAIN);
-		  goto err;
+		  if (fpli.WriteQuotaAvailable == 0)
+		    {
+		      /* Full */
+		      set_errno (EAGAIN);
+		      goto err;
+		    }
+		  avail = fpli.WriteQuotaAvailable;
+		  status = STATUS_SUCCESS;
 		}
 	    }
 	}
@@ -532,11 +545,6 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 	}
     }
 
-  if (len <= (size_t) avail)
-    chunk = len;
-  else
-    chunk = avail;
-
   if (!(evt = CreateEvent (NULL, false, false, NULL)))
     {
       __seterrno ();
@@ -553,8 +561,8 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
       ULONG len1;
       DWORD waitret = WAIT_OBJECT_0;
 
-      if (left > chunk && !is_nonblocking ())
-	len1 = chunk;
+      if (left > (size_t) avail && !is_nonblocking ())
+	len1 = (ULONG) avail;
       else
 	len1 = (ULONG) left;
 
@@ -587,14 +595,23 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 	  else
 	    status = NtWriteFile (get_handle (), evt, NULL, NULL, &io,
 				  (PVOID) ptr, len1, NULL, NULL);
+	  bool signalled = false;
+	  bool saw_select_sem = false;
 	  if (status == STATUS_PENDING)
 	    {
 	      do
 		{
 		  waitret = cygwait (evt, (DWORD) 0);
-		  /* Break out if no SA_RESTART. */
-		  if (waitret == WAIT_SIGNALED)
+		  if (signalled && !saw_select_sem
+		      && WAIT_OBJECT_0 == cygwait (pipe_mtx, (DWORD) 0))
 		    break;
+		  /* Break out if no SA_RESTART. But not now. After waiting
+		     for completion of NtWriteFile() for a while. */
+		  if (waitret == WAIT_SIGNALED)
+		    {
+		      signalled = true;
+		      saw_select_sem = false;
+		    }
 		  /* Break out on completion */
 		  if (waitret == WAIT_OBJECT_0)
 		    break;
@@ -605,17 +622,19 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 		      waitret = WAIT_SIGNALED;
 		      break;
 		    }
-		  cygwait (select_sem, 10, cw_cancel);
+		  if (WAIT_OBJECT_0 == cygwait (select_sem, 10, cw_cancel))
+		    saw_select_sem = true;
 		}
-	      while (waitret == WAIT_TIMEOUT);
+	      while (waitret == WAIT_TIMEOUT || waitret == WAIT_SIGNALED);
 	      /* If io.Status is STATUS_CANCELLED after CancelIo, IO has
 		 actually been cancelled and io.Information contains the
 		 number of bytes processed so far.
 		 Otherwise IO has been finished regulary and io.Status
 		 contains valid success or error information. */
 	      CancelIo (get_handle ());
-	      if (waitret == WAIT_SIGNALED && io.Status != STATUS_CANCELLED)
-		waitret = WAIT_OBJECT_0;
+	      ReleaseMutex (pipe_mtx);
+	      if (signalled)
+		waitret = WAIT_SIGNALED;
 
 	      if (waitret == WAIT_CANCELED)
 		status = STATUS_THREAD_CANCELED;
@@ -626,14 +645,12 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 	      else
 		status = io.Status;
 	    }
-	  if (status != STATUS_THREAD_SIGNALED && !NT_SUCCESS (status))
+	  if (!NT_SUCCESS (status))
 	    break;
 	  if (io.Information > 0 || len <= PIPE_BUF || short_write_once)
 	    break;
 	  /* Independent of being blocking or non-blocking, if we're here,
-	     the pipe has less space than requested.  If the pipe is a
-	     non-Cygwin pipe, just try the old strategy of trying a half
-	     write.  If the pipe has at
+	     the pipe has less space than requested.  If the pipe has at
 	     least PIPE_BUF bytes available, try to write all matching
 	     PIPE_BUF sized blocks.  If it's less than PIPE_BUF,  try
 	     the next less power of 2 bytes.  This is not really the Linux
@@ -641,12 +658,13 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
 	     in a very implementation-defined way we can't emulate, but it
 	     resembles it closely enough to get useful results. */
 	  avail = pipe_data_available (-1, this, get_handle (), PDA_WRITE);
-	  if (avail < 1)	/* error or pipe closed */
+	  if (avail == PDA_UNKNOWN && real_non_blocking_mode)
+	    avail = len1;
+	  else if (avail == 0 || !PDA_NOERROR (avail))
+	    /* error or pipe closed */
 	    break;
 	  if (avail > len1)	/* somebody read from the pipe */
 	    avail = len1;
-	  if (avail == 1)	/* 1 byte left or non-Cygwin pipe */
-	    len1 >>= 1;
 	  else if (avail >= PIPE_BUF)
 	    len1 = avail & ~(PIPE_BUF - 1);
 	  else
@@ -681,12 +699,16 @@ fhandler_pipe_fifo::raw_write (const void *ptr, size_t len)
       else
 	__seterrno_from_nt_status (status);
 
-      if (nbytes_now == 0 || short_write_once)
+      if (nbytes_now == 0 || short_write_once
+	  || status == STATUS_THREAD_SIGNALED)
 	break;
     }
 
   if (real_non_blocking_mode)
-    ((fhandler_pipe *) this)->set_pipe_non_blocking (false);
+    {
+      ((fhandler_pipe *) this)->set_pipe_non_blocking (false);
+      real_non_blocking_mode = false;
+    }
 
   CloseHandle (evt);
   if (pipe_mtx) /* pipe_mtx is NULL in the fifo case */
@@ -756,8 +778,9 @@ fhandler_pipe::dup (fhandler_base *child, int flags)
 }
 
 int
-fhandler_pipe::close ()
+fhandler_pipe::close (int flag)
 {
+  isclosed (true);
   if (select_sem)
     {
       release_select_sem ("close");
@@ -941,8 +964,8 @@ is_running_as_service (void)
    simplicity, nt_create will omit the 'open_mode' and 'name'
    parameters, which aren't needed for our purposes.  */
 
-static int nt_create (LPSECURITY_ATTRIBUTES, HANDLE &, HANDLE &, DWORD,
-		      int64_t *);
+static NTSTATUS nt_create (LPSECURITY_ATTRIBUTES, HANDLE &, HANDLE &, DWORD,
+			   int64_t *);
 
 int
 fhandler_pipe::create (fhandler_pipe *fhs[2], unsigned psize, int mode)
@@ -952,10 +975,10 @@ fhandler_pipe::create (fhandler_pipe *fhs[2], unsigned psize, int mode)
   int res = -1;
   int64_t unique_id = 0; /* Compiler complains if not initialized... */
 
-  int ret = nt_create (sa, r, w, psize, &unique_id);
-  if (ret)
+  NTSTATUS status = nt_create (sa, r, w, psize, &unique_id);
+  if (!NT_SUCCESS (status))
     {
-      __seterrno_from_win_error (ret);
+      __seterrno_from_nt_status (status);
       goto out;
     }
   if ((fhs[0] = (fhandler_pipe *) build_fh_dev (*piper_dev)) == NULL)
@@ -1006,9 +1029,9 @@ out:
   return res;
 }
 
-static int
-nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
-		DWORD psize, int64_t *unique_id)
+static NTSTATUS
+nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w, DWORD psize,
+	   int64_t *unique_id)
 {
   NTSTATUS status;
   HANDLE npfsh;
@@ -1023,10 +1046,7 @@ nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
 
   status = fhandler_base::npfs_handle (npfsh);
   if (!NT_SUCCESS (status))
-    {
-      __seterrno_from_nt_status (status);
-      return GetLastError ();
-    }
+    return status;
 
   /* Ensure that there is enough pipe buffer space for atomic writes.  */
   if (!psize)
@@ -1041,12 +1061,12 @@ nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
   access = GENERIC_READ | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
 
   ULONG pipe_type = pipe_byte ? FILE_PIPE_BYTE_STREAM_TYPE
-    : FILE_PIPE_MESSAGE_TYPE;
+			      : FILE_PIPE_MESSAGE_TYPE;
 
   /* Retry NtCreateNamedPipeFile as long as the pipe name is in use.
      Retrying will probably never be necessary, but we want
      to be as robust as possible.  */
-  DWORD err = 0;
+  NTSTATUS err = STATUS_SUCCESS;
   while (!r)
     {
       static volatile ULONG pipe_unique_id;
@@ -1078,7 +1098,7 @@ nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
       if (NT_SUCCESS (status))
 	{
 	  debug_printf ("pipe read handle %p", r);
-	  err = 0;
+	  err = STATUS_SUCCESS;
 	  break;
 	}
 
@@ -1100,9 +1120,8 @@ nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
 	  break;
 	default:
 	  {
-	    __seterrno_from_nt_status (status);
-	    err = GetLastError ();
-	    debug_printf ("failed, %E");
+	    err = status;
+	    debug_printf ("NtCreateNamedPipeFile failed: %y", err);
 	    r = NULL;
 	  }
 	}
@@ -1120,16 +1139,14 @@ nt_create (LPSECURITY_ATTRIBUTES sa_ptr, HANDLE &r, HANDLE &w,
   status = NtOpenFile (&w, access, &attr, &io, 0, 0);
   if (!NT_SUCCESS (status))
     {
-      DWORD err = GetLastError ();
-      debug_printf ("NtOpenFile failed, r %p, %E", r);
+      debug_printf ("NtOpenFile failed, r %p: %y", r, status);
       if (r)
 	NtClose (r);
       w = NULL;
-      return err;
+      return status;
     }
 
-  /* Success. */
-  return 0;
+  return STATUS_SUCCESS;
 }
 
 /* Called by dtable::init_std_file_from_handle for stdio handles

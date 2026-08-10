@@ -147,7 +147,7 @@ tty_list::allocate (HANDLE& r, HANDLE& w)
     termios_printf ("pty%d allocated", freetty);
   else
     {
-      system_printf ("No pty allocated");
+      termios_printf ("No pty allocated");
       r = w = NULL;
     }
 
@@ -253,7 +253,6 @@ tty::init ()
   req_xfer_input = false;
   pty_input_state = to_cyg;
   last_sig = 0;
-  mask_flusho = false;
   discard_input = false;
   stop_fwd_thread = false;
 }

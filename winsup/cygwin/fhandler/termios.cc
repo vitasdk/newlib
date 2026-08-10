@@ -491,16 +491,16 @@ fhandler_termios::process_stop_start (char c, tty *ttyp)
     {
       if (CCEQ (ti.c_cc[VSTOP], c))
 	{
-	  ttyp->output_stopped = true;
+	  ttyp->output_stopped |= BY_VSTOP;
 	  return true;
 	}
       else if (CCEQ (ti.c_cc[VSTART], c))
 	{
 restart_output:
-	  ttyp->output_stopped = false;
+	  ttyp->output_stopped &= ~BY_VSTOP;
 	  return true;
 	}
-      else if ((ti.c_iflag & IXANY) && ttyp->output_stopped)
+      else if ((ti.c_iflag & IXANY) && (ttyp->output_stopped & BY_VSTOP))
 	goto restart_output;
     }
   if ((ti.c_lflag & ICANON) && (ti.c_lflag & IEXTEN)
@@ -540,7 +540,7 @@ fhandler_termios::line_edit (const char *rptr, size_t nread, termios& ti,
 	  fallthrough;
 	case not_signalled_but_done:
 	case done_with_debugger:
-	  get_ttyp ()->output_stopped = false;
+	  get_ttyp ()->output_stopped &= ~BY_VSTOP;
 	  continue;
 	case not_signalled_with_nat_reader:
 	  disable_eof_key = true;
@@ -702,28 +702,47 @@ fhandler_termios::fstat (struct stat *buf)
 }
 
 static bool
-is_console_app (const WCHAR *filename)
+is_console_app (path_conv &pc)
 {
+  tmp_pathbuf tp;
+  WCHAR *native_path = tp.w_get ();
+  pc.get_wide_win32_path (native_path);
+
+  wchar_t *e = wcsrchr (native_path, L'.');
+  if (e && (wcscasecmp (e, L".bat") == 0 || wcscasecmp (e, L".cmd") == 0))
+    return true;
+
+  if (pc.is_app_execution_alias ())
+    {
+      UNICODE_STRING upath;
+      RtlInitUnicodeString (&upath, native_path);
+      path_conv target (&upath, PC_SYM_FOLLOW);
+      target.get_wide_win32_path (native_path);
+    }
+
   HANDLE h;
-  h = CreateFileW (filename, GENERIC_READ, FILE_SHARE_READ,
+  h = CreateFileW (native_path, GENERIC_READ, FILE_SHARE_READ,
 		   NULL, OPEN_EXISTING, 0, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return true;
   char buf[1024];
   DWORD n;
-  ReadFile (h, buf, sizeof (buf), &n, 0);
+  BOOL res = ReadFile (h, buf, sizeof (buf), &n, 0);
   CloseHandle (h);
+  if (!res)
+    return true;
   /* The offset of Subsystem is the same for both IMAGE_NT_HEADERS32 and
      IMAGE_NT_HEADERS64, so only IMAGE_NT_HEADERS32 is used here. */
   IMAGE_NT_HEADERS32 *p = (IMAGE_NT_HEADERS32 *) memmem (buf, n, "PE\0\0", 4);
   if (p && (char *) &p->OptionalHeader.DllCharacteristics <= buf + n)
     return p->OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI;
-  wchar_t *e = wcsrchr (filename, L'.');
-  if (e && (wcscasecmp (e, L".bat") == 0 || wcscasecmp (e, L".cmd") == 0))
-    return true;
-  return false;
+  /* Return true for unknown to avoid standard handles from being unset.
+     Setting-up standard handles for GUI apps is pointless, but not unsafe. */
+  return true;
 }
 
 int
-fhandler_termios::ioctl (int cmd, void *varg)
+fhandler_termios::ioctl (unsigned int cmd, void *varg)
 {
   if (cmd != TIOCSCTTY)
     return 1;		/* Not handled by this function */
@@ -755,7 +774,7 @@ fhandler_termios::ioctl (int cmd, void *varg)
 
 void
 fhandler_termios::spawn_worker::setup (bool iscygwin, HANDLE h_stdin,
-				       const WCHAR *runpath, bool nopcon,
+				       path_conv &pc, bool nopcon,
 				       bool reset_sendsig,
 				       const WCHAR *envblock)
 {
@@ -794,7 +813,7 @@ fhandler_termios::spawn_worker::setup (bool iscygwin, HANDLE h_stdin,
 	    ptys->setup_locale ();
 	  }
     }
-  if (!iscygwin && ptys_primary && is_console_app (runpath))
+  if (!iscygwin && ptys_primary && is_console_app (pc))
     {
       if (h_stdin == ptys_primary->get_handle_nat ())
 	stdin_is_ptys = true;
@@ -914,4 +933,27 @@ fhandler_termios::get_console_process_id (DWORD pid, bool match,
 	  }
       }
   return res_pri ?: res;
+}
+
+int
+fhandler_termios::tcflow (int action)
+{
+  switch (action)
+    {
+    case TCOOFF:
+      get_ttyp ()->output_stopped |= BY_TCFLOW;
+      return 0;
+    case TCOON:
+      get_ttyp ()->output_stopped = 0;
+      return 0;
+    case TCIOFF:
+      get_ttyp ()->input_stopped |= BY_TCFLOW;
+      return 0;
+    case TCION:
+      get_ttyp ()->input_stopped = 0;
+      return 0;
+    default:
+      set_errno (EINVAL);
+      return -1;
+    }
 }

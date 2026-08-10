@@ -21,7 +21,12 @@
 #define u_long __ms_u_long
 #include "ntsecapi.h"
 #include <w32api/ws2tcpip.h>
+/* 2025-06-09: win32api headers v13 now define a cmsghdr type which clashes with
+   our socket.h. Arrange not to see it here. */
+#undef cmsghdr
+#define cmsghdr __ms_cmsghdr
 #include <w32api/mswsock.h>
+#undef cmsghdr
 #include <unistd.h>
 #include <asm/byteorder.h>
 #include <sys/socket.h>
@@ -87,6 +92,8 @@ get_inet_addr_local (const struct sockaddr *in, int inlen,
       addr.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
       *outlen = sizeof addr;
       memcpy (out, &addr, *outlen);
+      if (type)
+	*type = SOCK_DGRAM;
       return 0;
     }
 
@@ -649,7 +656,7 @@ fhandler_socket_local::open (int flags, mode_t mode)
 }
 
 int
-fhandler_socket_local::close ()
+fhandler_socket_local::close (int flag)
 {
   if (get_flags () & O_PATH)
     return fhandler_base::close ();

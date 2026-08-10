@@ -35,7 +35,7 @@ static mini_cygheap NO_COPY cygheap_dummy =
 init_cygheap NO_COPY *cygheap = (init_cygheap *) &cygheap_dummy;
 void NO_COPY *cygheap_max;
 
-static NO_COPY SRWLOCK cygheap_protect = SRWLOCK_INIT;
+SRWLOCK NO_COPY init_cygheap::cygheap_protect = SRWLOCK_INIT;
 
 struct cygheap_entry
 {
@@ -367,7 +367,7 @@ _cmalloc (unsigned size)
   if (b >= NBUCKETS)
     return NULL;
 
-  AcquireSRWLockExclusive (&cygheap_protect);
+  cygheap->lock ();
   if (cygheap->buckets[b])
     {
       rvc = (_cmalloc_entry *) cygheap->buckets[b];
@@ -379,7 +379,7 @@ _cmalloc (unsigned size)
       rvc = (_cmalloc_entry *) _csbrk (bucket_val[b] + sizeof (_cmalloc_entry));
       if (!rvc)
 	{
-	  ReleaseSRWLockExclusive (&cygheap_protect);
+	  cygheap->unlock ();
 	  return NULL;
 	}
 
@@ -387,19 +387,19 @@ _cmalloc (unsigned size)
       rvc->prev = cygheap->chain;
       cygheap->chain = rvc;
     }
-  ReleaseSRWLockExclusive (&cygheap_protect);
+  cygheap->unlock ();
   return rvc->data;
 }
 
 static void
 _cfree (void *ptr)
 {
-  AcquireSRWLockExclusive (&cygheap_protect);
+  cygheap->lock ();
   _cmalloc_entry *rvc = to_cmalloc (ptr);
   unsigned b = rvc->b;
   rvc->ptr = cygheap->buckets[b];
   cygheap->buckets[b] = (char *) rvc;
-  ReleaseSRWLockExclusive (&cygheap_protect);
+  cygheap->unlock ();
 }
 
 static void *
@@ -743,6 +743,7 @@ init_cygheap::find_tls (int sig, bool& issig_wait)
   while (++ix < (int) nthreads)
     {
       /* Only pthreads have tid set to non-0. */
+      threadlist[ix].thread->lock ();
       if (!threadlist[ix].thread->tid
 	  || !threadlist[ix].thread->initialized)
 	;
@@ -752,13 +753,21 @@ init_cygheap::find_tls (int sig, bool& issig_wait)
 	  issig_wait = true;
 	  break;
 	}
-      else if (!t && !sigismember (&(threadlist[ix].thread->sigmask), sig))
+      else if (!t && !sigismember (&(threadlist[ix].thread->sigmask), sig)
+	       && !sigismember (&(threadlist[ix].thread->deltamask), sig))
+	{
 	  t = &cygheap->threadlist[ix];
+	  break;
+	}
+      threadlist[ix].thread->unlock ();
     }
   /* Leave with locked mutex.  The calling function is responsible for
      unlocking the mutex. */
   if (t)
-    WaitForSingleObject (t->mutex, INFINITE);
+    {
+      threadlist[ix].thread->unlock ();
+      WaitForSingleObject (t->mutex, INFINITE);
+    }
   return t;
 }
 

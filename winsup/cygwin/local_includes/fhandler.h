@@ -179,14 +179,13 @@ class fhandler_base
 					read or write access */
     unsigned close_on_exec      : 1; /* close-on-exec */
     unsigned need_fork_fixup    : 1; /* Set if need to fixup after fork. */
-    unsigned isclosed		: 1; /* Set when fhandler is closed. */
     unsigned mandatory_locking	: 1; /* Windows mandatory locking */
 
    public:
     status_flags () :
       rbinary (0), rbinset (0), wbinary (0), wbinset (0), nohandle (0),
       did_lseek (0), query_open (no_query), close_on_exec (0),
-      need_fork_fixup (0), isclosed (0), mandatory_locking (0)
+      need_fork_fixup (0), mandatory_locking (0)
       {}
   } status, open_status;
 
@@ -290,7 +289,6 @@ class fhandler_base
   IMPLEMENT_STATUS_FLAG (query_state, query_open)
   IMPLEMENT_STATUS_FLAG (bool, close_on_exec)
   IMPLEMENT_STATUS_FLAG (bool, need_fork_fixup)
-  IMPLEMENT_STATUS_FLAG (bool, isclosed)
   IMPLEMENT_STATUS_FLAG (bool, mandatory_locking)
 
   int get_default_fmode (int flags);
@@ -366,8 +364,8 @@ class fhandler_base
   void set_unique_id (int64_t u) { unique_id = u; }
   void set_unique_id () { NtAllocateLocallyUniqueId ((PLUID) &unique_id); }
 
-  int close_with_arch ();
-  virtual int close ();
+  int close_with_arch (int flag = -1);
+  virtual int close (int flag = -1);
   virtual void cleanup ();
   int _archetype_usecount (const char *fn, int ln, int n)
   {
@@ -435,7 +433,7 @@ public:
 
   void *operator new (size_t, void *p) __attribute__ ((nothrow)) {return p;}
 
-  virtual int init (HANDLE, DWORD, mode_t);
+  virtual int init (HANDLE, DWORD, mode_t, int64_t = 0);
 
   virtual int tcflush (int);
   virtual int tcsendbreak (int);
@@ -604,7 +602,7 @@ class fhandler_socket: public fhandler_base
   virtual int getsockname (struct sockaddr *name, int *namelen) = 0;
   virtual int getpeername (struct sockaddr *name, int *namelen) = 0;
   virtual int shutdown (int how) = 0;
-  virtual int close () = 0;
+  virtual int close (int flag = -1) = 0;
   virtual int getpeereid (pid_t *pid, uid_t *euid, gid_t *egid);
   virtual ssize_t recvfrom (void *ptr, size_t len, int flags,
 			    struct sockaddr *from, int *fromlen) = 0;
@@ -642,7 +640,7 @@ class fhandler_socket: public fhandler_base
   void set_addr_family (int af) {addr_family = af;}
   int get_addr_family () {return addr_family;}
   virtual void set_socket_type (int st) { type = st;}
-  virtual int get_socket_type () {return type;}
+  virtual int get_socket_type () const {return type;}
 
   /* select.cc */
   virtual select_record *select_read (select_stuff *) = 0;
@@ -733,7 +731,7 @@ class fhandler_socket_wsock: public fhandler_socket
   ssize_t write (const void *ptr, size_t len);
   ssize_t writev (const struct iovec *, int iovcnt, ssize_t tot = -1);
   int shutdown (int how);
-  int close ();
+  int close (int flag = -1);
 
   int ioctl (unsigned int cmd, void *);
   int fcntl (int cmd, intptr_t);
@@ -871,7 +869,7 @@ class fhandler_socket_local: public fhandler_socket_wsock
 		  __socklen_t *optlen);
 
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   int fcntl (int cmd, intptr_t);
   int fstat (struct stat *buf);
   int fstatvfs (struct statvfs *buf);
@@ -1134,7 +1132,7 @@ class fhandler_socket_unix : public fhandler_socket
   int getpeername (struct sockaddr *name, int *namelen);
   int shutdown (int how);
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   int getpeereid (pid_t *pid, uid_t *euid, gid_t *egid);
   ssize_t recvmsg (struct msghdr *msg, int flags);
   ssize_t recvfrom (void *ptr, size_t len, int flags,
@@ -1195,16 +1193,28 @@ class fhandler_socket_unix : public fhandler_socket
 /* A parent of fhandler_pipe and fhandler_fifo. */
 class fhandler_pipe_fifo: public fhandler_base
 {
+  struct status_flags
+  {
+    unsigned isclosed		: 1; /* Set when pipe/FIFO fhandler is closed. */
+   public:
+    status_flags () : isclosed (0) {}
+  } status;
+
  protected:
   size_t pipe_buf_size;
   HANDLE pipe_mtx; /* Used only in the pipe case */
+  bool real_non_blocking_mode; /* Used only in the pipe case */
   virtual void release_select_sem (const char *) {};
+
+  IMPLEMENT_STATUS_FLAG (bool, isclosed)
 
  public:
   fhandler_pipe_fifo ();
 
   virtual bool reader_closed () { return false; };
   ssize_t raw_write (const void *ptr, size_t len);
+
+  friend ssize_t pipe_data_available (int, fhandler_base *, HANDLE, int);
 };
 
 class fhandler_pipe: public fhandler_pipe_fifo
@@ -1230,14 +1240,14 @@ public:
   void fixup_after_fork (HANDLE);
   int dup (fhandler_base *child, int);
   void set_close_on_exec (bool val);
-  int close ();
+  int close (int flag = -1);
   void raw_read (void *ptr, size_t& len);
   int ioctl (unsigned int cmd, void *);
   int fstat (struct stat *buf);
   int fstatvfs (struct statvfs *buf);
   int fadvise (off_t, off_t, int);
   int fallocate (int, off_t, off_t);
-  int init (HANDLE, DWORD, mode_t, int64_t);
+  int init (HANDLE, DWORD, mode_t, int64_t = 0);
   static int create (fhandler_pipe *[2], unsigned, int);
   static DWORD create (LPSECURITY_ATTRIBUTES, HANDLE *, HANDLE *, DWORD,
 		       const char *, DWORD, int64_t *unique_id = NULL);
@@ -1279,7 +1289,7 @@ struct fifo_client_handler
   fifo_client_connect_state _state;
   bool last_read;  /* true if our last successful read was from this client. */
   fifo_client_handler () : h (NULL), _state (fc_unknown), last_read (false) {}
-  void close () { NtClose (h); }
+  void close (int flag = -1) { NtClose (h); }
   fifo_client_connect_state get_state () const { return _state; }
   void set_state (fifo_client_connect_state s) { _state = s; }
   /* Query O/S.  Return previous state. */
@@ -1470,10 +1480,10 @@ public:
       cfree (pipe_name_buf);
   }
   /* Called if we appear to be at EOF after polling fc_handlers. */
-  bool hit_eof () const
+  bool hit_eof ()
   { return !nwriters () && !IsEventSignalled (writer_opening); }
   /* Special EOF test needed by select.cc:peek_fifo(). */
-  bool select_hit_eof () const { return hit_eof () && writer_opened (); }
+  bool select_hit_eof () { return hit_eof () && writer_opened (); }
   int get_nhandlers () const { return nhandlers; }
   fifo_client_handler &get_fc_handler (int i) { return fc_handler[i]; }
   PUNICODE_STRING get_pipe_name ();
@@ -1489,7 +1499,7 @@ public:
 
   int open (int, mode_t);
   off_t lseek (off_t offset, int whence);
-  int close ();
+  int close (int flag = -1);
   int fcntl (int cmd, intptr_t);
   int dup (fhandler_base *child, int);
   bool isfifo () const { return true; }
@@ -1607,7 +1617,7 @@ class fhandler_dev_floppy: public fhandler_dev_raw
   fhandler_dev_floppy ();
 
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   int dup (fhandler_base *child, int);
   void raw_read (void *ptr, size_t& ulen);
   ssize_t raw_write (const void *ptr, size_t ulen);
@@ -1648,7 +1658,7 @@ class fhandler_dev_tape: public fhandler_dev_raw
   fhandler_dev_tape ();
 
   int open (int flags, mode_t mode = 0);
-  virtual int close ();
+  virtual int close (int flag = -1);
 
   void raw_read (void *ptr, size_t& ulen);
   ssize_t raw_write (const void *ptr, size_t ulen);
@@ -1692,16 +1702,16 @@ class fhandler_disk_file: public fhandler_base
   uint64_t fs_ioc_getflags ();
   int fs_ioc_setflags (uint64_t);
 
-  falloc_allocate (int, off_t, off_t);
-  falloc_punch_hole (off_t, off_t);
-  falloc_zero_range (int, off_t, off_t);
+  int falloc_allocate (int, off_t, off_t);
+  int falloc_punch_hole (off_t, off_t);
+  int falloc_zero_range (int, off_t, off_t);
 
  public:
   fhandler_disk_file ();
   fhandler_disk_file (path_conv &pc);
 
   int open (int flags, mode_t mode);
-  int close ();
+  int close (int flag = -1);
   int fcntl (int cmd, intptr_t);
   int dup (fhandler_base *child, int);
   void fixup_after_fork (HANDLE parent);
@@ -1765,7 +1775,7 @@ class fhandler_dev: public fhandler_disk_file
 public:
   fhandler_dev ();
   int open (int flags, mode_t mode);
-  int close ();
+  int close (int flag = -1);
   int fstat (struct stat *buf);
   int fstatvfs (struct statvfs *buf);
   int rmdir ();
@@ -1838,7 +1848,7 @@ class fhandler_serial: public fhandler_base
   fhandler_serial ();
 
   int open (int flags, mode_t mode);
-  int init (HANDLE h, DWORD a, mode_t flags);
+  int init (HANDLE h, DWORD a, mode_t flags, int64_t = 0);
   void raw_read (void *ptr, size_t& ulen);
   ssize_t raw_write (const void *ptr, size_t ulen);
   int tcsendbreak (int);
@@ -1919,7 +1929,7 @@ class fhandler_termios: public fhandler_base
  protected:
   virtual void doecho (const void *, DWORD) {};
   virtual int accept_input () {return 1;};
-  int ioctl (int, void *);
+  int ioctl (unsigned int, void *);
   tty_min *_tc;
   tty *get_ttyp () {return (tty *) tc ();}
   int eat_readahead (int n);
@@ -1972,6 +1982,7 @@ class fhandler_termios: public fhandler_base
   virtual off_t lseek (off_t, int);
   pid_t tcgetsid ();
   virtual int fstat (struct stat *buf);
+  int tcflow (int);
 
   fhandler_termios (void *) {}
 
@@ -2025,7 +2036,7 @@ class fhandler_termios: public fhandler_base
     spawn_worker () :
       ptys_need_cleanup (false), cons_need_cleanup (false),
       stdin_is_ptys (false), ptys_ttyp (NULL) {}
-    void setup (bool iscygwin, HANDLE h_stdin, const WCHAR *runpath,
+    void setup (bool iscygwin, HANDLE h_stdin, path_conv &pc,
 		bool nopcon, bool reset_sendsig, const WCHAR *envblock);
     bool need_cleanup () { return ptys_need_cleanup || cons_need_cleanup; }
     void cleanup ();
@@ -2136,10 +2147,12 @@ class dev_console
   char cons_rabuf[40];  // cannot get longer than char buf[40] in char_command
   char *cons_rapoi;
   bool cursor_key_app_mode;
-  bool disable_master_thread;
+  volatile bool disable_master_thread;
   tty::cons_mode curr_input_mode;
   tty::cons_mode curr_output_mode;
-  bool master_thread_suspended;
+  DWORD prev_input_mode;
+  DWORD prev_output_mode;
+  volatile bool master_thread_suspended;
   int num_processed; /* Number of input events in the current input buffer
 			already processed by cons_master_thread(). */
 
@@ -2214,6 +2227,7 @@ private:
 /* Input calls */
   int igncr_enabled ();
   void set_cursor_maybe ();
+  static bool create_invisible_console ();
   static bool create_invisible_console_workaround (bool force);
   static console_state *open_shared_console (HWND, HANDLE&, bool&);
   static void fix_tab_position (HANDLE h, DWORD owner);
@@ -2252,7 +2266,7 @@ private:
   void read (void *ptr, size_t& len);
   ssize_t write (const void *ptr, size_t len);
   void doecho (const void *str, DWORD len);
-  int close ();
+  int close (int flag = -1);
   static bool exists ()
     {
       acquire_attach_mutex (mutex_timeout);
@@ -2264,9 +2278,10 @@ private:
   int tcflush (int);
   int tcsetattr (int a, const struct termios *t);
   int tcgetattr (struct termios *t);
+  int tcdrain ();
 
   int ioctl (unsigned int cmd, void *);
-  int init (HANDLE, DWORD, mode_t);
+  int init (HANDLE, DWORD, mode_t, int64_t = 0);
   bool mouse_aware (MOUSE_EVENT_RECORD& mouse_event);
   bool focus_aware () {return shared_console_info[unit]->con.use_focus;}
   bool get_cons_readahead_valid ()
@@ -2359,6 +2374,7 @@ private:
 
   void setup_pcon_hand_over ();
   static void pcon_hand_over_proc ();
+  static tty::cons_mode cons_mode_on_close (handle_set_t *);
 
   friend tty_min * tty_list::get_cttyp ();
 };
@@ -2381,7 +2397,8 @@ class fhandler_pty_common: public fhandler_termios
   DWORD __acquire_output_mutex (const char *fn, int ln, DWORD ms);
   void __release_output_mutex (const char *fn, int ln);
 
-  int close ();
+  int tcdrain ();
+  int close (int flag = -1);
   off_t lseek (off_t, int);
   bool bytes_available (DWORD& n);
   void set_close_on_exec (bool val);
@@ -2446,13 +2463,13 @@ class fhandler_pty_slave: public fhandler_pty_common
   bool open_setup (int flags);
   ssize_t write (const void *ptr, size_t len);
   void read (void *ptr, size_t& len);
-  int init (HANDLE, DWORD, mode_t);
+  int init (HANDLE, DWORD, mode_t, int64_t = 0);
 
   int tcsetattr (int a, const struct termios *t);
   int tcgetattr (struct termios *t);
   int tcflush (int);
   int ioctl (unsigned int cmd, void *);
-  int close ();
+  int close (int flag = -1);
   void cleanup ();
   int dup (fhandler_base *child, int);
   void fixup_after_fork (HANDLE parent);
@@ -2526,6 +2543,7 @@ public:
     HANDLE to_slave;
     HANDLE master_ctl;
     HANDLE input_available_event;
+    fhandler_pty_master *master;
   };
   /* Parameter set for the static function pty_master_fwd_thread() */
   struct master_fwd_thread_param_t {
@@ -2561,7 +2579,7 @@ public:
   bool open_setup (int flags);
   ssize_t write (const void *ptr, size_t len);
   void read (void *ptr, size_t& len);
-  int close ();
+  int close (int flag = -1);
   void cleanup ();
 
   int tcsetattr (int a, const struct termios *t);
@@ -2608,7 +2626,6 @@ public:
   }
   void get_master_thread_param (master_thread_param_t *p);
   void get_master_fwd_thread_param (master_fwd_thread_param_t *p);
-  void set_mask_flusho (bool m) { get_ttyp ()->mask_flusho = m; }
   bool need_send_ctrl_c_event ();
 };
 
@@ -2722,7 +2739,7 @@ class fhandler_dev_clipboard: public fhandler_base
   ssize_t write (const void *ptr, size_t len);
   void read (void *ptr, size_t& len);
   off_t lseek (off_t offset, int whence);
-  int close ();
+  int close (int flag = -1);
 
   int dup (fhandler_base *child, int);
   void fixup_after_exec ();
@@ -2759,7 +2776,7 @@ class fhandler_windows: public fhandler_base
   void read (void *ptr, size_t& len);
   int ioctl (unsigned int cmd, void *);
   off_t lseek (off_t, int) { return 0; }
-  int close () { return 0; }
+  int close (int flag = -1) { return 0; }
 
   select_record *select_read (select_stuff *);
   select_record *select_write (select_stuff *);
@@ -2838,7 +2855,7 @@ class fhandler_dev_dsp: public fhandler_base
   void read (void *, size_t&);
   int ioctl (unsigned int, void *);
   int fcntl (int cmd, intptr_t);
-  int close ();
+  int close (int flag = -1);
   void fixup_after_fork (HANDLE);
   void fixup_after_exec ();
   bool open_setup (int);
@@ -2911,7 +2928,7 @@ class fhandler_virtual : public fhandler_base
   off_t lseek (off_t, int);
   int dup (fhandler_base *child, int);
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   int fstatvfs (struct statvfs *buf);
   int fchmod (mode_t mode);
   int fchown (uid_t uid, gid_t gid);
@@ -2984,7 +3001,7 @@ class fhandler_procsys: public fhandler_virtual
   void seekdir (DIR *, long);
   int closedir (DIR *);
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   void read (void *ptr, size_t& len);
   ssize_t write (const void *ptr, size_t len);
   int fstat (struct stat *buf);
@@ -3048,7 +3065,7 @@ class fhandler_netdrive: public fhandler_virtual
   void rewinddir (DIR *);
   int closedir (DIR *);
   int open (int flags, mode_t mode = 0);
-  int close ();
+  int close (int flag = -1);
   int fstat (struct stat *buf);
 
   fhandler_netdrive (void *) {}
@@ -3089,7 +3106,7 @@ class fhandler_registry: public fhandler_proc
   int open (int flags, mode_t mode = 0);
   int fstat (struct stat *buf);
   bool fill_filebuf ();
-  int close ();
+  int close (int flag = -1);
   int dup (fhandler_base *child, int);
 
   fhandler_registry (void *) {}
@@ -3341,7 +3358,7 @@ class fhandler_timerfd : public fhandler_base
   ssize_t write (const void *, size_t);
   int dup (fhandler_base *child, int);
   int ioctl (unsigned int, void *);
-  int close ();
+  int close (int flag = -1);
 
   HANDLE get_timerfd_handle ();
 
@@ -3434,7 +3451,7 @@ public:
   int dup (fhandler_base *, int);
   int fcntl (int cmd, intptr_t);
   int ioctl (unsigned int, void *);
-  int close ();
+  int close (int flag = -1);
 
   void copy_from (fhandler_base *x)
   {

@@ -112,7 +112,13 @@ clock_nanosleep (clockid_t clk_id, int flags, const struct timespec *rqtp,
 	{
 	case CLOCK_REALTIME_COARSE:
 	case CLOCK_REALTIME:
+	case CLOCK_TAI:
 	  timeout.QuadPart += FACTOR;
+	  /* TAI time is realtime + leap secs.  NT timers are on realtime.
+	     Subtract leap secs to get the corresponding real due time.
+	     Leap secs are always 0 unless CLOCK_TAI. */
+	  timeout.QuadPart -= get_clock (clk_id)->get_leap_secs ()
+			      * NS100PERSEC;
 	  break;
 	default:
 	  /* other clocks need to be handled with a relative timeout */
@@ -456,9 +462,11 @@ sigaction_worker (int sig, const struct sigaction *newact,
 		sig_clear (sig, true);
 	      if (sig == SIGCHLD)
 		{
-		  myself->process_state &= ~PID_NOCLDSTOP;
+		  InterlockedAnd ((LONG *)&myself->process_state,
+				  ~PID_NOCLDSTOP);
 		  if (gs.sa_flags & SA_NOCLDSTOP)
-		    myself->process_state |= PID_NOCLDSTOP;
+		    InterlockedOr ((LONG *) &myself->process_state,
+				   PID_NOCLDSTOP);
 		}
 	    }
 

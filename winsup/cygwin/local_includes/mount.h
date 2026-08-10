@@ -23,6 +23,7 @@ enum disk_type
   DT_SHARE_NFS
 };
 
+disk_type get_device_type (LPCWSTR);
 disk_type get_disk_type (LPCWSTR);
 
 /* Don't add new fs types without adding them to fs_names in mount.cc!
@@ -216,6 +217,12 @@ class mount_info
   bool from_fstab (bool user, WCHAR [], PWCHAR);
 
   int cygdrive_win32_path (const char *src, char *dst, int& unit);
+  struct mntent *cygdrive_getmntent ();
+};
+
+enum {
+  NO_FLOPPIES = false,
+  WITH_FLOPPIES = true
 };
 
 class dos_drive_mappings
@@ -223,16 +230,21 @@ class dos_drive_mappings
   struct mapping
   {
     mapping *next;
-    size_t doslen;
     size_t ntlen;
-    wchar_t *dospath;
     wchar_t *ntdevpath;
-  };
-  mapping *mappings;
+    struct dosmount
+    {
+      dosmount *next;
+      wchar_t *path;
+      size_t len;
+    } dos;
+  } *mappings, *cur_mapping;
+  mapping::dosmount *cur_dos;
 
 public:
-  dos_drive_mappings ();
+  dos_drive_mappings (bool with_floppies);
   ~dos_drive_mappings ();
   wchar_t *fixup_if_match (wchar_t *path);
+  const wchar_t *next_dos_mount ();
 };
 #endif

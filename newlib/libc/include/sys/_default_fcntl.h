@@ -53,8 +53,8 @@ extern "C" {
 #define	O_TRUNC		_FTRUNC
 #define	O_EXCL		_FEXCL
 #define O_SYNC		_FSYNC
-/*	O_NDELAY	_FNDELAY 	set in include/fcntl.h */
-/*	O_NDELAY	_FNBIO 		set in include/fcntl.h */
+/*	O_NDELAY	_FNDELAY	set in include/fcntl.h */
+/*	O_NDELAY	_FNBIO		set in include/fcntl.h */
 #define	O_NONBLOCK	_FNONBLOCK
 #define	O_NOCTTY	_FNOCTTY
 
@@ -134,20 +134,25 @@ extern "C" {
 #define	F_GETFL		3	/* Get file flags */
 #define	F_SETFL		4	/* Set file flags */
 #if __BSD_VISIBLE || __POSIX_VISIBLE >= 200112
-#define	F_GETOWN 	5	/* Get owner - for ASYNC */
-#define	F_SETOWN 	6	/* Set owner - for ASYNC */
+#define	F_GETOWN	5	/* Get owner - for ASYNC */
+#define	F_SETOWN	6	/* Set owner - for ASYNC */
 #endif /* __BSD_VISIBLE || __POSIX_VISIBLE >= 200112 */
-#define	F_GETLK  	7	/* Get record-locking information */
-#define	F_SETLK  	8	/* Set or Clear a record-lock (Non-Blocking) */
-#define	F_SETLKW 	9	/* Set or Clear a record-lock (Blocking) */
+#define	F_GETLK		7	/* Get record-locking information */
+#define	F_SETLK		8	/* Set or Clear a record-lock (Non-Blocking) */
+#define	F_SETLKW	9	/* Set or Clear a record-lock (Blocking) */
 #if __MISC_VISIBLE
-#define	F_RGETLK 	10	/* Test a remote lock to see if it is blocked */
-#define	F_RSETLK 	11	/* Set or unlock a remote lock */
-#define	F_CNVT 		12	/* Convert a fhandle to an open fd */
-#define	F_RSETLKW 	13	/* Set or Clear remote record-lock(Blocking) */
+#define	F_RGETLK	10	/* Test a remote lock to see if it is blocked */
+#define	F_RSETLK	11	/* Set or unlock a remote lock */
+#define	F_CNVT		12	/* Convert a fhandle to an open fd */
+#define	F_RSETLKW	13	/* Set or Clear remote record-lock (Blocking) */
 #endif	/* __MISC_VISIBLE */
 #if __POSIX_VISIBLE >= 200809
 #define	F_DUPFD_CLOEXEC	14	/* As F_DUPFD, but set close-on-exec flag */
+#endif
+#if __GNU_VISIBLE || __POSIX_VISIBLE >= 202405
+#define	F_OFD_GETLK	15	/* Get OFD record-locking information */
+#define	F_OFD_SETLK	16	/* Set or Clear OFD lock (Non-Blocking) */
+#define	F_OFD_SETLKW	17	/* Set or Clear OFD lock (Blocking) */
 #endif
 
 /* fcntl(2) flags (l_type field of flock structure) */

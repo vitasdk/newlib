@@ -43,7 +43,9 @@ perhaps_suffix (const char *prog, path_conv& buf, int& err, unsigned opt)
 
   err = 0;
   debug_printf ("prog '%s'", prog);
-  buf.check (prog, PC_SYM_FOLLOW | PC_NULLEMPTY | PC_POSIX, stat_suffixes);
+  buf.check (prog,
+	     PC_SYM_FOLLOW | PC_SYM_NOFOLLOW_REP | PC_NULLEMPTY | PC_POSIX,
+	     stat_suffixes);
 
   if (buf.isdir ())
     {
@@ -408,37 +410,6 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       if (winjitdebug && !real_path.iscygexec ())
 	c_flags |= CREATE_DEFAULT_ERROR_MODE;
 
-      /* We're adding the CREATE_BREAKAWAY_FROM_JOB flag here to workaround
-	 issues with the "Program Compatibility Assistant (PCA) Service".
-	 For some reason, when starting long running sessions from mintty(*),
-	 the affected svchost.exe process takes more and more memory and at one
-	 point takes over the CPU.  At this point the machine becomes
-	 unresponsive.  The only way to get back to normal is to stop the
-	 entire mintty session, or to stop the PCA service.  However, a process
-	 which is controlled by PCA is part of a compatibility job, which
-	 allows child processes to break away from the job.  This helps to
-	 avoid this issue.
-
-	 First we call IsProcessInJob.  It fetches the information whether or
-	 not we're part of a job 20 times faster than QueryInformationJobObject.
-
-	 (*) Note that this is not mintty's fault.  It has just been observed
-	 with mintty in the first place.  See the archives for more info:
-	 http://cygwin.com/ml/cygwin-developers/2012-02/msg00018.html */
-      JOBOBJECT_BASIC_LIMIT_INFORMATION jobinfo;
-      BOOL is_in_job;
-
-      if (IsProcessInJob (GetCurrentProcess (), NULL, &is_in_job)
-	  && is_in_job
-	  && QueryInformationJobObject (NULL, JobObjectBasicLimitInformation,
-				     &jobinfo, sizeof jobinfo, NULL)
-	  && (jobinfo.LimitFlags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK
-				    | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)))
-	{
-	  debug_printf ("Add CREATE_BREAKAWAY_FROM_JOB");
-	  c_flags |= CREATE_BREAKAWAY_FROM_JOB;
-	}
-
       if (mode == _P_DETACH)
 	c_flags |= DETACHED_PROCESS;
       else
@@ -540,10 +511,6 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	::cygheap->ctty ? ::cygheap->ctty->tc_getpgid () : 0;
       if (!iscygwin () && ctty_pgid && ctty_pgid != myself->pgid)
 	c_flags |= CREATE_NEW_PROCESS_GROUP;
-      refresh_cygheap ();
-
-      if (c_flags & CREATE_NEW_PROCESS_GROUP)
-	myself->process_state |= PID_NEW_PG;
 
       if (mode == _P_DETACH)
 	/* all set */;
@@ -581,7 +548,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 
       bool no_pcon = mode != _P_OVERLAY && mode != _P_WAIT;
       term_spawn_worker.setup (iscygwin (), handle (fileno_stdin, false),
-			       runpath, no_pcon, reset_sendsig, envblock);
+			       real_path, no_pcon, reset_sendsig, envblock);
 
       /* Set up needed handles for stdio */
       si.dwFlags = STARTF_USESTDHANDLES;
@@ -603,10 +570,17 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       ::cygheap->user.deimpersonate ();
 
       if (!real_path.iscygexec () && mode == _P_OVERLAY)
-	myself->process_state |= PID_NOTCYGWIN;
+	{
+	  LONG pidflags = PID_NOTCYGWIN;
+	  if (c_flags & CREATE_NEW_PROCESS_GROUP)
+	    pidflags |= PID_NEW_PG;
+	  InterlockedOr ((LONG *) &myself->process_state, pidflags);
+	}
 
       cygpid = (mode != _P_OVERLAY) ? create_cygwin_pid () : myself->pid;
 
+      cygheap->lock ();
+      refresh_cygheap ();
       wchar_t wcmd[(size_t) cmd];
       if (!::cygheap->user.issetuid ()
 	  || (::cygheap->user.saved_uid == ::cygheap->user.real_uid
@@ -705,7 +679,8 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	      myself->sendsig = myself->exec_sendsig;
 	      myself->exec_sendsig = NULL;
 	    }
-	  myself->process_state &= ~PID_NOTCYGWIN;
+	  InterlockedAnd ((LONG *) &myself->process_state,
+			  ~(PID_NOTCYGWIN|PID_NEW_PG));
 	  /* Reset handle inheritance to default when the execution of a'
 	     non-Cygwin process fails.  Only need to do this for _P_OVERLAY
 	     since the handle will be closed otherwise.  Don't need to do
@@ -723,6 +698,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	    ::cygheap->user.reimpersonate ();
 
 	  res = -1;
+	  cygheap->unlock ();
 	  __leave;
 	}
 
@@ -759,21 +735,22 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	  NtClose (old_winpid_hdl);
 	  real_path.get_wide_win32_path (myself->progname); // FIXME: race?
 	  sigproc_printf ("new process name %W", myself->progname);
-	  if (!iscygwin ())
-	    close_all_files ();
 	}
       else
 	{
 	  myself->set_has_pgid_children ();
 	  ProtectHandle (pi.hThread);
 	  pinfo child (cygpid,
-		       PID_IN_USE | (real_path.iscygexec () ? 0 : PID_NOTCYGWIN));
+		       PID_IN_USE |
+		       (real_path.iscygexec () ? 0 : PID_NOTCYGWIN) |
+		       ((c_flags & CREATE_NEW_PROCESS_GROUP) ? PID_NEW_PG : 0));
 	  if (!child)
 	    {
 	      syscall_printf ("pinfo failed");
 	      if (get_errno () != ENOMEM)
 		set_errno (EAGAIN);
 	      res = -1;
+	      cygheap->unlock ();
 	      __leave;
 	    }
 	  child->dwProcessId = pi.dwProcessId;
@@ -809,6 +786,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	      CloseHandle (pi.hProcess);
 	      ForceCloseHandle (pi.hThread);
 	      res = -1;
+	      cygheap->unlock ();
 	      __leave;
 	    }
 	}
@@ -837,6 +815,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	/* Just mark a non-cygwin process as 'synced'.  We will still eventually
 	   wait for it to exit in maybe_set_exit_code_from_windows(). */
 	synced = iscygwin () ? sync (pi.dwProcessId, pi.hProcess, INFINITE) : true;
+      cygheap->unlock ();
 
       switch (mode)
 	{
@@ -853,8 +832,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	    }
 	  else
 	    {
-	      if (iscygwin ())
-		close_all_files (true);
+	      close_all_files (iscygwin ());
 	      if (!my_wr_proc_pipe
 		  && WaitForSingleObject (pi.hProcess, 0) == WAIT_TIMEOUT)
 		wait_for_myself ();
@@ -941,6 +919,7 @@ spawnve (int mode, const char *path, const char *const *argv,
   if (!envp)
     envp = empty_env;
 
+  child_info_spawn ch_spawn_local (_CH_NADA);
   switch (_P_MODE (mode))
     {
     case _P_OVERLAY:
@@ -954,7 +933,7 @@ spawnve (int mode, const char *path, const char *const *argv,
     case _P_WAIT:
     case _P_DETACH:
     case _P_SYSTEM:
-      ret = ch_spawn.worker (path, argv, envp, mode);
+      ret = ch_spawn_local.worker (path, argv, envp, mode);
       break;
     default:
       set_errno (EINVAL);

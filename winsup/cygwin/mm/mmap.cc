@@ -27,15 +27,9 @@ details. */
    is to support mappings longer than the file, without the file growing
    to mapping length (POSIX semantics). */
 #define __PROT_ATTACH   0x8000000
-/* Filler pages are the pages from the last file backed page to the next
-   64K boundary.  These pages are created as anonymous pages, but with
-   the same page protection as the file's pages, since POSIX applications
-   expect to be able to access this part the same way as the file pages. */
-#define __PROT_FILLER   0x4000000
 
-/* Stick with 4K pages for bookkeeping, otherwise we just get confused
-   when trying to do file mappings with trailing filler pages correctly. */
-#define PAGE_CNT(bytes) howmany((bytes), wincap.page_size())
+/* Use 64K pages throughout. */
+#define PAGE_CNT(bytes) howmany((bytes), wincap.allocation_granularity())
 
 #define PGBITS		(sizeof (DWORD)*8)
 #define MAPSIZE(pages)	howmany ((pages), PGBITS)
@@ -91,12 +85,6 @@ attached (int prot)
   return (prot & __PROT_ATTACH) == __PROT_ATTACH;
 }
 
-static inline bool
-filler (int prot)
-{
-  return (prot & __PROT_FILLER) == __PROT_FILLER;
-}
-
 static inline DWORD
 gen_create_protect (DWORD openflags, int flags)
 {
@@ -125,7 +113,7 @@ gen_protect (int prot, int flags)
     return PAGE_EXECUTE_READWRITE;
 
   if (prot & PROT_WRITE)
-    ret = (priv (flags) && (!anonymous (flags) || filler (prot)))
+    ret = (priv (flags) && !anonymous (flags))
 	  ? PAGE_WRITECOPY : PAGE_READWRITE;
   else if (prot & PROT_READ)
     ret = PAGE_READONLY;
@@ -330,7 +318,6 @@ class mmap_record
     bool noreserve () const { return ::noreserve (flags); }
     bool autogrow () const { return ::autogrow (flags); }
     bool attached () const { return ::attached (prot); }
-    bool filler () const { return ::filler (prot); }
     off_t get_offset () const { return offset; }
     SIZE_T get_len () const { return len; }
     caddr_t get_address () const { return base_address; }
@@ -338,8 +325,10 @@ class mmap_record
     void init_page_map (mmap_record &r);
 
     SIZE_T find_unused_pages (SIZE_T pages) const;
+    bool match (caddr_t addr, SIZE_T len, caddr_t &m_addr, SIZE_T &m_len,
+                bool &contains);
     bool match (caddr_t addr, SIZE_T len, caddr_t &m_addr, SIZE_T &m_len);
-    off_t map_pages (SIZE_T len, int new_prot);
+    bool map_pages (SIZE_T len, int new_prot, off_t off);
     bool map_pages (caddr_t addr, SIZE_T len, int new_prot);
     bool unmap_pages (caddr_t addr, SIZE_T len);
     int access (caddr_t address);
@@ -418,23 +407,51 @@ mmap_record::find_unused_pages (SIZE_T pages) const
   return (SIZE_T) -1;
 }
 
+/* Return true if the interval I from addr to addr+len intersects the
+   interval J of this mmap_record.  The endpoint of the latter is
+   first rounded up to a 4K Windows page boundary.  If there is an
+   intersection, then it is the interval from m_addr to m_addr+m_len.
+   The variable 'contains' is set to true if J contains I.
+
+   The use of a 4K Windows page boundary above is only relevant for
+   file mappings; anonymous mappings are already forced by mmap to
+   have length a multiple of the 64K Windows allocation granularity,
+   so the rounding has no effect.  The reason for using a Windows page
+   boundary for file mappings is that Windows files are length-aligned
+   to 4K pages, not to the 64K allocation granularity.  If we were to
+   align the record length to 64K, then callers of this function might
+   try to access the unallocated memory from the EOF page to the last
+   page in the 64K area.  See
+
+     https://cygwin.com/pipermail/cygwin-patches/2025q1/013240.html
+
+   for an example in which mprotect and mmap_record::unmap_pages both
+   fail when we align the record length to 64K.
+*/
 bool
-mmap_record::match (caddr_t addr, SIZE_T len, caddr_t &m_addr, SIZE_T &m_len)
+mmap_record::match (caddr_t addr, SIZE_T len, caddr_t &m_addr, SIZE_T &m_len,
+		    bool &contains)
 {
-  caddr_t low = (addr >= get_address ()) ? addr : get_address ();
-  caddr_t high = get_address ();
-  if (filler ())
-    high += get_len ();
-  else
-    high += (PAGE_CNT (get_len ()) * wincap.page_size ());
-  high = (addr + len < high) ? addr + len : high;
+  contains = false;
+  SIZE_T rec_len = roundup2 (get_len (), wincap.page_size());
+  caddr_t low = MAX (addr, get_address ());
+  caddr_t high = MIN (addr + len, get_address () + rec_len);
   if (low < high)
     {
       m_addr = low;
       m_len = high - low;
+      /* I is contained in J iff their intersection equals I. */
+      contains = (addr == m_addr && len == m_len);
       return true;
     }
   return false;
+}
+
+inline bool
+mmap_record:: match (caddr_t addr, SIZE_T len, caddr_t &m_addr, SIZE_T &m_len)
+{
+  bool contains;
+  return match (addr, len, m_addr, m_len, contains);
 }
 
 void
@@ -455,34 +472,32 @@ mmap_record::init_page_map (mmap_record &r)
     MAP_SET (len);
 }
 
-off_t
-mmap_record::map_pages (SIZE_T len, int new_prot)
+bool
+mmap_record::map_pages (SIZE_T len, int new_prot, off_t off)
 {
-  /* Used ONLY if this mapping matches into the chunk of another already
-     performed mapping in a special case of MAP_ANON|MAP_PRIVATE.
-
-     Otherwise it's job is now done by init_page_map(). */
+  /* Used only in a MAP_ANON|MAP_PRIVATE request for len bytes, with
+     MAP_FIXED not given.  Moreover, we know when this function is
+     called that this record contains enough unused pages starting at
+     off to satisfy the request. */
   DWORD old_prot;
   debug_printf ("map_pages (fd=%d, len=%lu, new_prot=%y)", get_fd (), len,
 		new_prot);
   len = PAGE_CNT (len);
 
-  off_t off = find_unused_pages (len);
-  if (off == (off_t) -1)
-    return (off_t) 0;
   if (!noreserve ()
-      && !VirtualProtect (get_address () + off * wincap.page_size (),
-			  len * wincap.page_size (),
+      && !VirtualProtect (get_address ()
+			  + off * wincap.allocation_granularity (),
+			  len * wincap.allocation_granularity (),
 			  ::gen_protect (new_prot, get_flags ()),
 			  &old_prot))
     {
       __seterrno ();
-      return (off_t) -1;
+      return false;
     }
 
   while (len-- > 0)
     MAP_SET (off + len);
-  return off * wincap.page_size ();
+  return true;
 }
 
 bool
@@ -492,20 +507,27 @@ mmap_record::map_pages (caddr_t addr, SIZE_T len, int new_prot)
 		new_prot);
   DWORD old_prot;
   off_t off = addr - get_address ();
-  off /= wincap.page_size ();
+  off /= wincap.allocation_granularity ();
   len = PAGE_CNT (len);
-  /* First check if the area is unused right now. */
-  for (SIZE_T l = 0; l < len; ++l)
-    if (MAP_ISSET (off + l))
-      {
-	set_errno (EINVAL);
-	return false;
-      }
-  if (!noreserve ()
-      && !VirtualProtect (get_address () + off * wincap.page_size (),
-			  len * wincap.page_size (),
-			  ::gen_protect (new_prot, get_flags ()),
-			  &old_prot))
+  /* VirtualProtect can only be called on committed pages, so it's not
+     clear how to change protection in the noreserve case.  In this
+     case we will therefore require that the pages are unmapped, in
+     order to keep the behavior the same as it was before new_prot was
+     introduced.  FIXME: Is there a better way to handle this? */
+  if (noreserve ())
+    {
+      for (SIZE_T l = 0; l < len; ++l)
+	if (MAP_ISSET (off + l))
+	  {
+	    set_errno (EINVAL);
+	    return false;
+	  }
+    }
+  else if (!VirtualProtect (get_address ()
+			    + off * wincap.allocation_granularity (),
+			    len * wincap.allocation_granularity (),
+			    ::gen_protect (new_prot, get_flags ()),
+			    &old_prot))
     {
       __seterrno ();
       return false;
@@ -527,7 +549,7 @@ mmap_record::unmap_pages (caddr_t addr, SIZE_T len)
 			    &old_prot))
     debug_printf ("VirtualProtect in unmap_pages () failed, %E");
 
-  off /= wincap.page_size ();
+  off /= wincap.allocation_granularity ();
   len = PAGE_CNT (len);
   for (; len-- > 0; ++off)
     MAP_CLR (off);
@@ -544,7 +566,7 @@ mmap_record::access (caddr_t address)
 {
   if (address < get_address () || address >= get_address () + get_len ())
     return 0;
-  SIZE_T off = (address - get_address ()) / wincap.page_size ();
+  SIZE_T off = (address - get_address ()) / wincap.allocation_granularity ();
   return MAP_ISSET (off);
 }
 
@@ -625,34 +647,38 @@ mmap_list::try_map (void *addr, size_t len, int new_prot, int flags, off_t off)
 
   if (off == 0 && !fixed (flags))
     {
-      /* If MAP_FIXED isn't given, check if this mapping matches into the
-	 chunk of another already performed mapping. */
+      /* If MAP_FIXED isn't given, try to satisfy this mapping request
+	 by recycling unmapped pages in the chunk of an existing
+	 mapping. */
       SIZE_T plen = PAGE_CNT (len);
       LIST_FOREACH (rec, &recs, mr_next)
-	if (rec->find_unused_pages (plen) != (SIZE_T) -1)
+	if ((off = rec->find_unused_pages (plen)) != (off_t) -1
+	    && rec->compatible_flags (flags))
 	  break;
-      if (rec && rec->compatible_flags (flags))
+      if (rec)
 	{
-	  if ((off = rec->map_pages (len, new_prot)) == (off_t) -1)
+	  if (!rec->map_pages (len, new_prot, off))
 	    return (caddr_t) MAP_FAILED;
-	  return (caddr_t) rec->get_address () + off;
+	  return (caddr_t) rec->get_address ()
+	    + off * wincap.allocation_granularity ();
 	}
     }
   else if (fixed (flags))
     {
-      /* If MAP_FIXED is given, test if the requested area is in an
-	 unmapped part of an still active mapping.  This can happen
-	 if a memory region is unmapped and remapped with MAP_FIXED. */
+      /* If MAP_FIXED is given, test if the requested area is
+	 contained in the chunk of an existing mapping.  If so, and if
+	 the flags of that mapping are compatible with those in the
+	 request, try to reset the protection on the requested area. */
       caddr_t u_addr;
       SIZE_T u_len;
+      bool contains;
 
       LIST_FOREACH (rec, &recs, mr_next)
-	if (rec->match ((caddr_t) addr, len, u_addr, u_len))
+	if (rec->match ((caddr_t) addr, len, u_addr, u_len, contains))
 	  break;
       if (rec)
 	{
-	  if (u_addr > (caddr_t) addr || u_addr + u_len < (caddr_t) addr + len
-	      || !rec->compatible_flags (flags))
+	  if (!contains || !rec->compatible_flags (flags))
 	    {
 	      /* Partial match only, or access mode doesn't match. */
 	      /* FIXME: Handle partial mappings gracefully if adjacent
@@ -703,53 +729,20 @@ mmap_areas::del_list (mmap_list *ml)
   cfree (ml);
 }
 
-/* This function allows an external function to test if a given memory
-   region is part of an mmapped memory region. */
-bool
-is_mmapped_region (caddr_t start_addr, caddr_t end_address)
-{
-  size_t len = end_address - start_addr;
-
-  LIST_READ_LOCK ();
-  mmap_list *map_list = mmapped_areas.get_list_by_fd (-1, NULL);
-
-  if (!map_list)
-    {
-      LIST_READ_UNLOCK ();
-      return false;
-    }
-
-  mmap_record *rec;
-  caddr_t u_addr;
-  SIZE_T u_len;
-  bool ret = false;
-
-  LIST_FOREACH (rec, &map_list->recs, mr_next)
-    {
-      if (rec->match (start_addr, len, u_addr, u_len))
-	{
-	  ret = true;
-	  break;
-	}
-    }
-  LIST_READ_UNLOCK ();
-  return ret;
-}
-
 /* This function is called from exception_handler when a segmentation
    violation has occurred.  It should also be called from all Cygwin
-   functions that want to support passing noreserve mmap page addresses
-   to Windows system calls.  In that case, it should be called only after
-   a system call indicates that the application buffer passed had an
-   invalid virtual address to avoid any performance impact in non-noreserve
-   cases.
+   functions that want to support passing noreserve (anonymous) mmap
+   page addresses to Windows system calls.  In that case, it should be
+   called only after a system call indicates that the application
+   buffer passed had an invalid virtual address to avoid any
+   performance impact in non-noreserve cases.
 
    Check if the address range is all within noreserve mmap regions.  If so,
    call VirtualAlloc to commit the pages and return MMAP_NORESERVE_COMMITED
-   on success.  If the page has __PROT_ATTACH (SUSv3 memory protection
-   extension), or if VirtualAlloc fails, return MMAP_RAISE_SIGBUS.
-   Otherwise, return MMAP_NONE if the address range is not covered by an
-   attached or noreserve map.
+   on success.  If some page in the address range has __PROT_ATTACH
+   (SUSv3 memory protection extension), or if VirtualAlloc fails,
+   return MMAP_RAISE_SIGBUS.  Otherwise, return MMAP_NONE if the
+   address range is not covered by noreserve maps.
 
    On MAP_NORESERVE_COMMITED, the exeception handler should return 0 to
    allow the application to retry the memory access, or the calling Cygwin
@@ -768,12 +761,16 @@ mmap_is_attached_or_noreserve (void *addr, size_t len)
   len += ((caddr_t) addr - start_addr);
   len = roundup2 (len, pagesize);
 
-  if (map_list == NULL)
-    goto out;
-
   mmap_record *rec;
   caddr_t u_addr;
   SIZE_T u_len;
+  /* nocover is set to true if we discover that our address range
+     cannot be covered by noreserve mmap regions. */
+  bool nocover = false;
+  size_t remaining = len;
+
+  if (map_list == NULL)
+    goto out;
 
   LIST_FOREACH (rec, &map_list->recs, mr_next)
     {
@@ -784,23 +781,24 @@ mmap_is_attached_or_noreserve (void *addr, size_t len)
 	  ret = MMAP_RAISE_SIGBUS;
 	  break;
 	}
-      if (!rec->noreserve ())
-	break;
+      if (nocover || !rec->noreserve ())
+	{
+	/* We need to continue in case we encounter an attached mmap
+	   later in the list. */
+	  nocover = true;
+	  continue;
+	}
 
-      size_t commit_len = u_len - (start_addr - u_addr);
-      if (commit_len > len)
-	commit_len = len;
-
-      if (!VirtualAlloc (start_addr, commit_len, MEM_COMMIT,
-			 rec->gen_protect ()))
+      /* The interval determined by u_addr and u_len is the part of
+	 our address range contained in the mmap region of rec.  */
+      if (!VirtualAlloc (u_addr, u_len, MEM_COMMIT, rec->gen_protect ()))
 	{
 	  ret = MMAP_RAISE_SIGBUS;
 	  break;
 	}
 
-      start_addr += commit_len;
-      len -= commit_len;
-      if (!len)
+      remaining -= u_len;
+      if (!remaining)
 	{
 	  ret = MMAP_NORESERVE_COMMITED;
 	  break;
@@ -899,8 +897,8 @@ mmap (void *addr, size_t len, int prot, int flags, int fd, off_t off)
       /* The autoconf mmap test maps a file of size 1 byte.  It then tests
 	 every byte of the entire mapped page of 64K for 0-bytes since that's
 	 what POSIX requires.  The problem is, we can't create that mapping.
-	 The file mapping will be only a single page, 4K, and the remainder
-	 of the 64K slot will result in a SEGV when accessed.
+	 The file mapping will be only a single Windows page, 4K, and the
+	 remainder of the 64K slot will result in a SEGV when accessed.
 
 	 So, what we do here is cheating for the sake of the autoconf test.
 	 The justification is that there's very likely no application actually
@@ -1053,7 +1051,8 @@ go_ahead:
   LIST_WRITE_LOCK ();
   map_list = mmapped_areas.get_list_by_fd (fd, &st);
 
-  /* Test if an existing anonymous mapping can be recycled. */
+  /* Try to satisfy the request by resetting the protection on part of
+     an existing anonymous mapping. */
   if (map_list && anonymous (flags))
     {
       caddr_t tried = map_list->try_map (addr, len, prot, flags, off);
@@ -1571,7 +1570,7 @@ fhandler_dev_zero::mmap (caddr_t *addr, size_t len, int prot,
   HANDLE h;
   void *base;
 
-  if (priv (flags) && !filler (prot))
+  if (priv (flags))
     {
       /* Private anonymous maps are now implemented using VirtualAlloc.
 	 This has two advantages:
@@ -1680,7 +1679,7 @@ fhandler_dev_zero::fixup_mmap_after_fork (HANDLE h, int prot, int flags,
 {
   /* Re-create the map */
   void *base;
-  if (priv (flags) && !filler (prot))
+  if (priv (flags))
     {
       DWORD alloc_type = MEM_RESERVE | (noreserve (flags) ? 0 : MEM_COMMIT);
       /* Always allocate R/W so that ReadProcessMemory doesn't fail

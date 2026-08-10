@@ -44,7 +44,7 @@ shall remain valid until the locale object locobj is used in a call to
 No errors are defined.
 
 PORTABILITY
-<<getlocalename_l>> is POSIX-1.2008 since Base Specification Issue 8
+<<getlocalename_l>> is POSIX-1.2024
 */
 
 #include <newlib.h>
@@ -53,18 +53,25 @@ PORTABILITY
 const char *
 _getlocalename_l_r (struct _reent *ptr, int category, struct __locale_t *locobj)
 {
-  if (category <= LC_ALL || category > LC_MESSAGES)
+  if (category < LC_ALL || category > LC_MESSAGES)
     return NULL;
 #ifndef _MB_CAPABLE
   return "C";
 #else
+  if (category == LC_ALL)
+    {
+      if (locobj == LC_GLOBAL_LOCALE)
+	return __currentlocale (__get_global_locale (),
+				_REENT_GETLOCALENAME_L_BUF (ptr));
+      return __currentlocale (locobj, locobj->locale_string);
+    }
   if (locobj == LC_GLOBAL_LOCALE)
     {
       /* getlocalename_l is supposed to return the value in a
 	 thread-safe manner.  This requires to copy over the
 	 category string into thread-local storage. */
-      strcpy (_REENT_GETLOCALENAME_L_BUF (ptr),
-	      __get_global_locale ()->categories[category]);
+      return strcpy (_REENT_GETLOCALENAME_L_BUF (ptr),
+		     __get_global_locale ()->categories[category]);
     }
   return locobj->categories[category];
 #endif

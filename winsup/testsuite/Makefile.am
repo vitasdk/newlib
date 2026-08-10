@@ -311,6 +311,12 @@ check_PROGRAMS = \
 	winsup.api/pthread/self2 \
 	winsup.api/pthread/threadidafterfork \
 	winsup.api/pthread/tsd1 \
+	winsup.api/posix_spawn/chdir \
+	winsup.api/posix_spawn/errors \
+	winsup.api/posix_spawn/fds \
+	winsup.api/posix_spawn/signals \
+	winsup.api/posix_spawn/spawnp \
+	winsup.api/posix_spawn/win32 \
 	winsup.api/samples/sample-fail \
 	winsup.api/samples/sample-pass
 # winsup.api/ltp/ulimit01 is omitted as we don't have <ulimit.h>
@@ -333,22 +339,18 @@ TESTS = $(check_PROGRAMS) \
 	mingw/cygload
 
 # expected fail tests
-XFAIL_TESTS_CI_true = \
-	winsup.api/ltp/umask03$(EXEEXT)
-
 XFAIL_TESTS = \
 	winsup.api/ltp/setgroups01 \
 	winsup.api/ltp/setuid02 \
 	winsup.api/ltp/ulimit01 \
 	winsup.api/ltp/unlink08 \
-	winsup.api/samples/sample-fail \
-	$(XFAIL_TESTS_CI_$(GITHUB_ACTIONS))
+	winsup.api/samples/sample-fail
 
 # cygrun.sh test-runner script, and variables used by it:
 LOG_COMPILER = $(srcdir)/cygrun.sh
 
 export runtime_root=$(abs_builddir)/testinst/bin
-export cygrun=$(builddir)/mingw/cygrun
+export mingwtestdir=$(builddir)/mingw
 
 # Set up things in the Cygwin 'installation' at testsuite/testinst/ to provide
 # things which tests need to work
@@ -380,6 +382,6 @@ clean-local:
 	rm -f *.stackdump
 	rm -rf ${builddir}/testinst/tmp
 
-if CROSS_BOOTSTRAP
+if MINGW_PROGS
 SUBDIRS = mingw
 endif

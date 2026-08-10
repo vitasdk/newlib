@@ -558,7 +558,7 @@ of Cygwin is as follows:
 the instructions in <ulink
 url="https://cygwin.com/faq/faq.html#faq.setup.uninstall-service"/> for
 all services that you installed.  Common services that might have been
-installed are <literal>sshd</literal>, <literal>cron</literal>, 
+installed are <literal>cygsshd</literal>, <literal>cron</literal>, 
 <literal>cygserver</literal>, <literal>inetd</literal>, <literal>apache</literal>, 
 <literal>postgresql</literal>, and so on.
 </para>
@@ -668,7 +668,7 @@ That's all there is to it.
 this purpose.  See <ulink url="http://rsync.samba.org/"/>,
 <ulink url="http://www.gnu.org/software/wget/"/> for utilities that can do this for you.
 For more information on setting up a custom Cygwin package server, see
-the <ulink url="https://cygwin.com/package-server.html.html">Cygwin Package Server page</ulink>.
+the <ulink url="https://cygwin.com/package-server.html">Cygwin Package Server page</ulink>.
 
 </para>
 </answer></qandaentry>

@@ -740,7 +740,7 @@ unlink_nt (path_conv &pc, bool shareable)
      easier and faster.  Just try to do it and if it fails, it fails. */
   if (wincap.has_posix_unlink_semantics ()
       && !pc.isremote () && pc.fs_is_ntfs ()
-      && pc.has_attribute (FILE_SUPPORTS_OPEN_BY_FILE_ID))
+      && (pc.fs_flags () & FILE_SUPPORTS_OPEN_BY_FILE_ID))
     {
       FILE_DISPOSITION_INFORMATION_EX fdie;
 
@@ -774,18 +774,15 @@ unlink_nt (path_conv &pc, bool shareable)
       if (access & FILE_WRITE_ATTRIBUTES)
 	NtSetAttributesFile (fh, pc.file_attributes ());
       NtClose (fh);
-      /* Trying to delete in-use executables and DLLs using
-         FILE_DISPOSITION_POSIX_SEMANTICS returns STATUS_CANNOT_DELETE.
-	 Fall back to the default method. */
-      /* Additionaly that returns STATUS_INVALID_PARAMETER
-         on a bind mounted fs in hyper-v container. Falling back too. */
-      if (status != STATUS_CANNOT_DELETE
-          && status != STATUS_INVALID_PARAMETER)
-        {
-          debug_printf ("NtSetInformationFile returns %y "
-                        "with posix semantics. Disable it and retry.", status);
-          goto out;
-        }
+      /* Trying POSIX delete on in-use executables and DLLs returns
+	 STATUS_CANNOT_DELETE.  Trying POSIX delete on a bind mounted fs
+	 in hyper-v container returns STATUS_INVALID_PARAMETER.
+         Fall back to default method in both cases. */
+      if (status != STATUS_CANNOT_DELETE && status != STATUS_INVALID_PARAMETER)
+	goto out;
+
+      debug_printf ("POSIX delete %S fails with %y, try default method",
+		    pc.get_nt_native_path (), status);
     }
 
   /* If the R/O attribute is set, we have to open the file with
@@ -1136,15 +1133,16 @@ unlink (const char *ourname)
       set_errno (EROFS);
       goto done;
     }
-  if (isdevfd_dev (devn) || (win32_name.isdevice () && !win32_name.issocket ()))
-    {
-      set_errno (EPERM);
-      goto done;
-    }
   if (!win32_name.exists ())
     {
       debug_printf ("unlinking a nonexistent file");
       set_errno (ENOENT);
+      goto done;
+    }
+  if (!win32_name.isondisk ())
+    {
+      debug_printf ("unlinking a virtual file");
+      set_errno (EPERM);
       goto done;
     }
   else if (win32_name.isdir ())
@@ -1474,11 +1472,6 @@ open (const char *unix_path, int flags, ...)
       mode = va_arg (ap, mode_t);
       va_end (ap);
 
-      cygheap_fdnew fd;
-
-      if (fd < 0)
-	__leave;		/* errno already set */
-
       /* When O_PATH is specified in flags, flag bits other than O_CLOEXEC,
 	 O_DIRECTORY, and O_NOFOLLOW are ignored. */
       if (flags & O_PATH)
@@ -1579,6 +1572,12 @@ open (const char *unix_path, int flags, ...)
       if ((flags & O_TMPFILE) && !fh->pc.isremote ())
 	try_to_bin (fh->pc, fh->get_handle (), DELETE,
 		    FILE_OPEN_FOR_BACKUP_INTENT);
+
+      cygheap_fdnew fd;
+
+      if (fd < 0)
+	__leave;		/* errno already set */
+
       fd = fh;
       if (fd <= 2)
 	set_std_handle (fd);
@@ -1680,12 +1679,26 @@ lseek (int fd, off_t pos, int dir)
   return res;
 }
 
-extern "C" int
-close (int fd)
+/* Takes three flag values:
+
+   -1: default behaviour, called from close(2).
+
+    0: called via posix_close (0), i.e., the call shall not return -1 with
+       errno set to [EINTR], which implies that fildes will always be closed
+       (except for [EBADF], where fildes was invalid).
+
+    POSIX_CLOSE_RESTART: called via posix_close (POSIX_CLOSE_RESTART), i. e.
+       if the call is interrupted by a signal that is to be caught, the call
+       may return -1 with errno set to [EINTR], in which case fildes
+       shall be left open; however, it is unspecified whether fildes can
+       subsequently be passed to any function except close() or posix_close()
+       without error.
+
+     Note that POSIX_CLOSE_RESTART means the opposite of SA_RESTART! */
+static inline int
+__close (int fd, int flag)
 {
   int res;
-
-  syscall_printf ("close(%d)", fd);
 
   pthread_testcancel ();
 
@@ -1694,13 +1707,42 @@ close (int fd)
     res = -1;
   else
     {
-      cfd->isclosed (true);
-      res = cfd->close_with_arch ();
-      cfd.release ();
+      res = cfd->close_with_arch (flag);
+      if (res != EINTR)
+	cfd.release ();
     }
 
-  syscall_printf ("%R = close(%d)", res, fd);
   return res;
+}
+
+extern "C" int
+close (int fd)
+{
+  syscall_printf ("close(%d)", fd);
+  int ret =  __close (fd, -1);
+  syscall_printf ("%R = close(%d)", ret, fd);
+  return ret;
+}
+
+extern "C" int
+posix_close (int fd, int flag)
+{
+   int real_flag = flag;
+
+  /* POSIX-1.2024 says: If flag is invalid, posix_close() may fail with errno
+     set to [EINVAL], but shall otherwise behave as if flag had been 0 and
+     close fd. */
+  if (real_flag != 0 && real_flag != POSIX_CLOSE_RESTART)
+    real_flag = 0;
+  syscall_printf ("posix_close(%d, %d)", fd, flag);
+  int ret = __close (fd, real_flag);
+  if (!ret && flag != real_flag)
+    {
+      set_errno (EINVAL);
+      ret = -1;
+    }
+  syscall_printf ("%R = posix_close(%d, %d)", ret, fd, flag);
+  return ret;
 }
 
 extern "C" int
@@ -2522,9 +2564,9 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
       /* POSIX semantics only on local NTFS drives. For the OPEN_BY_FILE_ID
          flag, see MINIMAL_WIN_NTFS_FLAGS comment in fs_info::update. */
       use_posix_semantics = wincap.has_posix_rename_semantics ()
-			    && !oldpc.isremote ()
-			    && oldpc.fs_is_ntfs ()
-			    && oldpc.has_attribute (FILE_SUPPORTS_OPEN_BY_FILE_ID);
+			&& !oldpc.isremote ()
+			&& oldpc.fs_is_ntfs ()
+			&& (oldpc.fs_flags () & FILE_SUPPORTS_OPEN_BY_FILE_ID);
 
 ignore_posix_semantics_retry:
       /* Opening the file must be part of the transaction.  It's not sufficient
@@ -4493,8 +4535,9 @@ popen (const char *command, const char *in_type)
       fcntl (stdchild, F_SETFD, stdchild_state | FD_CLOEXEC);
 
       /* Start a shell process to run the given command without forking. */
-      pid_t pid = ch_spawn.worker ("/bin/sh", argv, environ, _P_NOWAIT,
-				   __std[0], __std[1]);
+      child_info_spawn ch_spawn_local (_CH_NADA);
+      pid_t pid = ch_spawn_local.worker ("/bin/sh", argv, environ, _P_NOWAIT,
+					 __std[0], __std[1]);
 
       /* Reinstate the close-on-exec state */
       fcntl (stdchild, F_SETFD, stdchild_state);

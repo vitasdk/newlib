@@ -361,6 +361,12 @@ the information between <filename>/proc/partitions</filename> and the
 <command>df</command> output, you should be able to figure out which
 external drive corresponds to which raw disk device name.</para>
 
+<para>Raw devices of partitions protected by BitLocker provide access to the
+<emphasis>decrypted</emphasis> NTFS image.  If the partition is locked, read
+attempts fail with <literal>Permission denied</literal>.  The corresponding
+block range from the raw device of the full disk provides access to the
+<emphasis>encrypted</emphasis> image as stored on the disk.</para>
+
 <note><para>Apart from tape devices which are not block devices and are
 by default accessed directly, accessing mass storage devices raw
 is something you should only do if you know what you're doing and know how to
@@ -368,7 +374,15 @@ handle the information.  <emphasis role='bold'>Writing</emphasis> to a raw
 mass storage device you should only do if you
 <emphasis role='bold'>really</emphasis> know what you're doing and are aware
 of the fact that any mistake can destroy important information, for the
-device, and for you.  So, please, handle this ability with care.
+device, and for you.  So, please, handle this ability with care.</para>
+
+<para><emphasis role='bold'>Important:</emphasis> Windows may allow raw read
+<emphasis role='bold'>and write</emphasis> access to partitions (for example
+<filename>/dev/sda2</filename>) even from unprivileged processes.  This is
+usually the case for partitions on "removable" drives like USB flash drives
+or regular SATA/NVMe drives behind USB docking stations.  If
+<command>chkdsk X:</command> works, raw access to the same partition is
+possible from the same user account.
 <emphasis role='bold'>You have been warned.</emphasis></para></note>
 
 <para>

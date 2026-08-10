@@ -62,7 +62,15 @@ static char sccsid[] = "@(#)gmon.c	5.3 (Berkeley) 5/22/91";
 #include <stdio.h>
 #endif
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
 #include "cygmon-gmon.h"
+
+int profil(unsigned short *tampon, size_t taille_tampon,
+	   size_t offset, unsigned int echelle);
 
 /*
  *	froms is actually a bunch of unsigned shorts indexing tos
@@ -85,7 +93,32 @@ static int	s_scale;
 
 extern int errno;
 
-int
+/*
+ * Control profiling
+ *	profiling is what mcount checks to see if
+ *	all the data structures are ready.
+ */
+void
+moncontrol(int mode)
+{
+  if (mode)
+    {
+      /* start */
+      profil((unsigned short *)(sbuf + sizeof(struct phdr)),
+	     ssiz - sizeof(struct phdr),
+	     (int)s_lowpc, s_scale);
+
+      profiling = 0;
+    }
+  else
+    {
+      /* stop */
+      profil((unsigned short *)0, 0, 0, 0);
+      profiling = 3;
+    }
+}
+
+void
 monstartup(lowpc, highpc)
      char	*lowpc;
      char	*highpc;
@@ -161,6 +194,25 @@ monstartup(lowpc, highpc)
   moncontrol (1);
 }
 
+static void
+profil_write (int type, void *buffer, int len)
+{
+  static int des = -1;
+
+  if (des < 0)
+    {
+      des = open ("gmon.out", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    }
+  if (len == 0)
+    {
+      close (des);
+    }
+  else
+    {
+      write (des, buffer, len);
+    }
+}
+
 void
 _mcleanup()
 {
@@ -195,6 +247,7 @@ _mcleanup()
 
 static char already_setup = 0;
 
+void
 _mcount()
 {
   register char			*selfpc;
@@ -217,8 +270,8 @@ _mcount()
 
   if (! already_setup) 
     {
-      extern _etext();
-      extern _ftext();
+      extern char _etext();
+      extern char _ftext();
       already_setup = 1;
       monstartup(_ftext, _etext);
       atexit(_mcleanup);
@@ -330,29 +383,4 @@ overflow:
 #   define	TOLIMIT	"mcount: tos overflow\n"
   write (2, TOLIMIT, sizeof(TOLIMIT));
   goto out;
-}
-
-/*
- * Control profiling
- *	profiling is what mcount checks to see if
- *	all the data structures are ready.
- */
-moncontrol(mode)
-    int mode;
-{
-  if (mode)
-    {
-      /* start */
-      profil((unsigned short *)(sbuf + sizeof(struct phdr)),
-	     ssiz - sizeof(struct phdr),
-	     (int)s_lowpc, s_scale);
-      
-      profiling = 0;
-    }
-  else 
-    {
-      /* stop */
-      profil((unsigned short *)0, 0, 0, 0);
-      profiling = 3;
-    }
 }

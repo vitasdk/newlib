@@ -509,7 +509,7 @@ fhandler_console::cons_master_thread (handle_set_t *p, tty *ttyp)
 		case not_signalled_but_done:
 		case done_with_debugger:
 		  processed = true;
-		  ttyp->output_stopped = false;
+		  ttyp->output_stopped &= ~BY_VSTOP;
 		  if (ti.c_lflag & NOFLSH)
 		    goto remove_record;
 		  con.num_processed = 0;
@@ -771,6 +771,8 @@ fhandler_console::setup ()
       con.disable_master_thread = true;
       con.master_thread_suspended = false;
       con.num_processed = 0;
+      con.curr_input_mode = tty::restore;
+      con.curr_output_mode = tty::restore;
     }
 }
 
@@ -804,6 +806,9 @@ fhandler_console::rabuflen ()
   return con_ra.rabuflen;
 }
 
+static DWORD prev_input_mode_backup;
+static DWORD prev_output_mode_backup;
+
 /* The function set_{in,out}put_mode() should be static so that they
    can be called even after the fhandler_console instance is deleted. */
 void
@@ -818,15 +823,15 @@ fhandler_console::set_input_mode (tty::cons_mode m, const termios *t,
   GetConsoleMode (p->input_handle, &oflags);
   DWORD flags = oflags
     & (ENABLE_EXTENDED_FLAGS | ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE);
-  con.curr_input_mode = m;
   switch (m)
     {
     case tty::restore:
-      flags |= ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+      flags = con.prev_input_mode;
+      con.prev_input_mode = prev_input_mode_backup;
       break;
     case tty::cygwin:
       flags |= ENABLE_WINDOW_INPUT;
-      if (con.master_thread_suspended)
+      if (con.master_thread_suspended || con.disable_master_thread)
 	flags |= ENABLE_PROCESSED_INPUT;
       if (wincap.has_con_24bit_colors () && !con_is_legacy)
 	flags |= ENABLE_VIRTUAL_TERMINAL_INPUT;
@@ -846,6 +851,7 @@ fhandler_console::set_input_mode (tty::cons_mode m, const termios *t,
 	flags |= ENABLE_PROCESSED_INPUT;
       break;
     }
+  con.curr_input_mode = m;
   SetConsoleMode (p->input_handle, flags);
   if (!(oflags & ENABLE_VIRTUAL_TERMINAL_INPUT)
       && (flags & ENABLE_VIRTUAL_TERMINAL_INPUT)
@@ -868,10 +874,11 @@ fhandler_console::set_output_mode (tty::cons_mode m, const termios *t,
   if (con.orig_virtual_terminal_processing_mode)
     flags |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
   WaitForSingleObject (p->output_mutex, mutex_timeout);
-  con.curr_output_mode = m;
   switch (m)
     {
     case tty::restore:
+      flags = con.prev_output_mode;
+      con.prev_output_mode = prev_output_mode_backup;
       break;
     case tty::cygwin:
       if (wincap.has_con_24bit_colors () && !con_is_legacy)
@@ -883,6 +890,7 @@ fhandler_console::set_output_mode (tty::cons_mode m, const termios *t,
 	flags |= DISABLE_NEWLINE_AUTO_RETURN;
       break;
     }
+  con.curr_output_mode = m;
   acquire_attach_mutex (mutex_timeout);
   DWORD resume_pid = attach_console (con.owner);
   SetConsoleMode (p->output_handle, flags);
@@ -897,13 +905,14 @@ fhandler_console::setup_for_non_cygwin_app ()
   /* Setting-up console mode for non-cygwin app. */
   /* If conmode is set to tty::native for non-cygwin apps
      in background, tty settings of the shell is reflected
-     to the console mode of the app. So, use tty::restore
-     for background process instead. */
-  tty::cons_mode conmode =
-    (get_ttyp ()->getpgid ()== myself->pgid) ? tty::native : tty::restore;
-  set_input_mode (conmode, &tc ()->ti, get_handle_set ());
-  set_output_mode (conmode, &tc ()->ti, get_handle_set ());
-  set_disable_master_thread (true, this);
+     to the console mode of the app. So, do not change the
+     console mode. */
+  if (get_ttyp ()->getpgid () == myself->pgid)
+    {
+      set_input_mode (tty::native, &tc ()->ti, get_handle_set ());
+      set_output_mode (tty::native, &tc ()->ti, get_handle_set ());
+      set_disable_master_thread (true, this);
+    }
 }
 
 void
@@ -914,13 +923,14 @@ fhandler_console::cleanup_for_non_cygwin_app (handle_set_t *p)
   termios *ti = shared_console_info[unit] ?
     &(shared_console_info[unit]->tty_min_state.ti) : &dummy;
   /* Cleaning-up console mode for non-cygwin app. */
+  set_disable_master_thread (con.owner == GetCurrentProcessId ());
   /* conmode can be tty::restore when non-cygwin app is
      exec'ed from login shell. */
-  tty::cons_mode conmode =
-    (con.owner == GetCurrentProcessId ()) ? tty::restore : tty::cygwin;
-  set_output_mode (conmode, ti, p);
-  set_input_mode (conmode, ti, p);
-  set_disable_master_thread (con.owner == GetCurrentProcessId ());
+  tty::cons_mode conmode = cons_mode_on_close (p);
+  if (con.curr_output_mode != conmode)
+    set_output_mode (conmode, ti, p);
+  if (con.curr_input_mode != conmode)
+    set_input_mode (conmode, ti, p);
 }
 
 /* Return the tty structure associated with a given tty number.  If the
@@ -1113,8 +1123,8 @@ fhandler_console::bg_check (int sig, bool dontsignal)
      in the same process group. */
   if (sig == SIGTTIN && con.curr_input_mode != tty::cygwin)
     {
-      set_input_mode (tty::cygwin, &tc ()->ti, get_handle_set ());
       set_disable_master_thread (false, this);
+      set_input_mode (tty::cygwin, &tc ()->ti, get_handle_set ());
     }
   if (sig == SIGTTOU && con.curr_output_mode != tty::cygwin)
     set_output_mode (tty::cygwin, &tc ()->ti, get_handle_set ());
@@ -1128,6 +1138,15 @@ fhandler_console::read (void *pv, size_t& buflen)
   termios_printf ("read(%p,%d)", pv, buflen);
 
   push_process_state process_state (PID_TTYIN);
+
+  if (get_ttyp ()->input_stopped && is_nonblocking ())
+    {
+      set_errno (EAGAIN);
+      buflen = (size_t) -1;
+      return;
+    }
+  while (get_ttyp ()->input_stopped)
+    cygwait (10);
 
   size_t copied_chars = 0;
 
@@ -1821,6 +1840,12 @@ fhandler_console::open (int flags, mode_t)
   handle_set.output_handle = h;
   release_output_mutex ();
 
+  if (con.owner == GetCurrentProcessId ())
+    {
+      GetConsoleMode (get_handle (), &con.prev_input_mode);
+      GetConsoleMode (get_output_handle (), &con.prev_output_mode);
+    }
+
   wpbuf.init ();
 
   handle_set.input_mutex = input_mutex;
@@ -1864,6 +1889,30 @@ fhandler_console::open (int flags, mode_t)
       extern int sawTERM;
       if (con_is_legacy && !sawTERM)
 	setenv ("TERM", "cygwin", 1);
+    }
+
+  HANDLE h_in = GetStdHandle (STD_INPUT_HANDLE);
+  HANDLE h_out = GetStdHandle (STD_OUTPUT_HANDLE);
+  HANDLE h_err = GetStdHandle (STD_ERROR_HANDLE);
+
+  DWORD dummy;
+  bool in_is_console = GetConsoleMode (h_in, &dummy);
+  bool out_is_console =
+    GetConsoleMode (h_out, &dummy) || GetConsoleMode (h_err, &dummy);
+  if (in_is_console)
+    CloseHandle (h_in);
+
+  if (in_is_console && con.curr_input_mode != tty::cygwin)
+    {
+      prev_input_mode_backup = con.prev_input_mode;
+      GetConsoleMode (get_handle (), &con.prev_input_mode);
+      set_input_mode (tty::cygwin, &get_ttyp ()->ti, &handle_set);
+    }
+  if (out_is_console && con.curr_output_mode != tty::cygwin)
+    {
+      prev_output_mode_backup = con.prev_output_mode;
+      GetConsoleMode (get_output_handle (), &con.prev_output_mode);
+      set_output_mode (tty::cygwin, &get_ttyp ()->ti, &handle_set);
     }
 
   debug_printf ("opened conin$ %p, conout$ %p", get_handle (),
@@ -1960,8 +2009,8 @@ fhandler_console::post_open_setup (int fd)
   /* Setting-up console mode for cygwin app started from non-cygwin app. */
   if (fd == 0)
     {
-      set_input_mode (tty::cygwin, &get_ttyp ()->ti, &handle_set);
       set_disable_master_thread (false, this);
+      set_input_mode (tty::cygwin, &get_ttyp ()->ti, &handle_set);
     }
   else if (fd == 1 || fd == 2)
     set_output_mode (tty::cygwin, &get_ttyp ()->ti, &handle_set);
@@ -1970,37 +2019,20 @@ fhandler_console::post_open_setup (int fd)
 }
 
 int
-fhandler_console::close ()
+fhandler_console::close (int flag)
 {
   debug_printf ("closing: %p, %p", get_handle (), get_output_handle ());
 
   acquire_output_mutex (mutex_timeout);
 
-  if (shared_console_info[unit] && !myself->cygstarted
-      && (dev_t) myself->ctty == get_device ())
+  if (shared_console_info[unit] && (dev_t) myself->ctty == get_device ()
+      && cons_mode_on_close (&handle_set) == tty::restore)
     {
-      /* Restore console mode if this is the last closure. */
-      OBJECT_BASIC_INFORMATION obi;
-      NTSTATUS status;
-      status = NtQueryObject (get_handle (), ObjectBasicInformation,
-			      &obi, sizeof obi, NULL);
-      /* If the process is not myself->cygstarted and is the console owner,
-	 the process is the last process on this console device. The console
-	 owner has two console handles, i.e. one is io_handle and the other
-	 is the dupplicated handle for cons_master_thread.
-	 If myself->cygstarted is false and the process is not console owner,
-	 the process is supposed to be started by the exec command in the
-	 owner shell. In this case, the owner process is still alive in the
-	 background and waiting for this process. So the handle count is
-	 three (two in the owner process, one is mine). */
-      if (NT_SUCCESS (status)
-	  && obi.HandleCount == (con.owner == GetCurrentProcessId () ? 2 : 3))
-	{
-	  /* Cleaning-up console mode for cygwin apps. */
-	  set_output_mode (tty::restore, &get_ttyp ()->ti, &handle_set);
-	  set_input_mode (tty::restore, &get_ttyp ()->ti, &handle_set);
-	  set_disable_master_thread (true, this);
-	}
+      if (con.curr_output_mode != tty::restore)
+	set_output_mode (tty::restore, &get_ttyp ()->ti, &handle_set);
+      if (con.curr_input_mode != tty::restore)
+	set_input_mode (tty::restore, &get_ttyp ()->ti, &handle_set);
+      set_disable_master_thread (true, this);
     }
 
   if (shared_console_info[unit] && con.owner == GetCurrentProcessId ())
@@ -2135,6 +2167,7 @@ fhandler_console::ioctl (unsigned int cmd, void *arg)
 	release_output_mutex ();
 	return -1;
       case FIONREAD:
+      case TIOCINQ:
 	{
 	  DWORD n;
 	  int ret = 0;
@@ -2187,6 +2220,14 @@ fhandler_console::ioctl (unsigned int cmd, void *arg)
 	  return 0;
 	}
 	break;
+      case TCXONC:
+	res = this->tcflow ((int)(intptr_t) arg);
+	release_output_mutex ();
+	return res;
+      case TCFLSH:
+	res = this->tcflush ((int)(intptr_t) arg);
+	release_output_mutex ();
+	return res;
     }
 
   release_output_mutex ();
@@ -2219,6 +2260,10 @@ int
 fhandler_console::tcsetattr (int a, struct termios const *t)
 {
   get_ttyp ()->ti = *t;
+  if (con.curr_input_mode == tty::cygwin)
+    set_input_mode (tty::cygwin, t, &handle_set);
+  if (con.curr_output_mode == tty::cygwin)
+    set_output_mode (tty::cygwin, t, &handle_set);
   return 0;
 }
 
@@ -2984,7 +3029,12 @@ fhandler_console::char_command (char c)
 		  if (con.args[i] == 1) /* DECCKM */
 		    con.cursor_key_app_mode = (c == 'h');
 		  if (con.args[i] == 9001) /* win32-input-mode (https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md) */
-		    set_disable_master_thread (c == 'h', this);
+		    {
+		      set_disable_master_thread (c == 'h', this);
+		      if (con.curr_input_mode == tty::cygwin)
+			set_input_mode (tty::cygwin,
+					&tc ()->ti, get_handle_set ());
+		    }
 		}
 	      /* Call fix_tab_position() if screen has been alternated. */
 	      if (need_fix_tab_position)
@@ -4174,8 +4224,8 @@ fhandler_console::write (const void *vsrc, size_t len)
 void
 fhandler_console::doecho (const void *str, DWORD len)
 {
-  bool stopped = get_ttyp ()->output_stopped;
-  get_ttyp ()->output_stopped = false;
+  int stopped = get_ttyp ()->output_stopped;
+  get_ttyp ()->output_stopped = 0;
   write (str, len);
   get_ttyp ()->output_stopped = stopped;
 }
@@ -4257,7 +4307,7 @@ fhandler_console::get_nonascii_key (INPUT_RECORD& input_rec, char *tmp)
 }
 
 int
-fhandler_console::init (HANDLE h, DWORD a, mode_t bin)
+fhandler_console::init (HANDLE h, DWORD a, mode_t bin, int64_t dummy)
 {
   // this->fhandler_termios::init (h, mode, bin);
   /* Ensure both input and output console handles are open */
@@ -4416,7 +4466,20 @@ hook_conemu_cygwin_connector()
   DO_HOOK (NULL, GetProcAddress);
 }
 
-/* Ugly workaround to create invisible console required since Windows 7.
+bool
+fhandler_console::create_invisible_console ()
+{
+  ALLOC_CONSOLE_OPTIONS options = { ALLOC_CONSOLE_MODE_NO_WINDOW, FALSE, 0 };
+  ALLOC_CONSOLE_RESULT res;
+
+  HRESULT ret = AllocConsoleWithOptions (&options, &res);
+  SetParent (GetConsoleWindow (), HWND_MESSAGE);
+  termios_printf ("%X = AllocConsoleWithOptions (), %u", ret, res);
+  invisible_console = (ret == S_OK);
+  return invisible_console;
+}
+
+/* Ugly workaround to create invisible console required prior to W11 24H2.
 
    First try to just attach to any console which may have started this
    app.  If that works use this as our "invisible console".
@@ -4561,12 +4624,14 @@ fhandler_console::need_invisible (bool force)
 	  || !GetUserObjectInformationW (h, UOI_FLAGS, &oi, sizeof (oi), &len)
 	  || !(oi.dwFlags & WSF_VISIBLE))
 	{
-	  b = true;
 	  debug_printf ("window station is not visible");
 	  AllocConsole ();
 	  invisible_console = true;
 	}
-      b = create_invisible_console_workaround (force);
+      if (wincap.has_alloc_console_with_options ())
+	b = create_invisible_console ();
+      else
+	b = create_invisible_console_workaround (force);
     }
 
   debug_printf ("invisible_console %d", invisible_console);
@@ -4702,5 +4767,35 @@ fhandler_console::fstat (struct stat *st)
       st->st_uid = p->uid;
       st->st_gid = p->gid;
     }
+  return 0;
+}
+
+tty::cons_mode
+fhandler_console::cons_mode_on_close (handle_set_t *p)
+{
+  int unit = p->unit;
+  if (myself->ppid != 1) /* Execed from normal cygwin process. */
+    return tty::cygwin;
+
+  if (!process_alive (con.owner)) /* The Master process already died. */
+    return tty::restore;
+  if (con.owner == GetCurrentProcessId ()) /* Master process */
+    return tty::restore;
+
+  PROCESS_BASIC_INFORMATION pbi;
+  NTSTATUS status =
+    NtQueryInformationProcess (GetCurrentProcess (), ProcessBasicInformation,
+			       &pbi, sizeof (pbi), NULL);
+  if (NT_SUCCESS (status) && cygwin_pid (con.owner)
+      && !process_alive ((DWORD) pbi.InheritedFromUniqueProcessId))
+    /* Execed from normal cygwin process and the parent has been exited. */
+    return tty::cygwin;
+
+  return tty::restore; /* otherwise, restore */
+}
+
+int
+fhandler_console::tcdrain ()
+{
   return 0;
 }

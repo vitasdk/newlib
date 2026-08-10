@@ -32,6 +32,7 @@ details. */
 #include "ntdll.h"
 #include "cygwait.h"
 #include "exception.h"
+#include "register.h"
 
 /* For Linux compatibility, the length of a thread name is 16 characters. */
 #define THRNAMELEN 16
@@ -629,7 +630,32 @@ pthread::cancel ()
       threadlist_t *tl_entry = cygheap->find_tls (cygtls);
       if (!cygtls->inside_kernel (&context))
 	{
-	  context.Rip = (ULONG_PTR) pthread::static_cancel_self;
+#if defined(__x86_64__)
+	  /* Need to maintain the alignment of the stack pointer.
+	     https://learn.microsoft.com/en-us/cpp/build/stack-usage?view=msvc-170
+	     states,
+	       "The stack will always be maintained 16-byte aligned,
+		except within the prolog (for example, after the return
+		address is pushed),",
+	     that is, we need 16n + 8 byte alignment here because the stack
+	     pointer must be maintaiined to the same alignment required by
+	     the function prologue. Since the call instruction pushes the
+	     return address (rip) onto the stack, which is 8 bytes,
+	     an additional 8 bytes is required to emulate this behaviour.
+	     However, we do not need to push return address itself, because
+	     pthread::static_cancel_self() must not return. */
+	  context._CX_stackPtr &= ~0x07UL;
+	  if ((context._CX_stackPtr & 8) == 0)
+	    context._CX_stackPtr -= 8;
+#elif defined(__aarch64__)
+	  /* 16 bytes alignment required. Trim stack pointer just in case.
+	     https://learn.microsoft.com/en-us/cpp/build/arm64-windows-abi-conventions?view=msvc-170
+	  */
+	  context._CX_stackPtr &= ~0x0fUL;
+#else
+#error unimplemented for this target
+#endif
+	  context._CX_instPtr = (ULONG_PTR) pthread::static_cancel_self;
 	  SetThreadContext (win32_obj_id, &context);
 	}
       cygheap->unlock_tls (tl_entry);
@@ -1666,27 +1692,49 @@ pthread_rwlock::_fixup_after_fork ()
 /* pthread_key */
 /* static members */
 /* This stores pthread_key information across fork() boundaries */
-List<pthread_key> pthread_key::keys;
+pthread_key::keys_list pthread_key::keys[PTHREAD_KEYS_MAX];
 
 /* non-static members */
 
-pthread_key::pthread_key (void (*aDestructor) (void *)):verifyable_object (PTHREAD_KEY_MAGIC), destructor (aDestructor)
+pthread_key::pthread_key (void (*aDestructor) (void *)) :
+  verifyable_object (PTHREAD_KEY_MAGIC), destructor (aDestructor)
 {
   tls_index = TlsAlloc ();
   if (tls_index == TLS_OUT_OF_INDEXES)
     magic = 0;
   else
-    keys.insert (this);
+    for (size_t cnt = 0; cnt < PTHREAD_KEYS_MAX; cnt++)
+      {
+	LONG64 seq = keys[cnt].seq;
+	if (!keys_list::used (seq)
+	    && InterlockedCompareExchange64 (&keys[cnt].seq,
+					     seq + 1, seq) == seq)
+	  {
+	    keys[cnt].key = this;
+	    keys[cnt].busy_cnt = 0;
+	    key_idx = cnt;
+	    InterlockedIncrement64 (&keys[key_idx].seq);
+	    break;
+	  }
+      }
 }
 
 pthread_key::~pthread_key ()
 {
-  /* We may need to make the list code lock the list during operations
-   */
   if (magic != 0)
     {
-      keys.remove (this);
-      TlsFree (tls_index);
+      LONG64 seq = keys[key_idx].seq;
+      if (keys_list::ready (seq)
+	  && InterlockedCompareExchange64 (&keys[key_idx].seq,
+					   seq + 1, seq) == seq)
+	{
+	  while (InterlockedCompareExchange64 (&keys[key_idx].busy_cnt,
+					       INT64_MIN, 0) > 0)
+	    yield ();
+	  keys[key_idx].key = NULL;
+	  InterlockedIncrement64 (&keys[key_idx].seq);
+	  TlsFree (tls_index);
+	}
     }
 }
 
@@ -1946,7 +1994,12 @@ pthread_spinlock::lock ()
       else if (spins < FAST_SPINS_LIMIT)
         {
           ++spins;
+#if defined(__x86_64__)
           __asm__ volatile ("pause":::);
+#elif defined(__aarch64__)
+          __asm__ volatile ("dmb ishst\n"
+                            "yield":::);
+#endif
         }
       else
 	{
@@ -2333,7 +2386,12 @@ pthread_convert_abstime (clockid_t clock_id, const struct timespec *abstime,
     {
     case CLOCK_REALTIME_COARSE:
     case CLOCK_REALTIME:
+    case CLOCK_TAI:
       timeout->QuadPart += FACTOR;
+      /* TAI time is realtime + leap secs.  NT timers are on realtime.
+	 Subtract leap secs to get the corresponding real due time.
+	 Leap secs are always 0 unless CLOCK_TAI. */
+      timeout->QuadPart -= get_clock (clock_id)->get_leap_secs () * NS100PERSEC;
       break;
     default:
       /* other clocks must be handled as relative timeout */

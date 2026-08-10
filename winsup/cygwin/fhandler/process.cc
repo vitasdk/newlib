@@ -621,14 +621,39 @@ struct heap_info
     : heap_vm_chunks (NULL)
   {
     PDEBUG_BUFFER buf;
+    wchar_t mtx_name [32];
+    HANDLE mtx;
     NTSTATUS status;
     PDEBUG_HEAP_ARRAY harray;
 
-    buf = RtlCreateQueryDebugBuffer (16 * 65536, FALSE);
-    if (!buf)
+    /* We need a global mutex here, because RtlQueryProcessDebugInformation
+       is neither thread-safe, nor multi-process-safe.  If it's called in
+       parallel on the same process it can crash that process.  We can't
+       avoid this if a non-Cygwin app calls RtlQueryProcessDebugInformation
+       on the same process in parallel, but we can avoid Cygwin processes
+       crashing process PID just because they open /proc/PID/maps in parallel
+       by serializing RtlQueryProcessDebugInformation on the same process.
+
+       Note that the mutex guards the entire code from
+       RtlCreateQueryDebugBuffer to RtlDestroyQueryDebugBuffer including the
+       code accessing the debug buffer.  Apparently the debug buffer needs
+       safeguarded against parallel access all the time it's used!!! */
+    __small_swprintf (mtx_name, L"cyg-heapinfo-mtx-%u", pid);
+    mtx = CreateMutexW (&sec_none_nih, FALSE, mtx_name);
+    if (!mtx)
       return;
-    status = RtlQueryProcessDebugInformation (pid, PDI_HEAPS | PDI_HEAP_BLOCKS,
-					      buf);
+    WaitForSingleObject (mtx, INFINITE);
+    buf = RtlCreateQueryDebugBuffer (16 * 65536, FALSE);
+    if (buf)
+      status = RtlQueryProcessDebugInformation (pid,
+						PDI_HEAPS | PDI_HEAP_BLOCKS,
+						buf);
+    if (!buf)
+      {
+	ReleaseMutex (mtx);
+	CloseHandle (mtx);
+	return;
+      }
     if (NT_SUCCESS (status)
 	&& (harray = (PDEBUG_HEAP_ARRAY) buf->HeapInformation) != NULL)
       for (ULONG hcnt = 0; hcnt < harray->Count; ++hcnt)
@@ -653,6 +678,8 @@ struct heap_info
 	      }
 	}
     RtlDestroyQueryDebugBuffer (buf);
+    ReleaseMutex (mtx);
+    CloseHandle (mtx);
   }
 
   char *fill_if_match (char *base, ULONG type, char *dest)
@@ -887,7 +914,7 @@ format_process_maps (void *data, char *&destbuf)
   } cur = {{{'\0'}}, (char *)1, 0, 0};
 
   MEMORY_BASIC_INFORMATION mb;
-  dos_drive_mappings drive_maps;
+  dos_drive_mappings drive_maps (WITH_FLOPPIES);
   heap_info heaps (p->dwProcessId);
   thread_info threads (p->dwProcessId, proc);
   struct stat st;
@@ -1337,9 +1364,39 @@ extern "C" {
   struct mntent *getmntent (FILE *);
 };
 
+static size_t
+escape_string_length (const char *str, const char *escapees)
+{
+  size_t i, len = 0;
+
+  for (i = strcspn (str, escapees);
+       str[i];
+       i += strcspn (str + i + 1, escapees) + 1)
+    len += 3;
+  return len + i;
+}
+
+static size_t
+escape_string (char *destbuf, const char *str, const char *escapees)
+{
+  size_t s, i;
+  char *p = destbuf;
+
+  for (s = 0, i = strcspn (str, escapees);
+       str[i];
+       s = i + 1, i += strcspn (str + s, escapees) + 1)
+    {
+      p = stpncpy (p, str + s, i - s);
+      p += __small_sprintf (p, "\\%03o", (int)(unsigned char) str[i]);
+    }
+  p = stpcpy (p, str + s);
+  return (p - destbuf);
+}
+
 static off_t
 format_process_mountstuff (void *data, char *&destbuf, bool mountinfo)
 {
+  static const char MOUNTSTUFF_ESCAPEES[] = " \t\n\\#";
   _pinfo *p = (_pinfo *) data;
   user_info *u_shared = NULL;
   HANDLE u_hdl = NULL;
@@ -1365,16 +1422,11 @@ format_process_mountstuff (void *data, char *&destbuf, bool mountinfo)
     u_shared = user_shared;
   mount_info *mtab = &u_shared->mountinfo;
 
-  /* Store old value of _my_tls.locals here. */
-  int iteration = _my_tls.locals.iteration;
-  unsigned available_drives = _my_tls.locals.available_drives;
-  /* This reinitializes the above values in _my_tls. */
-  setmntent (NULL, NULL);
-  /* Restore iteration immediately since it's not used below.  We use the
-     local iteration variable instead*/
-  _my_tls.locals.iteration = iteration;
+  /* Store old value of _my_tls.locals.drivemappings here. */
+  class dos_drive_mappings *drivemappings = _my_tls.locals.drivemappings;
+  _my_tls.locals.drivemappings = NULL;
 
-  for (iteration = 0; (mnt = mtab->getmntent (iteration)); ++iteration)
+  for (int iteration = 0; (mnt = mtab->getmntent (iteration)); ++iteration)
     {
       /* We have no access to the drives mapped into another user session and
 	 _my_tls.locals.available_drives contains the mappings of the current
@@ -1389,9 +1441,9 @@ format_process_mountstuff (void *data, char *&destbuf, bool mountinfo)
 	    continue;
 	}
       destbuf = (char *) crealloc_abort (destbuf, len
-						  + strlen (mnt->mnt_fsname)
-						  + strlen (mnt->mnt_dir)
-						  + strlen (mnt->mnt_type)
+						  + escape_string_length (mnt->mnt_fsname, MOUNTSTUFF_ESCAPEES)
+						  + escape_string_length (mnt->mnt_dir, MOUNTSTUFF_ESCAPEES)
+						  + escape_string_length (mnt->mnt_type, MOUNTSTUFF_ESCAPEES)
 						  + strlen (mnt->mnt_opts)
 						  + 30);
       if (mountinfo)
@@ -1400,22 +1452,48 @@ format_process_mountstuff (void *data, char *&destbuf, bool mountinfo)
 	  dev_t dev = pc.exists () ? pc.fs_serial_number () : -1;
 
 	  len += __small_sprintf (destbuf + len,
-				  "%d %d %d:%d / %s %s - %s %s %s\n",
+				  "%d %d %d:%d / ",
 				  iteration, iteration,
-				  major (dev), minor (dev),
-				  mnt->mnt_dir, mnt->mnt_opts,
-				  mnt->mnt_type, mnt->mnt_fsname,
+				  major (dev), minor (dev));
+	  len += escape_string (destbuf + len,
+				mnt->mnt_dir,
+				MOUNTSTUFF_ESCAPEES);
+	  len += __small_sprintf (destbuf + len,
+				  " %s - ",
+				  mnt->mnt_opts);
+	  len += escape_string (destbuf + len,
+				mnt->mnt_type,
+				MOUNTSTUFF_ESCAPEES);
+	  destbuf[len++] = ' ';
+	  len += escape_string (destbuf + len,
+				mnt->mnt_fsname,
+				MOUNTSTUFF_ESCAPEES);
+	  len += __small_sprintf (destbuf + len,
+				  " %s\n",
 				  (pc.fs_flags () & FILE_READ_ONLY_VOLUME)
 				  ? "ro" : "rw");
 	}
       else
-	len += __small_sprintf (destbuf + len, "%s %s %s %s %d %d\n",
-				mnt->mnt_fsname, mnt->mnt_dir, mnt->mnt_type,
-				mnt->mnt_opts, mnt->mnt_freq, mnt->mnt_passno);
+        {
+	  len += escape_string (destbuf + len,
+				mnt->mnt_fsname,
+				MOUNTSTUFF_ESCAPEES);
+	  destbuf[len++] = ' ';
+	  len += escape_string (destbuf + len,
+				mnt->mnt_dir,
+				MOUNTSTUFF_ESCAPEES);
+	  destbuf[len++] = ' ';
+	  len += escape_string (destbuf + len,
+				mnt->mnt_type,
+				MOUNTSTUFF_ESCAPEES);
+	  len += __small_sprintf (destbuf + len, " %s %d %d\n",
+				  mnt->mnt_opts, mnt->mnt_freq,
+				  mnt->mnt_passno);
+	}
     }
 
-  /* Restore available_drives */
-  _my_tls.locals.available_drives = available_drives;
+  /* Restore old value of _my_tls.locals.drivemappings here. */
+  _my_tls.locals.drivemappings = drivemappings;
 
   if (u_hdl) /* Only not-NULL if open_shared has been called. */
     {

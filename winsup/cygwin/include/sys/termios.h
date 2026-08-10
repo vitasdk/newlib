@@ -18,6 +18,7 @@ details. */
 #define	TIOCMBIC	0x5417
 #define	TIOCMSET	0x5418
 #define	TIOCINQ		0x541B
+#define TCXONC		0x540A
 #define TIOCSCTTY	0x540E
 
 /* TIOCINQ is utilized instead of FIONREAD which has been
@@ -282,6 +283,12 @@ struct termios
   speed_t	c_ospeed;
 };
 
+struct winsize
+{
+  unsigned short ws_row, ws_col;
+  unsigned short ws_xpixel, ws_ypixel;
+};
+
 #define termio termios
 
 #ifdef __cplusplus
@@ -301,6 +308,8 @@ speed_t cfgetospeed(const struct termios *);
 int cfsetispeed (struct termios *, speed_t);
 int cfsetospeed (struct termios *, speed_t);
 int cfsetspeed (struct termios *, speed_t);
+int tcgetwinsize(int fd, struct winsize *winsz);
+int tcsetwinsize(int fd, const struct winsize *winsz);
 
 #ifdef __cplusplus
 }
@@ -310,13 +319,6 @@ int cfsetspeed (struct termios *, speed_t);
 #define cfgetispeed(tp)		((tp)->c_ispeed)
 #define cfgetospeed(tp)		((tp)->c_ospeed)
 #endif
-
-/* Extra stuff to make porting stuff easier.  */
-struct winsize
-{
-  unsigned short ws_row, ws_col;
-  unsigned short ws_xpixel, ws_ypixel;
-};
 
 #define TIOCGWINSZ (('T' << 8) | 1)
 #define TIOCSWINSZ (('T' << 8) | 2)

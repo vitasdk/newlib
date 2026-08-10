@@ -110,6 +110,8 @@ public:
 
 #define DIR_cache	(*reinterpret_cast<dir_cache *> (dir->__handle))
 
+#define RETRY_SMB	INT_MAX
+
 struct netdriveinf
 {
   DIR *dir;
@@ -174,6 +176,7 @@ server_is_running_nfs (const wchar_t *servername)
   FreeAddrInfoW (ai);
   return ret;
 }
+
 
 /* Use only to enumerate the Network top level. */
 static DWORD
@@ -263,6 +266,44 @@ out:
   return 0;
 }
 
+#define NO_PROVIDER_FOUND 1
+
+static DWORD
+wnet_find_server (wchar_t *srv_name, LPNETRESOURCEW nro, bool start)
+{
+  DWORD wres, cnt, size;
+  DWORD provider = NO_PROVIDER_FOUND;
+  HANDLE dom;
+
+  wres = WNetOpenEnumW (RESOURCE_GLOBALNET, RESOURCETYPE_DISK,
+			RESOURCEUSAGE_CONTAINER, start ? NULL : nro, &dom);
+  if (wres != NO_ERROR)
+    return NO_PROVIDER_FOUND;
+  while ((wres = WNetEnumResourceW (dom, (cnt = 1, &cnt), nro,
+				    (size = NT_MAX_PATH, &size))) == NO_ERROR)
+    {
+      NETINFOSTRUCT netinfo = { 0 };
+      netinfo.cbStructure = sizeof netinfo;
+      wres = WNetGetNetworkInformationW (nro->lpProvider, &netinfo);
+      if (wres != NO_ERROR)
+	continue;
+      /* Do not even try to enumerate SMB servers!  It takes 10 seconds just to
+         return with error 1208 ERROR_EXTENDED_ERROR, with extended error info
+	 "The list of servers for this workgroup is not currently available". */
+      if ((nro->dwDisplayType == RESOURCEDISPLAYTYPE_NETWORK
+	   || nro->dwDisplayType == RESOURCEDISPLAYTYPE_DOMAIN)
+	  && ((DWORD) netinfo.wNetType << 16) != WNNC_NET_SMB)
+	provider = wnet_find_server (srv_name, nro, false);
+      else if (nro->dwDisplayType == RESOURCEDISPLAYTYPE_SERVER
+	       && !wcscasecmp (srv_name, nro->lpRemoteName))
+	provider = ((DWORD) netinfo.wNetType << 16);
+      if (provider != NO_PROVIDER_FOUND)
+	break;
+    }
+  WNetCloseEnum (dom);
+  return provider;
+}
+
 static DWORD
 thread_netdrive_wnet (void *arg)
 {
@@ -270,48 +311,118 @@ thread_netdrive_wnet (void *arg)
   DIR *dir = ndi->dir;
   DWORD wres;
 
+  DWORD connected_only = false;
+  size_t srv_len = 0;
+
   size_t entry_cache_size = DIR_cache.count ();
   WCHAR provider[256], *dummy = NULL;
   wchar_t srv_name[CYG_MAX_PATH];
+  wchar_t *nfs_namebuf = NULL;
   NETRESOURCEW nri = { 0 };
   LPNETRESOURCEW nro;
-  tmp_pathbuf tp;
+  NETINFOSTRUCT netinfo;
+  DWORD net_type = 0;
   HANDLE dom = NULL;
   DWORD cnt, size;
+  tmp_pathbuf tp;
 
   ReleaseSemaphore (ndi->sem, 1, NULL);
-
-  wres = WNetGetProviderNameW (ndi->provider, provider, (size = 256, &size));
-  if (wres != NO_ERROR)
-    {
-      ndi->err = geterrno_from_win_error (wres);
-      goto out;
-    }
 
   sys_mbstowcs (srv_name, CYG_MAX_PATH, dir->__d_dirname);
   srv_name[0] = L'\\';
   srv_name[1] = L'\\';
-
-  if (ndi->provider == WNNC_NET_MS_NFS
-      && !server_is_running_nfs (srv_name + 2))
-    {
-      ndi->err = ENOENT;
-      goto out;
-    }
-
   nri.lpRemoteName = srv_name;
-  nri.lpProvider = provider;
   nri.dwType = RESOURCETYPE_DISK;
   nro = (LPNETRESOURCEW) tp.c_get ();
+
+  if (ndi->provider)
+    {
+      wres = WNetGetProviderNameW (ndi->provider, provider,
+				   (size = 256, &size));
+      if (wres != NO_ERROR)
+	{
+	  ndi->err = geterrno_from_win_error (wres);
+	  goto out;
+	}
+      nri.lpProvider = provider;
+
+    }
   wres = WNetGetResourceInformationW (&nri, nro,
 				      (size = NT_MAX_PATH, &size), &dummy);
   if (wres != NO_ERROR)
     {
-      ndi->err = geterrno_from_win_error (wres);
-      goto out;
+      /* WNetGetResourceInformationW fails for instance for WebDAV server
+         names, even if we have connected resources on the server.  We don't
+	 want a "No such file or directory" in this case, so try to find the
+	 server by WNet enumerating from the top. */
+      ndi->provider = wnet_find_server (srv_name, nro, true);
+      if (ndi->provider == NO_PROVIDER_FOUND)
+	{
+	  ndi->err = geterrno_from_win_error (wres);
+	  goto out;
+	}
     }
-  wres = WNetOpenEnumW (RESOURCE_GLOBALNET, RESOURCETYPE_DISK,
-			RESOURCEUSAGE_ALL, nro, &dom);
+
+  if (ndi->provider)
+    net_type = ndi->provider;
+  else
+    {
+      netinfo.cbStructure = sizeof netinfo;
+      wres = WNetGetNetworkInformationW (nro->lpProvider, &netinfo);
+      if (wres == NO_ERROR)
+	net_type = ((DWORD) netinfo.wNetType << 16);
+    }
+
+  /* More heuristics... */
+  switch (net_type)
+    {
+    case 0:
+    case NO_PROVIDER_FOUND:
+      /* Nothing to enumerate. */
+      goto out;
+    case WNNC_NET_MS_NFS:
+      /* If ndi->provider is 0 and the machine name contains dots, we already
+	 handled NFS.  However, if the machine supports both, NFS and SMB,
+	 sometimes WNetGetNetworkInformationW returns the NFS provider,
+	 sometimes the SMB provider.  So if we get the NFS provider again
+	 here, enforce the SMB provider. */
+      if (ndi->provider == 0)
+	{
+	  ndi->err = RETRY_SMB;
+	  goto out;
+	}
+      /* Check on port 2049 if the server is replying.  Otherwise the
+         timeout on WNetOpenEnumW is excessive! */
+      if (!server_is_running_nfs (srv_name + 2))
+	{
+	  ndi->err = ENOENT;
+	  goto out;
+	}
+      /* We need a temporary buffer for the multibyte to widechar conversion
+	 only required for NFS shares. */
+      if (!nfs_namebuf)
+	nfs_namebuf = tp.w_get ();
+      break;
+    case WNNC_NET_DAV:
+      /* WebDAV enumeration isn't supported, by the provider, but we can
+         find the connected shares of the server by enumerating all connected
+	 disk resources. */
+      connected_only = true;
+      srv_len = wcslen (srv_name);
+      break;
+    case WNNC_NET_RDR2SAMPLE:
+      /* Lots of OSS drivers uses this provider.  No idea yet, what
+         to do with them. */
+      fallthrough;
+    default:
+      break;
+    }
+
+  if (connected_only)
+    wres = WNetOpenEnumW (RESOURCE_CONNECTED, RESOURCETYPE_DISK, 0, NULL, &dom);
+  else
+    wres = WNetOpenEnumW (RESOURCE_GLOBALNET, RESOURCETYPE_DISK,
+			  RESOURCEUSAGE_ALL, nro, &dom);
   if (wres != NO_ERROR)
     {
       ndi->err = geterrno_from_win_error (wres);
@@ -323,6 +434,15 @@ thread_netdrive_wnet (void *arg)
     {
       size_t cache_idx;
 
+      /* Skip unrelated entries in connection list. */
+      if (connected_only)
+	{
+	  if (wcsncasecmp (srv_name, nro->lpRemoteName, srv_len)
+	      || wcslen (nro->lpRemoteName) <= srv_len
+	      || nro->lpRemoteName[srv_len] != L'\\')
+	    continue;
+	}
+
       /* Skip server name and trailing backslash */
       wchar_t *name = nro->lpRemoteName + 2;
       name = wcschr (name, L'\\');
@@ -330,33 +450,33 @@ thread_netdrive_wnet (void *arg)
 	continue;
       ++name;
 
-      if (ndi->provider == WNNC_NET_MS_NFS)
+      if (net_type == WNNC_NET_MS_NFS)
 	{
-	  wchar_t *nm = name;
-	  /* Convert from "ANSI embedded in widechar" to multibyte and convert
-	     back to widechar. */
+	  /* With MS NFS, the bytes of the share name on the remote side
+	     are simply dropped into a WCHAR buffer without conversion to
+	     Unicode.  So convert from "multibyte embedded in widechar" to
+	     real multibyte and then convert back to widechar here.
+
+	     Quirky: This conversion is already performed for files on an
+	     MS NFS filesystem when calling NtQueryDirectoryFile, but it's
+	     not performed on the strings returned by WNetEnumResourceW. */
 	  char mbname[wcslen (name) + 1];
 	  char *mb = mbname;
-	  while ((*mb++ = *nm++))
+	  while ((*mb++ = *name++))
 	    ;
-	  sys_mbstowcs_alloc (&name, HEAP_NOTHEAP, mbname);
-	  if (!name)
-	    {
-	      ndi->err = ENOMEM;
-	      goto out;
-	    }
-	  /* NFS has deep links so convert embedded '\\' to '/' here */
-	  for (wchar_t *bs = name; (bs = wcschr (bs, L'\\')); *bs++ = L'/')
-	    ;
+
+	  name = nfs_namebuf;
+	  MultiByteToWideChar (CP_ACP, 0, mbname, -1, name, NT_MAX_PATH);
 	}
+      /* Some providers have deep links so convert embedded '\\' to '/' here */
+      for (wchar_t *bs = name; (bs = wcschr (bs, L'\\')); *bs++ = L'/')
+	;
       /* If we already collected shares, drop duplicates. */
       for (cache_idx = 0; cache_idx < entry_cache_size; ++ cache_idx)
 	if (!wcscmp (name, DIR_cache[cache_idx]))	// wcscasecmp?
 	  break;
       if (cache_idx >= entry_cache_size)
 	DIR_cache.add (name);
-      if (ndi->provider == WNNC_NET_MS_NFS)
-	free (name);
     }
 out:
   if (dom)
@@ -369,14 +489,13 @@ static DWORD
 create_thread_and_wait (DIR *dir)
 {
   netdriveinf ndi = { dir, 0, 0, NULL };
+  WCHAR provider[256];
   cygthread *thr;
+  DWORD size;
 
   /* For the Network root, fetch WSD info. */
   if (strlen (dir->__d_dirname) == 2)
     {
-      WCHAR provider[256];
-      DWORD size;
-
       ndi.provider = WNNC_NET_SMB;
       ndi.sem = CreateSemaphore (&sec_none_nih, 0, 2, NULL);
       thr = new cygthread (thread_netdrive_wsd, &ndi, "netdrive_wsd");
@@ -393,8 +512,10 @@ create_thread_and_wait (DIR *dir)
   /* For shares, use WNet functions. */
 
   /* Try NFS first, if the name contains a dot (i. e., supposedly is a FQDN
-     as used in NFS server enumeration). */
-  if (strchr (dir->__d_dirname, '.'))
+     as used in NFS server enumeration) but no at-sign. */
+  if (strchr (dir->__d_dirname, '.') && !strchr (dir->__d_dirname + 2, '@')
+      && WNetGetProviderNameW (WNNC_NET_MS_NFS, provider, (size = 256, &size))
+	 == NO_ERROR)
     {
       ndi.provider = WNNC_NET_MS_NFS;
       ndi.sem = CreateSemaphore (&sec_none_nih, 0, 2, NULL);
@@ -408,19 +529,22 @@ create_thread_and_wait (DIR *dir)
 
     }
 
-  /* Eventually, try TERMSRV/P9/SMB via WNet for share enumeration,
-     depending on "server" name. */
-  if (!strcmp (dir->__d_dirname + 2, TERMSRV_DIR))
-    ndi.provider = WNNC_NET_TERMSRV;
-  else if (!strcmp (dir->__d_dirname + 2, PLAN9_DIR))
-    ndi.provider = WNNC_NET_9P;
-  else
-    ndi.provider = WNNC_NET_SMB;
   ndi.sem = CreateSemaphore (&sec_none_nih, 0, 2, NULL);
-  thr = new cygthread (thread_netdrive_wnet, &ndi, "netdrive_smb");
+  ndi.provider = 0;
+  thr = new cygthread (thread_netdrive_wnet, &ndi, "netdrive_wnet");
   if (thr->detach (ndi.sem))
     ndi.err = EINTR;
   CloseHandle (ndi.sem);
+
+  if (ndi.err == RETRY_SMB)
+    {
+      ndi.sem = CreateSemaphore (&sec_none_nih, 0, 2, NULL);
+      ndi.provider = WNNC_NET_SMB;
+      thr = new cygthread (thread_netdrive_wnet, &ndi, "netdrive_smb");
+      if (thr->detach (ndi.sem))
+	ndi.err = EINTR;
+      CloseHandle (ndi.sem);
+    }
 
 out:
   return DIR_cache.count() > 0 ? 0 : ndi.err;
@@ -432,7 +556,7 @@ fhandler_netdrive::exists ()
   if (strlen (get_name ()) == 2)
     return virt_rootdir;
 
-  wchar_t name[MAX_PATH];
+  wchar_t name[CYG_MAX_PATH], *dav_at;
   struct addrinfoW *ai;
   INT ret;
   DWORD protocol = 0;
@@ -458,11 +582,20 @@ fhandler_netdrive::exists ()
      into IP addresses.  This may take up to about 3 secs if the name
      doesn't exist, or about 8 secs if DNS is unavailable. */
   sys_mbstowcs (name, CYG_MAX_PATH, get_name ());
-  ret = GetAddrInfoW (name + 2, NULL, NULL, &ai);
-  if (!ret)
-    FreeAddrInfoW (ai);
+  /* Webdav URLs contain a @ after the hostname, followed by stuff.
+     Drop @ for GetAddrInfoW to succeed. */
+  if ((dav_at = wcschr (name, L'@')) != NULL)
+    *dav_at = L'\0';
 
-  return ret ? virt_none : virt_directory;
+  ret = GetAddrInfoW (name + 2, NULL, NULL, &ai);
+  if (ret)
+    {
+      debug_printf ("GetAddrInfoW(%W) returned %d", name + 2, ret);
+      return virt_none;
+    }
+
+  FreeAddrInfoW (ai);
+  return virt_directory;
 }
 
 fhandler_netdrive::fhandler_netdrive ():
@@ -580,7 +713,7 @@ fhandler_netdrive::open (int flags, mode_t mode)
 }
 
 int
-fhandler_netdrive::close ()
+fhandler_netdrive::close (int flag)
 {
   /* Skip fhandler_virtual::close, which is a no-op. */
   return fhandler_base::close ();

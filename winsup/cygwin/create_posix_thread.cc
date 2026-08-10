@@ -75,7 +75,7 @@ pthread_wrapper (PVOID arg)
   /* Initialize new _cygtls. */
   _my_tls.init_thread (wrapper_arg.stackbase - __CYGTLS_PADSIZE__,
 		       (DWORD (*)(void*, void*)) wrapper_arg.func);
-#ifdef __x86_64__
+#if defined(__x86_64__)
   __asm__ ("\n\
 	   leaq  %[WRAPPER_ARG], %%rbx	# Load &wrapper_arg into rbx	\n\
 	   movq  (%%rbx), %%r12		# Load thread func into r12	\n\
@@ -99,6 +99,23 @@ pthread_wrapper (PVOID arg)
 	   call  *%%r12			# Call thread func		\n"
 	   : : [WRAPPER_ARG] "o" (wrapper_arg),
 	       [CYGTLS] "i" (__CYGTLS_PADSIZE__));
+#elif defined(__aarch64__)
+  /* Sets up a new thread stack, frees the original OS stack,
+   * and calls the thread function with its arg using AArch64 ABI. */
+  __asm__ __volatile__ ("\n\
+	   ldp     x20, x21, [%[WRAPPER_ARG]]    // x20 = thread func, x21 = thread arg \n\
+	   ldp     x0, x1, [%[WRAPPER_ARG], #16] // x0 = stackaddr, x1 = stackbase	\n\
+	   sub     sp, x1, %[CYGTLS]  		 // sp = stackbase - (CYGTLS)    	\n\
+	   mov     fp, xzr              	 // clear frame pointer (x29)    	\n\
+						 // x0 already has stackaddr		\n\
+	   mov     x1, xzr              	 // x1 = 0 (dwSize)              	\n\
+	   mov     x2, #0x8000          	 // x2 = MEM_RELEASE             	\n\
+	   bl      VirtualFree          	 // free original stack          	\n\
+	   mov     x0, x21  			 // Move arg into x0			\n\
+	   blr     x20                  	 // call thread function         	\n"
+	   : : [WRAPPER_ARG] "r" (&wrapper_arg),
+	       [CYGTLS] "r" (__CYGTLS_PADSIZE__)
+	   : "x0", "x1", "x2", "x20", "x21", "x29", "memory");
 #else
 #error unimplemented for this target
 #endif
@@ -206,7 +223,7 @@ class thread_allocator
 public:
   thread_allocator () : current (THREAD_STORAGE_HIGH)
   {
-    alloc_func = wincap.has_extended_mem_api () ? &_alloc : &_alloc_old;
+    alloc_func = wincap.has_extended_mem_api () ? &thread_allocator::_alloc : &thread_allocator::_alloc_old;
   }
   PVOID alloc (SIZE_T size)
   {

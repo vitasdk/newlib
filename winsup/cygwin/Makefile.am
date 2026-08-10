@@ -48,10 +48,11 @@ LIB_NAME=libcygwin.a
 # sources
 #
 
-# These objects are included directly into the import library
 if TARGET_X86_64
 TARGET_FILES= \
 	x86_64/bcopy.S \
+	x86_64/fastcwd.cc \
+	aarch64/fastcwd.cc \
 	x86_64/memchr.S \
 	x86_64/memcpy.S \
 	x86_64/memmove.S \
@@ -63,6 +64,12 @@ TARGET_FILES= \
 	x86_64/wmempcpy.S
 endif
 
+if TARGET_AARCH64
+TARGET_FILES= \
+	aarch64/fastcwd.cc
+endif
+
+# These objects are included directly into the import library
 LIB_FILES= \
 	lib/_cygwin_crt0_common.cc \
 	lib/atexit.c \
@@ -76,7 +83,8 @@ LIB_FILES= \
 	lib/premain1.c \
 	lib/premain2.c \
 	lib/premain3.c \
-	lib/pseudo-reloc-dummy.c
+	lib/pseudo-reloc-dummy.c \
+	lib/pthreadconst.S
 
 FHANDLER_FILES= \
 	fhandler/base.cc \
@@ -266,6 +274,13 @@ SEC_FILES= \
 TZCODE_FILES= \
 	tzcode/localtime_wrapper.c
 
+if TARGET_X86_64
+UDIS86_FILES= \
+	udis86/decode.c \
+	udis86/itab.c \
+	udis86/udis86.c
+endif
+
 DLL_FILES= \
 	advapi32.cc \
 	aio.cc \
@@ -306,6 +321,7 @@ DLL_FILES= \
 	ipc.cc \
 	kernel32.cc \
 	ldap.cc \
+	lib/pthreadconst.S \
 	libstdcxx_wrapper.cc \
 	loadavg.cc \
 	lsearch.cc \
@@ -388,6 +404,7 @@ libdll_a_SOURCES= \
 	$(MM_FILES) \
 	$(SEC_FILES) \
 	$(TZCODE_FILES) \
+	$(UDIS86_FILES) \
 	$(GENERATED_FILES)
 
 #
@@ -422,7 +439,7 @@ BUILT_SOURCES = \
 
 # Every time we touch a source file, the version info has to be rebuilt
 # to maintain a correct build date, especially in uname release output
-dirs = $(srcdir) $(srcdir)/fhandler $(srcdir)/lib $(srcdir)/libc $(srcdir)/math $(srcdir)/mm $(srcdir)/regex $(srcdir)/sec $(srcdir)/tzcode
+dirs = $(srcdir) $(srcdir)/fhandler $(srcdir)/lib $(srcdir)/libc $(srcdir)/math $(srcdir)/mm $(srcdir)/regex $(srcdir)/sec $(srcdir)/tzcode $(srcdir)/udis86
 find_src_files = $(wildcard $(dir)/*.[chS]) $(wildcard $(dir)/*.cc)
 src_files := $(foreach dir,$(dirs),$(find_src_files))
 
@@ -459,6 +476,8 @@ VERSION_OFILES = version.o winver.o
 #
 
 NEW_FUNCTIONS=$(addprefix --replace=,\
+	arc4random_addrandom= \
+	arc4random_stir= \
 	atexit= \
 	timezone= \
 	uname=uname_x \

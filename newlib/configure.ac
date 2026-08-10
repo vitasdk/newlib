@@ -313,6 +313,26 @@ AC_ARG_ENABLE(newlib-use-gdtoa,
   esac
  fi], [newlib_use_gdtoa=yes])dnl
 
+dnl Support --enable-newlib-use-malloc-in-execl
+AC_ARG_ENABLE(newlib-use-malloc-in-execl,
+[  --enable-newlib-use-malloc-in-execl   use malloc instead of alloca in execl, execle and execlp],
+[case "${enableval}" in
+  yes) newlib_use_malloc_in_execl=yes;;
+  no)  newlib_use_malloc_in_execl=no ;;
+  *)   AC_MSG_ERROR(bad value ${enableval} for newlib-use-malloc-in-execl option) ;;
+ esac], [newlib_use_malloc_in_execl=no])dnl
+
+dnl Support --enable-newlib-hw-misaligned-access
+AC_ARG_ENABLE(newlib-hw-misaligned-access,
+[  --enable-newlib-hw-misaligned-access   Use hardware word-by-word access instead of byte-by-byte for misaligned memory ],
+[if test "${newlib_hw_misaligned_access+set}" != set; then
+  case "${enableval}" in
+  yes) newlib_hw_misaligned_access=yes;;
+  no)  newlib_hw_misaligned_access=no ;;
+  *)   AC_MSG_ERROR(bad value ${enableval} for newlib-hw-misaligned-access option) ;;
+  esac
+ fi], [newlib_hw_misaligned_access=])dnl
+
 AM_ENABLE_MULTILIB(, ..)
 NEWLIB_CONFIGURE(.)
 
@@ -525,6 +545,33 @@ fi
 
 if test "${newlib_use_gdtoa}" = "yes"; then
   AC_DEFINE(_WANT_USE_GDTOA, 1, [Define if using gdtoa rather than legacy ldtoa.])
+fi
+
+if test "${newlib_use_malloc_in_execl}" = "yes"; then
+  AC_DEFINE(_EXECL_USE_MALLOC, 1, [Define if using malloc for execl, execle and execlp.])
+fi
+
+if test "x${newlib_hw_misaligned_access}" = "x"; then
+  AC_CACHE_CHECK([if $CC has enabled misaligned hardware access],
+              [newlib_cv_hw_misaligned_access], [dnl
+  cat > conftest.c <<EOF
+#if __riscv_misaligned_fast || __riscv_misaligned_slow
+void misalign_access_supported(void) {}
+#else
+#error "misaligned access is not supported"
+#endif
+EOF
+  newlib_cv_hw_misaligned_access=no
+  if AC_TRY_COMMAND([${CC-cc} $CFLAGS $CPPFLAGS -c conftest.c])
+  then
+    newlib_cv_hw_misaligned_access=yes
+  fi
+  rm -f conftest*])
+  newlib_hw_misaligned_access=$newlib_cv_hw_misaligned_access
+fi
+
+if test "${newlib_hw_misaligned_access}" = "yes"; then
+  AC_DEFINE(_HAVE_HW_MISALIGNED_ACCESS, 1, [Define if hardware has little to no penalty for misaligned memory access.])
 fi
 
 dnl

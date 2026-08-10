@@ -1645,14 +1645,8 @@ fillout_mntent (const char *native_path, const char *posix_path, unsigned flags)
   struct mntent& ret=_my_tls.locals.mntbuf;
   bool append_bs = false;
 
-  /* Remove drivenum from list if we see a x: style path */
   if (strlen (native_path) == 2 && native_path[1] == ':')
-    {
-      int drivenum = cyg_tolower (native_path[0]) - 'a';
-      if (drivenum >= 0 && drivenum <= 31)
-	_my_tls.locals.available_drives &= ~(1 << drivenum);
       append_bs = true;
-    }
 
   /* Pass back pointers to mount_table strings reserved for use by
      getmntent rather than pointers to strings in the internal mount
@@ -1744,33 +1738,34 @@ mount_item::getmntent ()
   return fillout_mntent (native_path, posix_path, flags);
 }
 
-static struct mntent *
-cygdrive_getmntent ()
+struct mntent *
+mount_info::cygdrive_getmntent ()
 {
-  char native_path[4];
-  char posix_path[CYG_MAX_PATH];
-  DWORD mask = 1, drive = 'a';
-  struct mntent *ret = NULL;
+  tmp_pathbuf tp;
+  const wchar_t *wide_path;
+  char *win32_path, *posix_path;
 
-  while (_my_tls.locals.available_drives)
+  if (!_my_tls.locals.drivemappings)
+    _my_tls.locals.drivemappings = new dos_drive_mappings (NO_FLOPPIES);
+
+  wide_path = _my_tls.locals.drivemappings->next_dos_mount ();
+  if (wide_path)
     {
-      for (/* nothing */; drive <= 'z'; mask <<= 1, drive++)
-	if (_my_tls.locals.available_drives & mask)
-	  break;
-
-      __small_sprintf (native_path, "%c:\\", cyg_toupper (drive));
-      if (GetFileAttributes (native_path) == INVALID_FILE_ATTRIBUTES)
-	{
-	  _my_tls.locals.available_drives &= ~mask;
-	  continue;
-	}
-      native_path[2] = '\0';
-      __small_sprintf (posix_path, "%s%c", mount_table->cygdrive, drive);
-      ret = fillout_mntent (native_path, posix_path, mount_table->cygdrive_flags);
-      break;
+      win32_path = tp.c_get ();
+      sys_wcstombs (win32_path, NT_MAX_PATH, wide_path);
+      posix_path = tp.c_get ();
+      cygdrive_posix_path (win32_path, posix_path, 0);
+      return fillout_mntent (win32_path, posix_path, cygdrive_flags);
     }
-
-  return ret;
+  else
+    {
+      if (_my_tls.locals.drivemappings)
+	{
+	  delete _my_tls.locals.drivemappings;
+	  _my_tls.locals.drivemappings = NULL;
+	}
+      return NULL;
+    }
 }
 
 struct mntent *
@@ -1904,11 +1899,9 @@ cygwin_umount (const char *path, unsigned flags)
 #define is_dev(d,s)	wcsncmp((d),(s),sizeof(s) - 1)
 
 disk_type
-get_disk_type (LPCWSTR dos)
+get_device_type (LPCWSTR dev)
 {
-  WCHAR dev[MAX_PATH], *d = dev;
-  if (!QueryDosDeviceW (dos, dev, MAX_PATH))
-    return DT_NODISK;
+  const WCHAR *d = dev;
   if (is_dev (dev, L"\\Device\\"))
     {
       d += 8;
@@ -1939,18 +1932,24 @@ get_disk_type (LPCWSTR dos)
   return DT_NODISK;
 }
 
+disk_type
+get_disk_type (LPCWSTR dos)
+{
+  WCHAR dev[MAX_PATH];
+  if (!QueryDosDeviceW (dos, dev, MAX_PATH))
+    return DT_NODISK;
+  return get_device_type (dev);
+}
+
 extern "C" FILE *
 setmntent (const char *filep, const char *)
 {
   _my_tls.locals.iteration = 0;
-  _my_tls.locals.available_drives = GetLogicalDrives ();
-  /* Filter floppy drives on A: and B: */
-  if ((_my_tls.locals.available_drives & 1)
-      && get_disk_type (L"A:") == DT_FLOPPY)
-    _my_tls.locals.available_drives &= ~1;
-  if ((_my_tls.locals.available_drives & 2)
-      && get_disk_type (L"B:") == DT_FLOPPY)
-    _my_tls.locals.available_drives &= ~2;
+  if (_my_tls.locals.drivemappings)
+    {
+      delete _my_tls.locals.drivemappings;
+      _my_tls.locals.drivemappings = NULL;
+    }
   return (FILE *) filep;
 }
 
@@ -1994,78 +1993,177 @@ endmntent (FILE *)
   return 1;
 }
 
-dos_drive_mappings::dos_drive_mappings ()
+static bool
+resolve_dos_device (const wchar_t *dosname, wchar_t *devpath)
+{
+  if (QueryDosDeviceW (dosname, devpath, NT_MAX_PATH))
+    {
+      /* The DOS drive mapping can be another symbolic link.  If so,
+	 the mapping won't work since the section name is the name
+	 after resolving all symlinks.  Resolve symlinks here, too. */
+      for (int syml_cnt = 0; syml_cnt < SYMLOOP_MAX; ++syml_cnt)
+	{
+	  UNICODE_STRING upath;
+	  OBJECT_ATTRIBUTES attr;
+	  NTSTATUS status;
+	  HANDLE h;
+
+	  RtlInitUnicodeString (&upath, devpath);
+	  InitializeObjectAttributes (&attr, &upath, OBJ_CASE_INSENSITIVE,
+				      NULL, NULL);
+	  status = NtOpenSymbolicLinkObject (&h, SYMBOLIC_LINK_QUERY, &attr);
+	  if (!NT_SUCCESS (status))
+	    break;
+	  RtlInitEmptyUnicodeString (&upath, devpath, (NT_MAX_PATH - 1)
+						      * sizeof (WCHAR));
+	  status = NtQuerySymbolicLinkObject (h, &upath, NULL);
+	  NtClose (h);
+	  if (!NT_SUCCESS (status))
+	    break;
+	  devpath[upath.Length / sizeof (WCHAR)] = L'\0';
+	}
+      return true;
+    }
+  return false;
+}
+
+dos_drive_mappings::dos_drive_mappings (bool with_floppies)
 : mappings(0)
+, cur_mapping(0)
+, cur_dos(0)
 {
   tmp_pathbuf tp;
   wchar_t vol[64]; /* Long enough for Volume GUID string */
   wchar_t *devpath = tp.w_get ();
   wchar_t *mounts = tp.w_get ();
+  mapping **nextm = &mappings;
+  mapping *endfirstloop = NULL;
+  DWORD len;
 
-  /* Iterate over all volumes, fetch the first path from the list of
-     DOS paths the volume is mounted to, or use the GUID volume path
-     otherwise. */
+  /* Iterate over all drive letters, fetch the DOS device path */
+  if (!(len = GetLogicalDriveStringsW (NT_MAX_PATH - 1, mounts)) ||
+      len >= NT_MAX_PATH)
+    debug_printf ("GetLogicalDriveStringsW, %E");
+  else {
+    for (wchar_t *mount = mounts; *mount; mount += len + 2)
+      {
+	len = wcslen (mount);
+	mount[--len] = L'\0'; /* Drop trailing backslash */
+	if (resolve_dos_device (mount, devpath))
+	  {
+	    if (!with_floppies && get_device_type (devpath) == DT_FLOPPY)
+	      continue;
+	    mapping *m = new mapping ();
+	    if (m)
+	      {
+		m->dos.path = wcsdup (mount);
+		m->ntdevpath = wcsdup (devpath);
+		if (!m->dos.path || !m->ntdevpath)
+		  {
+		    free (m->dos.path);
+		    free (m->ntdevpath);
+		    delete m;
+		    continue;
+		  }
+		m->dos.len = len;
+		m->ntlen = wcslen (m->ntdevpath);
+		*nextm = endfirstloop = m;
+		nextm = &m->next;
+	      }
+	  }
+	else
+	  debug_printf ("Unable to determine the native mapping for %ls "
+			"(error %E)", mount);
+      }
+  }
+
+  /* Iterate over all volumes, fetch the list of DOS paths the volume is
+     mounted to. */
   HANDLE sh = FindFirstVolumeW (vol, 64);
   if (sh == INVALID_HANDLE_VALUE)
     debug_printf ("FindFirstVolumeW, %E");
   else {
     do
       {
-	/* Skip drives which are not mounted. */
-	DWORD len;
+	/* Skip volumes which are not mounted. */
 	if (!GetVolumePathNamesForVolumeNameW (vol, mounts, NT_MAX_PATH, &len)
 	    || mounts[0] == L'\0')
 	  continue;
-	*wcsrchr (vol, L'\\') = L'\0';
-	if (QueryDosDeviceW (vol + 4, devpath, NT_MAX_PATH))
-	  {
-	    /* The DOS drive mapping can be another symbolic link.  If so,
-	       the mapping won't work since the section name is the name
-	       after resolving all symlinks.  Resolve symlinks here, too. */
-	    for (int syml_cnt = 0; syml_cnt < SYMLOOP_MAX; ++syml_cnt)
-	      {
-		UNICODE_STRING upath;
-		OBJECT_ATTRIBUTES attr;
-		NTSTATUS status;
-		HANDLE h;
+	/* Skip volumes which are only mounted to the root of a drive letter:
+	   they were handled in the loop above */
+	if (len == 5 && mounts[1] == L':' && mounts[2] == L'\\' && !mounts[3])
+	  continue;
 
-		RtlInitUnicodeString (&upath, devpath);
-		InitializeObjectAttributes (&attr, &upath,
-					    OBJ_CASE_INSENSITIVE, NULL, NULL);
-		status = NtOpenSymbolicLinkObject (&h, SYMBOLIC_LINK_QUERY,
-						   &attr);
-		if (!NT_SUCCESS (status))
-		  break;
-		RtlInitEmptyUnicodeString (&upath, devpath, (NT_MAX_PATH - 1)
-							    * sizeof (WCHAR));
-		status = NtQuerySymbolicLinkObject (h, &upath, NULL);
-		NtClose (h);
-		if (!NT_SUCCESS (status))
-		  break;
-		devpath[upath.Length / sizeof (WCHAR)] = L'\0';
-	      }
+	*wcsrchr (vol, L'\\') = L'\0';
+	if (resolve_dos_device (vol + 4, devpath))
+	  {
+	    if (!with_floppies && get_device_type (devpath) == DT_FLOPPY)
+	      continue;
 	    mapping *m = new mapping ();
+	    bool hadrootmount = false;
 	    if (m)
 	      {
-		m->dospath = wcsdup (mounts);
+		/* store mount point list */
+		if ((m->dos.path = (wchar_t *) malloc (len * sizeof (WCHAR))))
+		  memcpy (m->dos.path, mounts, len * sizeof (WCHAR));
 		m->ntdevpath = wcsdup (devpath);
-		if (!m->dospath || !m->ntdevpath)
+		if (!m->dos.path || !m->ntdevpath)
 		  {
-		    free (m->dospath);
+		    free (m->dos.path);
 		    free (m->ntdevpath);
 		    delete m;
 		    continue;
 		  }
-		m->doslen = wcslen (m->dospath);
-		m->dospath[--m->doslen] = L'\0'; /* Drop trailing backslash */
+		/* split mount point list into dosmount entries */
+		mapping::dosmount *dos = &m->dos;
+		for (wchar_t *mount = m->dos.path;
+		    dos;
+		    mount += dos->len + 2,
+		      dos->next = mount[0] ? new mapping::dosmount () : NULL,
+		      dos = dos->next)
+		  {
+		    dos->path = mount;
+		    dos->len = wcslen (dos->path);
+		    dos->path[--dos->len] = L'\0'; /* Drop trailing backslash */
+		    if (dos->len == 2 && dos->path[1] == L':')
+		      hadrootmount = true;
+		  }
 		m->ntlen = wcslen (m->ntdevpath);
-		m->next = mappings;
-		mappings = m;
+		if (hadrootmount)
+		{
+		  /* This device has already been added to the mappings list
+		     in the first loop above, but with only the drive root
+		     mount.  Find that entry and replace it with the complete
+		     list of mounts. */
+		  hadrootmount = false;
+		  for (mapping *m2 = mappings;
+		       endfirstloop && m2 != endfirstloop->next;
+		       m2 = m2->next)
+		    {
+		      if (m->ntlen == m2->ntlen &&
+			  !wcscmp (m->ntdevpath, m2->ntdevpath))
+			{
+			  free (m2->dos.path);
+			  m2->dos.next = m->dos.next;
+			  m2->dos.path = m->dos.path;
+			  m2->dos.len = m->dos.len;
+			  free (m->ntdevpath);
+			  delete m;
+			  hadrootmount = true;
+			  break;
+			}
+		    }
+		}
+		if (!hadrootmount)
+		  {
+		    *nextm = m;
+		    nextm = &m->next;
+		  }
 	      }
 	  }
 	else
 	  debug_printf ("Unable to determine the native mapping for %ls "
-			"(error %u)", vol, GetLastError ());
+			"(error %E)", vol);
       }
     while (FindNextVolumeW (sh, vol, 64));
     FindVolumeClose (sh);
@@ -2088,16 +2186,34 @@ dos_drive_mappings::fixup_if_match (wchar_t *path)
       {
 	wchar_t *tmppath;
 
-	if (m->ntlen > m->doslen)
-	  wcsncpy (path += m->ntlen - m->doslen, m->dospath, m->doslen);
+	if (m->ntlen > m->dos.len)
+	  wcsncpy (path += m->ntlen - m->dos.len, m->dos.path, m->dos.len);
 	else if ((tmppath = wcsdup (path + m->ntlen)) != NULL)
 	  {
-	    wcpcpy (wcpcpy (path, m->dospath), tmppath);
+	    wcpcpy (wcpcpy (path, m->dos.path), tmppath);
 	    free (tmppath);
 	  }
 	break;
       }
   return path;
+}
+
+const wchar_t *
+dos_drive_mappings::next_dos_mount ()
+{
+  if (cur_dos)
+    cur_dos = cur_dos->next;
+  while (!cur_dos)
+    {
+      if (cur_mapping)
+	cur_mapping = cur_mapping->next;
+      else
+	cur_mapping = mappings;
+      if (!cur_mapping)
+	return NULL;
+      cur_dos = &cur_mapping->dos;
+    }
+  return cur_dos->path;
 }
 
 dos_drive_mappings::~dos_drive_mappings ()
@@ -2106,8 +2222,14 @@ dos_drive_mappings::~dos_drive_mappings ()
   for (mapping *m = mappings; m; m = n)
     {
       n = m->next;
-      free (m->dospath);
+      free (m->dos.path);
       free (m->ntdevpath);
+      mapping::dosmount *dn;
+      for (mapping::dosmount *dm = m->dos.next; dm; dm = dn)
+	{
+	  dn = dm->next;
+	  delete dm;
+	}
       delete m;
     }
 }

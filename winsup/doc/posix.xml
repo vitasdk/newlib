@@ -5,26 +5,31 @@
 <chapter id="compatibility" xmlns:xi="http://www.w3.org/2001/XInclude">
 <title>Compatibility</title>
 
-<sect1 id="std-susv4"><title>System interfaces compatible with the Single Unix Specification, Version 7:</title>
+<sect1 id="std-susv5"><title>System interfaces compatible with the Single UNIX® Specification Version 5:</title>
 
-<para>Note that the core of the Single Unix Specification, Version 7 is
-also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
+<para>Note that the core of the Single UNIX® Specification Version 5 is
+POSIX®.1-2024 also simultaneously IEEE Std 1003.1™-2024 Edition,
+The ®Open Group Base Specifications Issue 8
+(see https://pubs.opengroup.org/onlinepubs/9799919799/), and
+ISO®/IEC DIS 9945 Information technology
+- Portable Operating System Interface (POSIX®) base specifications
+- Issue 8.</para>
 
 <screen>
+    CMPLX
+    CMPLXF
+    CMPLXL
     FD_CLR
     FD_ISSET
     FD_SET
     FD_ZERO
     _Exit
     _exit
-    _longjmp
-    _setjmp
-    _tolower
-    _toupper
     a64l
     abort
     abs
     accept
+    accept4
     access
     acos
     acosf
@@ -40,6 +45,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     aio_suspend
     aio_write
     alarm
+    aligned_alloc
     alphasort
     asctime
     asctime_r
@@ -49,6 +55,9 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     asinhf
     asinhl
     asinl
+    asprintf
+    assert
+    at_quick_exit
     atan
     atan2
     atan2f
@@ -60,14 +69,48 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     atanl
     atexit
     atof
-    atoff
     atoi
     atol
     atoll
+    atomic_compare_exchange_strong
+    atomic_compare_exchange_strong_explicit
+    atomic_compare_exchange_weak
+    atomic_compare_exchange_weak_explicit
+    atomic_exchange
+    atomic_exchange_explicit
+    atomic_fetch_add
+    atomic_fetch_add_explicit
+    atomic_fetch_and
+    atomic_fetch_and_explicit
+    atomic_fetch_or
+    atomic_fetch_or_explicit
+    atomic_fetch_sub
+    atomic_fetch_sub_explicit
+    atomic_fetch_xor
+    atomic_fetch_xor_explicit
+    atomic_flag_clear
+    atomic_flag_clear_explicit
+    atomic_flag_test_and_set
+    atomic_flag_test_and_set_explicit
+    atomic_init
+    atomic_is_lock_free
+    atomic_load
+    atomic_load_explicit
+    atomic_signal_fence
+    atomic_store
+    atomic_store_explicit
+    atomic_thread_fence
     basename			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    be16toh
+    be32toh
+    be64toh
     bind
+    bind_textdomain_codeset
+    bindtextdomain
     bsearch
     btowc
+    c16rtomb
+    c32rtomb
     cabs
     cabsf
     cabsl
@@ -77,6 +120,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     cacoshf
     cacoshl
     cacosl
+    call_once
     calloc
     carg
     cargf
@@ -134,6 +178,12 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     close
     closedir
     closelog
+    cnd_broadcast
+    cnd_destroy
+    cnd_init
+    cnd_signal
+    cnd_timedwait
+    cnd_wait
     confstr
     conj
     conjf
@@ -158,7 +208,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     crealf
     creall
     creat
-    crypt			(available in external "crypt" library)
+    crypt			(available in external "libcrypt" library)
     csin
     csinf
     csinh
@@ -187,20 +237,26 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     dbm_nextkey			(available in external "libgdbm" library)
     dbm_open			(available in external "libgdbm" library)
     dbm_store			(available in external "libgdbm" library)
+    dcgettext			(available in external "libintl" library)
+    dcngettext			(available in external "libintl" library)
+    dgettext			(available in external "libintl" library)
     difftime
     dirfd
     dirname
     div
+    dladdr			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     dlclose
     dlerror
     dlopen
     dlsym
+    dngettext			(available in external "libintl" library)
     dprintf
     drand48
     dup
     dup2
+    dup3
     duplocale
-    encrypt			(available in external "crypt" library)
+    encrypt			(available in external "libcrypt" library)
     endgrent
     endhostent
     endprotoent
@@ -265,6 +321,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     fexecve
     fflush
     ffs
+    ffsl
+    ffsll
     fgetc
     fgetpos
     fgets
@@ -319,7 +377,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     ftok
     ftruncate
     ftrylockfile
-    ftw
     funlockfile
     futimens
     fwide
@@ -334,8 +391,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     getchar_unlocked
     getcwd
     getdelim
-    getdomainname
     getegid
+    getentropy
     getenv
     geteuid
     getgid
@@ -347,8 +404,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     getgroups
     gethostid
     gethostname
-    getitimer			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     getline
+    getlocalename_l
     getlogin
     getlogin_r
     getnameinfo
@@ -369,7 +426,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     getpwuid_r
     getrlimit			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     getrusage
-    gets
     getservbyname
     getservbyport
     getservent
@@ -377,7 +433,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     getsockname
     getsockopt
     getsubopt
-    gettimeofday
+    gettext			(available in external "libintl" library)
     getuid
     getutxent
     getutxid
@@ -392,6 +448,12 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     hcreate
     hdestroy
     hsearch
+    htobe16
+    htobe32
+    htobe64
+    htole16
+    htole32
+    htole64
     htonl
     htons
     hypot
@@ -409,18 +471,18 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     ilogbl
     imaxabs
     imaxdiv
+    in6addr_any
+    in6addr_loopback
     inet_addr
     inet_ntoa
     inet_ntop
     inet_pton
     initstate
     insque
-    ioctl
     isalnum
     isalnum_l
     isalpha
     isalpha_l
-    isascii
     isatty
     isblank
     isblank_l
@@ -483,6 +545,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     jn
     jrand48
     kill
+    kill_dependency
     killpg
     l64a
     labs
@@ -492,6 +555,9 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     ldexpf
     ldexpl
     ldiv
+    le16toh
+    le32toh
+    le64toh
     lfind
     lgamma
     lgammaf
@@ -541,6 +607,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     malloc
     mblen
     mbrlen
+    mbrtoc16
+    mbrtoc32
     mbrtowc
     mbsinit
     mbsnrtowcs
@@ -551,6 +619,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     memchr
     memcmp
     memcpy
+    memmem
     memmove
     memset
     mkdir
@@ -560,6 +629,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     mkfifoat
     mknod
     mknodat
+    mkostemp
     mkstemp
     mktime
     mlock
@@ -584,6 +654,12 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     msgrcv			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     msgsnd			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     msync
+    mtx_destroy
+    mtx_init
+    mtx_lock
+    mtx_timedlock
+    mtx_trylock
+    mtx_unlock
     munlock
     munmap
     nan
@@ -601,6 +677,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     nexttowardf
     nexttowardl
     nftw
+    ngettext			(available in external "libintl" library)
     nice			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     nl_langinfo
     nl_langinfo_l
@@ -622,16 +699,22 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pclose
     perror
     pipe
+    pipe2
     poll
     popen
+    posix_close
+    posix_devctl
     posix_fadvise
     posix_fallocate
+    posix_getdents
     posix_madvise
     posix_memalign
     posix_openpt
     posix_spawn
+    posix_spawn_file_actions_addchdir
     posix_spawn_file_actions_addclose
     posix_spawn_file_actions_adddup2
+    posix_spawn_file_actions_addfchdir
     posix_spawn_file_actions_addopen
     posix_spawn_file_actions_destroy
     posix_spawn_file_actions_init
@@ -653,6 +736,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pow
     powf
     powl
+    ppoll
     pread
     printf
     pselect
@@ -685,7 +769,10 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_barrierattr_init
     pthread_barrierattr_setpshared
     pthread_cancel
+    pthread_cleanup_pop
+    pthread_cleanup_push
     pthread_cond_broadcast
+    pthread_cond_clockwait
     pthread_cond_destroy
     pthread_cond_init
     pthread_cond_signal
@@ -701,7 +788,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_detach
     pthread_equal
     pthread_exit
-    pthread_getconcurrency
     pthread_getcpuclockid
     pthread_getschedparam
     pthread_getspecific
@@ -709,6 +795,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_key_create
     pthread_key_delete
     pthread_kill
+    pthread_mutex_clocklock
     pthread_mutex_destroy
     pthread_mutex_getprioceiling
     pthread_mutex_init
@@ -728,6 +815,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_mutexattr_setpshared
     pthread_mutexattr_settype
     pthread_once
+    pthread_rwlock_clockrdlock
+    pthread_rwlock_clockwrlock
     pthread_rwlock_destroy
     pthread_rwlock_init
     pthread_rwlock_rdlock
@@ -744,7 +833,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_self
     pthread_setcancelstate
     pthread_setcanceltype
-    pthread_setconcurrency
     pthread_setschedparam
     pthread_setschedprio
     pthread_setspecific
@@ -756,6 +844,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_spin_unlock
     pthread_testcancel
     ptsname
+    ptsname_r
     putc
     putc_unlocked
     putchar
@@ -767,9 +856,10 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     putwchar
     pwrite
     qsort
+    qsort_r			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    quick_exit
     raise
     rand
-    rand_r
     random
     read
     readdir
@@ -778,6 +868,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     readlinkat
     readv
     realloc
+    reallocarray
     realpath
     recv
     recvfrom
@@ -788,7 +879,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     regfree
     remainder
     remainderf
-    reminderl
+    remainderl
     remove
     remque
     remquo
@@ -821,9 +912,11 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     sched_setparam		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     sched_setscheduler		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     sched_yield
+    secure_getenv
     seed48
     seekdir
     select
+    sem_clockwait
     sem_close
     sem_destroy
     sem_getvalue
@@ -847,13 +940,11 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     setgid
     setgrent
     sethostent
-    setitimer			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     setjmp
-    setkey			(available in external "crypt" library)
+    setkey			(available in external "libcrypt" library)
     setlocale
     setlogmask
     setpgid
-    setpgrp
     setpriority			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     setprotoent
     setpwent
@@ -874,26 +965,21 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     shmdt			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     shmget			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     shutdown
+    sig2str
     sigaction
     sigaddset
     sigaltstack
     sigdelset
     sigemptyset
     sigfillset
-    sighold
-    sigignore
-    siginterrupt
     sigismember
     siglongjmp
     signal
     signbit			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     signgam
-    sigpause			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     sigpending
     sigprocmask
     sigqueue
-    sigrelse
-    sigset
     sigsetjmp
     sigsuspend
     sigtimedwait
@@ -925,6 +1011,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     stdout
     stpcpy
     stpncpy
+    str2sig
     strcasecmp
     strcasecmp_l
     strcat
@@ -942,6 +1029,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     strfmon_l
     strftime
     strftime_l
+    strlcat
+    strlcpy
     strlen
     strncasecmp
     strncasecmp_l
@@ -990,16 +1079,26 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     tcgetattr
     tcgetpgrp
     tcgetsid
+    tcgetwinsize
     tcsendbreak
     tcsetattr
     tcsetpgrp
+    tcsetwinsize
     tdelete
     telldir
-    tempnam
+    textdomain			(available in external "libintl" library)
     tfind
     tgamma
     tgammaf
     tgammal
+    thrd_create
+    thrd_current
+    thrd_detach
+    thrd_equal
+    thrd_exit
+    thrd_join
+    thrd_sleep
+    thrd_yield
     time
     timer_create		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     timer_delete
@@ -1007,6 +1106,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     timer_gettime
     timer_settime
     times
+    timespec_get
     timezone
     tmpfile
     tmpnam
@@ -1025,6 +1125,10 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     truncf
     truncl
     tsearch
+    tss_create
+    tss_delete
+    tss_get
+    tss_set
     ttyname
     ttyname_r
     twalk
@@ -1039,13 +1143,13 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     unlockpt
     unsetenv
     uselocale
-    utime
     utimensat
     utimes
     va_arg
     va_copy
     va_end
     va_start
+    vasprintf
     vdprintf
     vfprintf
     vfscanf
@@ -1076,6 +1180,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     wcscspn
     wcsdup
     wcsftime
+    wcslcat
+    wcslcpy
     wcslen
     wcsncasecmp
     wcsncasecmp_l
@@ -1157,8 +1263,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     feof_unlocked
     ferror_unlocked
     fflush_unlocked
-    fileno_unlocked
     fgetc_unlocked
+    fileno_unlocked
     finite
     finitef
     finitel
@@ -1188,6 +1294,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     gamma_r
     gammaf
     gammaf_r
+    getdomainname
     getdtablesize
     getgrouplist
     getifaddrs
@@ -1213,10 +1320,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     madvise
     mkstemps
     openpty
-    qsort_r			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     rcmd
     rcmd_af
-    reallocarray
     reallocf
     res_close
     res_init
@@ -1249,8 +1354,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     setusershell
     statfs
     strcasestr
-    strlcat
-    strlcpy
     strsep
     timingsafe_bcmp
     timingsafe_memcmp
@@ -1266,8 +1369,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     wait4
     warn
     warnx
-    wcslcat
-    wcslcpy
 </screen>
 
 </sect1>
@@ -1276,7 +1377,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
 
 <screen>
     __mempcpy
-    accept4
     argz_add
     argz_add_sep
     argz_append
@@ -1290,7 +1390,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     argz_replace
     argz_stringify
     asnprintf
-    asprintf
     asprintf_r
     basename			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     canonicalize_file_name
@@ -1299,10 +1398,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     clog10f
     clog10l
     close_range			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
-    crypt_r			(available in external "crypt" library)
-    dladdr			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    crypt_r			(available in external "libcrypt" library)
     dremf
-    dup3
     envz_add
     envz_entry
     envz_get
@@ -1322,8 +1419,6 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     fedisableexcept
     feenableexcept
     fegetexcept
-    ffsl
-    ffsll
     fgets_unlocked
     fgetwc_unlocked
     fgetws_unlocked
@@ -1352,44 +1447,32 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     llistxattr
     lremovexattr
     lsetxattr
-    memmem
     mempcpy
     memrchr
-    mkostemp
     mkostemps
-    pipe2
     posix_spawn_file_actions_addchdir_np
     posix_spawn_file_actions_addfchdir_np
     pow10
     pow10f
     pow10l
-    ppoll
-    pthread_cond_clockwait
     pthread_getaffinity_np
     pthread_getattr_np
     pthread_getname_np
-    pthread_mutex_clocklock
-    pthread_rwlock_clockrdlock
-    pthread_rwlock_clockwrlock
     pthread_setaffinity_np
     pthread_setname_np
     pthread_sigqueue
     pthread_timedjoin_np
     pthread_tryjoin_np
-    ptsname_r
     putwc_unlocked
     putwchar_unlocked
-    renameat2			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
-    qsort_r			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     quotactl
     rawmemchr
     removexattr
+    renameat2			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     scandirat
     sched_getaffinity
     sched_getcpu
     sched_setaffinity
-    secure_getenv
-    sem_clockwait
     setxattr
     signalfd
     sincos
@@ -1407,16 +1490,15 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     strverscmp
     sysinfo
     tdestroy
+    timegm
+    timelocal
     timerfd_create
     timerfd_gettime
     timerfd_settime
-    timegm
-    timelocal
     toascii_l
     updwtmpx
     utmpxname
     vasnprintf
-    vasprintf
     vasprintf_r
     versionsort
     wcsftime_l
@@ -1444,25 +1526,25 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     __fsetlocking
     __fwritable
     __fwriting
-    acl
-    aclcheck
-    aclfrommode
-    aclfrompbits
-    aclfromtext
-    aclsort
-    acltomode
-    acltopbits
-    acltotext
+    __xdrrec_getrec		(available in external "libtirpc" library)
+    __xdrrec_setnonblock	(available in external "libtirpc" library)
+    acl				(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    aclcheck			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    aclfrommode			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    aclfrompbits		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    aclfromtext			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    aclsort			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    acltomode			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    acltopbits			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    acltotext			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     endmntent
-    facl
+    facl			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     fegetprec
     fesetprec
     futimesat
     getmntent
     memalign
     setmntent
-    sig2str
-    str2sig
     xdr_array			(available in external "libtirpc" library)
     xdr_bool			(available in external "libtirpc" library)
     xdr_bytes			(available in external "libtirpc" library)
@@ -1509,73 +1591,94 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     xdrrec_endofrecord		(available in external "libtirpc" library)
     xdrrec_eof			(available in external "libtirpc" library)
     xdrrec_skiprecord		(available in external "libtirpc" library)
-    __xdrrec_getrec		(available in external "libtirpc" library)
-    __xdrrec_setnonblock	(available in external "libtirpc" library)
     xdrstdio_create		(available in external "libtirpc" library)
 </screen>
+
+</sect1>
 
 <sect1 id="std-iso"><title>System interfaces not in POSIX but compatible with ISO C requirements:</title>
 
 <screen>
-    aligned_alloc		(ISO C11)
-    at_quick_exit		(ISO C11)
-    c16rtomb			(ISO C11)
-    c32rtomb			(ISO C11)
     c8rtomb			(ISO C23)
-    call_once			(ISO C11)
-    cnd_broadcast		(ISO C11)
-    cnd_destroy			(ISO C11)
-    cnd_init			(ISO C11)
-    cnd_signal			(ISO C11)
-    cnd_timedwait		(ISO C11)
-    cnd_wait			(ISO C11)
-    mbrtoc16			(ISO C11)
-    mbrtoc32			(ISO C11)
     mbrtoc8			(ISO C23)
-    mtx_destroy			(ISO C11)
-    mtx_init			(ISO C11)
-    mtx_lock			(ISO C11)
-    mtx_timedlock		(ISO C11)
-    mtx_trylock			(ISO C11)
-    mtx_unlock			(ISO C11)
-    quick_exit			(ISO C11)
-    thrd_create			(ISO C11)
-    thrd_current		(ISO C11)
-    thrd_detach			(ISO C11)
-    thrd_equal			(ISO C11)
-    thrd_exit			(ISO C11)
-    thrd_join			(ISO C11)
-    thrd_sleep			(ISO C11)
-    thrd_yield			(ISO C11)
-    tss_create			(ISO C11)
-    tss_delete			(ISO C11)
-    tss_get			(ISO C11)
-    tss_set			(ISO C11)
 </screen>
 
 </sect1>
 
-</sect1>
-
-<sect1 id="std-deprec"><title>Other UNIX system interfaces, not in POSIX.1-2008 or deprecated:</title>
+<sect1 id="std-deprec"><title>Other UNIX® system interfaces, not in POSIX.1-2024, or deprecated:</title>
 
 <screen>
+    _longjmp			(SUSv4)
+    _setjmp			(SUSv4)
+    _tolower			(SUSv4)
+    _toupper			(SUSv4)
+    acl_add_perm		(POSIX.1e draft)
+    acl_calc_mask		(POSIX.1e draft)
+    acl_check			(libacl)
+    acl_clear_perms		(POSIX.1e draft)
+    acl_cmp			(libacl)
+    acl_copy_entry		(POSIX.1e draft)
+    acl_copy_ext		(POSIX.1e draft)
+    acl_copy_int		(POSIX.1e draft)
+    acl_create_entry		(POSIX.1e draft)
+    acl_delete_def_file		(POSIX.1e draft)
+    acl_delete_entry		(POSIX.1e draft)
+    acl_delete_perm		(POSIX.1e draft)
+    acl_dup			(POSIX.1e draft)
+    acl_entries			(libacl)
+    acl_equiv_mode		(libacl)
+    acl_error			(POSIX.1e draft)
+    acl_extended_fd		(libacl)
+    acl_extended_file		(libacl)
+    acl_extended_file_nofollow	(libacl)
+    acl_free			(POSIX.1e draft)
+    acl_from_mode		(libacl)
+    acl_from_text		(POSIX.1e draft)
+    acl_get_entry		(POSIX.1e draft)
+    acl_get_fd			(POSIX.1e draft)
+    acl_get_fd_np		(FreeBSD, NetBSD)
+    acl_get_file		(POSIX.1e draft)
+    acl_get_link_np		(FreeBSD, NetBSD)
+    acl_get_perm		(libacl)
+    acl_get_perm_np		(FreeBSD, NetBSD)
+    acl_get_permset		(POSIX.1e draft)
+    acl_get_qualifier		(POSIX.1e draft)
+    acl_get_tag_type		(POSIX.1e draft)
+    acl_init			(POSIX.1e draft)
+    acl_is_trivial_np		(FreeBSD, NetBSD)
+    acl_set_fd			(POSIX.1e draft)
+    acl_set_fd_np		(FreeBSD, NetBSD)
+    acl_set_file		(POSIX.1e draft)
+    acl_set_link_np		(FreeBSD, NetBSD)
+    acl_set_permset		(POSIX.1e draft)
+    acl_set_qualifier		(POSIX.1e draft)
+    acl_set_tag_type		(POSIX.1e draft)
+    acl_size			(POSIX.1e draft)
+    acl_strip_np		(FreeBSD, NetBSD)
+    acl_to_any_text		(libacl)
+    acl_to_text			(POSIX.1e draft)
+    acl_valid			(POSIX.1e draft)
+    atoff			(AIX)
     bcmp			(POSIX.1-2001, SUSv3)
     bcopy			(SUSv3)
     bzero			(SUSv3)
-    chroot			(SUSv2)		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
-    clock_setres		(QNX, VxWorks)	(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    chroot			(SUSv2 - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    clock_setres		(QNX, VxWorks - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     cuserid			(POSIX.1-1988, SUSv2)
     ecvt			(SUSv3)
     endutent			(XPG2)
     fcvt			(SUSv3)
     ftime			(SUSv3)
+    ftw				(SUSv4)
     gcvt			(SUSv3)
     getcontext			(SUSv3)
     gethostbyaddr		(SUSv3)
     gethostbyname		(SUSv3)
     gethostbyname2		(first defined in BIND 4.9.4)
+    getitimer			(SUSv4 - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     getpass			(SUSv2)
+    gets			(SUSv4)
+    gettimeofday		(SUSv4)
     getutent			(XPG2)
     getutid			(XPG2)
     getutline			(XPG2)
@@ -1583,6 +1686,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     getwd			(SUSv3)
     h_errno			(SUSv3)
     index			(SUSv3)
+    ioctl			(SUSv4)
+    isascii			(SUSv4)
     makecontext			(SUSv3)
     mallinfo			(SVID)
     mallopt			(SVID)
@@ -1591,57 +1696,107 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     pthread_attr_getstackaddr	(SUSv3)
     pthread_attr_setstackaddr	(SUSv3)
     pthread_continue		(XPG2)
+    pthread_getconcurrency	(SUSv4)
     pthread_getsequence_np	(Tru64)
+    pthread_setconcurrency	(SUSv4)
     pthread_suspend		(XPG2)
     pthread_yield		(POSIX.1c drafts)
     pututline			(XPG2)
     putw			(SVID)
+    rand_r			(SUSv4)
     rindex			(SUSv3)
     scalb			(SUSv3)
     setcontext			(SUSv3)
+    setitimer			(SUSv4 - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    setpgrp			(SUSv4)
     setutent			(XPG2)
+    sighold			(SUSv4)
+    sigignore			(SUSv4)
+    siginterrupt		(SUSv4)
+    sigpause			(SUSv4 - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    sigrelse			(SUSv4)
+    sigset			(SUSv4)
     stime			(SVID)
     swapcontext			(SUSv3)
     sys_errlist			(BSD)
     sys_nerr			(BSD)
     sys_siglist			(BSD)
-    toascii			(SUSv3)
+    tempnam			(SUSv4)
+    toascii			(SUSv4)
     ttyslot			(SUSv2)
     ualarm			(SUSv3)
     usleep			(SUSv3)
+    utime			(SUSv4)
     utmpname			(XPG2)
-    vfork			(SUSv3)		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    vfork			(SUSv3 - see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
 </screen>
 
 </sect1>
 
-<sect1 id="std-notimpl"><title>NOT implemented system interfaces from the Single Unix Specification, Volume 7:</title>
+<sect1 id="std-notimpl"><title>NOT implemented system interfaces from the Single UNIX® Specification Version 5:</title>
 
 <screen>
+    _Fork
+    dcgettext_l
+    dcngettext_l
+    dgettext_l
+    dngettext_l
     endnetent
-    fattach
     fmtmsg
     getdate
     getdate_err
     gethostent
-    getmsg
     getnetbyaddr
     getnetbyname
     getnetent
-    getpmsg
-    isastream
+    getresgid
+    getresuid
+    gettext_l
     mlockall
     munlockall
+    ngettext_l
     posix_mem_offset
-    posix_trace[...]
-    posix_typed_[...]
+    posix_typed_mem_get_info
+    posix_typed_mem_open
+    pthread_mutex_consistent
     pthread_mutexattr_getrobust
     pthread_mutexattr_setrobust
-    pthread_mutex_consistent
-    putmsg
     setnetent
-    ulimit
+    setresgid
+    setresuid
     waitid
+</screen>
+
+</sect1>
+
+<sect1 id="std-other"><title>Other system interfaces, some from Windows:</title>
+
+<screen>
+    _get_osfhandle             (Windows)
+    _setmode                   (Windows)
+    cwait                      (Windows)
+    cygwin_attach_handle_to_fd
+    cygwin_conv_path
+    cygwin_conv_path_list
+    cygwin_create_path
+    cygwin_detach_dll
+    cygwin_dll_init
+    cygwin_internal
+    cygwin_logon_user
+    cygwin_posix_path_list_p
+    cygwin_set_impersonation_token
+    cygwin_split_path
+    cygwin_stackdump
+    cygwin_umount
+    cygwin_winpid_to_pid
+    spawnl                     (Windows)
+    spawnle                    (Windows)
+    spawnlp                    (Windows)
+    spawnlpe                   (Windows)
+    spawnv                     (Windows)
+    spawnve                    (Windows)
+    spawnvp                    (Windows)
+    spawnvpe                   (Windows)
 </screen>
 
 </sect1>
@@ -1660,6 +1815,17 @@ currently support only CLOCK_REALTIME.</para>
 
 <para><function>close_range</function> does not support the Linux-specific
 flag CLOSE_RANGE_UNSHARE.</para>
+
+<para>The Solaris-invented ACL functions <function>acl</function>,
+<function>facl</function>, <function>aclcheck</function>,
+<function>aclfrommode</function>, <function>aclfrompbits</function>,
+<function>aclfromtext</function>, <function>aclsort</function>,
+<function>acltomode</function>, <function>acltopbits</function> and
+<function>acltotext</function> and the belonging macros and datatypes
+are defined in &lt;cygwin/acl.h&gt; since they collide with the
+Linux-compatible POSIX.1e draft macros in &lt;sys/acl.h&gt;.  Just
+include &lt;cygwin/acl.h&gt; if you prefer them over the POSIX.1e
+functions.</para>
 
 <para>POSIX file locks via <function>fcntl</function> or
 <function>lockf</function>, as well as BSD <function>flock</function> locks
@@ -1769,7 +1935,7 @@ atomic either.  Over-allocation with FALLOC_FL_KEEP_SIZE is only
 temporary on Windows until the last handle to the file is closed.
 Over-allocation on sparse files is entirely ignored on Windows.</para>
 
-<para><function>sched_setpolicy</function> only emulates API behavior
+<para><function>sched_setscheduler</function> only emulates API behavior
 because Windows does not offer alternative scheduling policies.
 If <literal>SCHED_OTHER</literal> or <literal>SCHED_BATCH</literal> is
 selected, the Windows priority is set according to the nice value.
@@ -1783,7 +1949,7 @@ policies and negative nice values are dropped on
 <function>fork</function>.</para>
 
 <para><function>nice</function>, <function>setpriority</function>,
-<function>sched_setparam</function> and <function>sched_setpolicy</function>
+<function>sched_setparam</function> and <function>sched_setscheduler</function>
 map the nice value (<literal>SCHED_OTHER</literal>,
 <literal>SCHED_BATCH</literal>) or the <literal>sched_priority</literal>
 (<literal>SCHED_FIFO</literal>, <literal>SCHED_RR</literal>) to Windows
