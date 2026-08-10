@@ -21,7 +21,7 @@ m4_foreach_w([SYS_DIR], [
   or1k
   rdos rtems
   sh sysmec sysnec810 sysnecv850 sysvi386 sysvnecv70
-  tic80 tirtos
+  tic80 tirtos vita
   w65
   z8ksim
 ], [AM_CONDITIONAL([HAVE_LIBC_SYS_]m4_toupper(SYS_DIR)[_DIR], test "${sys_dir}" = SYS_DIR)])

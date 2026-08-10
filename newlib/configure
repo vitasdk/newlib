@@ -767,6 +767,8 @@ HAVE_LIBC_SYS_Z8KSIM_DIR_FALSE
 HAVE_LIBC_SYS_Z8KSIM_DIR_TRUE
 HAVE_LIBC_SYS_W65_DIR_FALSE
 HAVE_LIBC_SYS_W65_DIR_TRUE
+HAVE_LIBC_SYS_VITA_DIR_FALSE
+HAVE_LIBC_SYS_VITA_DIR_TRUE
 HAVE_LIBC_SYS_TIRTOS_DIR_FALSE
 HAVE_LIBC_SYS_TIRTOS_DIR_TRUE
 HAVE_LIBC_SYS_TIC80_DIR_FALSE
@@ -5493,6 +5495,13 @@ else
   HAVE_LIBC_SYS_TIRTOS_DIR_TRUE='#'
   HAVE_LIBC_SYS_TIRTOS_DIR_FALSE=
 fi
+ if test "${sys_dir}" = vita; then
+  HAVE_LIBC_SYS_VITA_DIR_TRUE=
+  HAVE_LIBC_SYS_VITA_DIR_FALSE='#'
+else
+  HAVE_LIBC_SYS_VITA_DIR_TRUE='#'
+  HAVE_LIBC_SYS_VITA_DIR_FALSE=
+fi
  if test "${sys_dir}" = w65; then
   HAVE_LIBC_SYS_W65_DIR_TRUE=
   HAVE_LIBC_SYS_W65_DIR_FALSE='#'
@@ -7599,6 +7608,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_LIBC_SYS_TIRTOS_DIR_TRUE}" && test -z "${HAVE_LIBC_SYS_TIRTOS_DIR_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_LIBC_SYS_TIRTOS_DIR\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_LIBC_SYS_VITA_DIR_TRUE}" && test -z "${HAVE_LIBC_SYS_VITA_DIR_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_LIBC_SYS_VITA_DIR\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_LIBC_SYS_W65_DIR_TRUE}" && test -z "${HAVE_LIBC_SYS_W65_DIR_FALSE}"; then

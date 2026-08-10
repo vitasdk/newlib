@@ -583,6 +583,61 @@ check_PROGRAMS =
 @HAVE_LIBC_SYS_SYSVNECV70_DIR_TRUE@	libc/sys/sysvnecv70/cerror.S libc/sys/sysvnecv70/exit.S libc/sys/sysvnecv70/write.S libc/sys/sysvnecv70/sysv60.S libc/sys/sysvnecv70/fpx.c libc/sys/sysvnecv70/fps.S libc/sys/sysvnecv70/open.S
 
 @HAVE_LIBC_SYS_TIRTOS_DIR_TRUE@am__append_62 = libc/sys/tirtos/lock.c
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@am__append_vita = \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/syscalls.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/access.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/sbrk.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/threading.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/mlock.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/io.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/socket.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/dup.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/select.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/error.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/fcntl.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/dirent.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/lcltime_r.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/sleep.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/usleep.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/truncate.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/fs.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/clock.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/pread.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/pathconf.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/fpathconf.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/poll.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/monetary.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/uname.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/getentropy.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/basename.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/dirname.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/resource.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/sysconf.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/ids.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/secure_getenv.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/pipe.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/utime.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/chroot.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/groups.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/gethostbyaddr.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/gethostbyname.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/getaddrinfo.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/freeaddrinfo.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/getservbyname.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_ntop.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_ntoa.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_netof.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_pton.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_lnaof.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_addr.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_network.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_net_ntop.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_aton.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_net_pton.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/inet_makeaddr.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/gethostname.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/getnameinfo.c \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/vitanet.c
 @HAVE_LIBC_SYS_W65_DIR_TRUE@am__append_63 = libc/sys/w65/syscalls.c libc/sys/w65/trap.c
 @HAVE_LIBC_SYS_Z8KSIM_DIR_TRUE@am__append_64 = libc/sys/z8ksim/glue.c
 @HAVE_LIBC_MACHINE_AARCH64_TRUE@am__append_65 = \
@@ -1808,6 +1863,61 @@ am__objects_51 = libc/ssp/libc_a-chk_fail.$(OBJEXT) \
 @HAVE_LIBC_SYS_SYSVNECV70_DIR_TRUE@	libc/sys/sysvnecv70/libc_a-fps.$(OBJEXT) \
 @HAVE_LIBC_SYS_SYSVNECV70_DIR_TRUE@	libc/sys/sysvnecv70/libc_a-open.$(OBJEXT)
 @HAVE_LIBC_SYS_TIRTOS_DIR_TRUE@am__objects_73 = libc/sys/tirtos/libc_a-lock.$(OBJEXT)
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@am__objects_vita = \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-syscalls.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-access.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-sbrk.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-threading.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-mlock.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-io.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-socket.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-dup.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-select.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-error.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-fcntl.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-dirent.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-lcltime_r.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-sleep.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-usleep.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-truncate.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-fs.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-clock.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-pread.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-pathconf.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-fpathconf.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-poll.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-monetary.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-uname.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-getentropy.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-basename.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-dirname.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-resource.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-sysconf.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-ids.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-secure_getenv.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-pipe.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-utime.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-chroot.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-groups.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-gethostbyaddr.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-gethostbyname.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-getaddrinfo.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-freeaddrinfo.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-getservbyname.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_ntop.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_ntoa.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_netof.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_pton.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_lnaof.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_addr.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_network.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_net_ntop.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_aton.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_net_pton.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-inet_makeaddr.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-gethostname.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/net/libc_a-getnameinfo.$(OBJEXT) \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        libc/sys/vita/libc_a-vitanet.$(OBJEXT)
 @HAVE_LIBC_SYS_W65_DIR_TRUE@am__objects_74 = libc/sys/w65/libc_a-syscalls.$(OBJEXT) \
 @HAVE_LIBC_SYS_W65_DIR_TRUE@	libc/sys/w65/libc_a-trap.$(OBJEXT)
 @HAVE_LIBC_SYS_Z8KSIM_DIR_TRUE@am__objects_75 = libc/sys/z8ksim/libc_a-glue.$(OBJEXT)
@@ -2564,7 +2674,8 @@ am_libc_a_OBJECTS = $(am__objects_1) \
 	$(am__objects_129) $(am__objects_130) $(am__objects_131) \
 	$(am__objects_132) $(am__objects_133) $(am__objects_134) \
 	$(am__objects_135) $(am__objects_136) $(am__objects_137) \
-	$(am__objects_138) $(am__objects_139) $(am__objects_140)
+	$(am__objects_138) $(am__objects_139) $(am__objects_140) \
+	$(am__objects_vita)
 libc_a_OBJECTS = $(am_libc_a_OBJECTS)
 libc_machine_cris_libic_a_AR = $(AR) $(ARFLAGS)
 @HAVE_LIBC_MACHINE_CRIS_TRUE@libc_machine_cris_libic_a_DEPENDENCIES = libc/machine/cris/libc_a-setjmp.o \
@@ -4036,7 +4147,7 @@ libc_a_SOURCES = $(am__append_5) libc/stdlib/__adjust.c \
 	$(am__append_120) $(am__append_121) $(am__append_122) \
 	$(am__append_123) $(am__append_124) $(am__append_125) \
 	$(am__append_126) $(am__append_127) $(am__append_128) \
-	$(am__append_129) $(am__append_130)
+	$(am__append_129) $(am__append_130) $(am__append_vita)
 libc_a_CFLAGS = $(AM_CFLAGS) $(libc_a_CFLAGS_$(subst /,_,$(@D))) $(libc_a_CFLAGS_$(subst /,_,$(@D)_$(<F)))
 libc_a_CCASFLAGS = $(AM_CCASFLAGS) $(libc_a_CCASFLAGS_$(subst /,_,$(@D))) $(libc_a_CCASFLAGS_$(subst /,_,$(@D)_$(<F)))
 libc_a_CPPFLAGS = $(AM_CPPFLAGS) $(libc_a_CPPFLAGS_$(subst /,_,$(@D))) $(libc_a_CPPFLAGS_$(subst /,_,$(@D)_$(<F)))
@@ -4466,6 +4577,14 @@ libc_ssp_ELIX_SOURCES = libc/ssp/chk_fail.c libc/ssp/stack_protector.c \
 	libc/ssp/strcat_chk.c libc/ssp/strcpy_chk.c \
 	libc/ssp/strncat_chk.c libc/ssp/strncpy_chk.c $(am__append_40)
 @HAVE_LIBC_SYS_ARM_DIR_TRUE@AM_CPPFLAGS_libc_sys_arm = -I$(srcdir)/libc/machine/arm
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@libc_a_CPPFLAGS_libc_sys_vita_socket.c = \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_accept -DF_bind -DF_connect -DF_getpeername \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_getsockname -DF_getsockopt -DF_listen -DF_recv \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_recvfrom -DF_recvmsg -DF_send -DF_sendto -DF_sendmsg \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_setsockopt -DF_shutdown -DF_socket
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@libc_a_CPPFLAGS_libc_sys_vita_dirent.c = \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_closedir -DF_opendir -DF_readdir -DF_readdir_r \
+@HAVE_LIBC_SYS_VITA_DIR_TRUE@        -DF_rewinddir -DF_scandir -DF_seekdir -DF_telldir -DF_dirfd
 @HAVE_LIBC_MACHINE_CRIS_TRUE@libc_machine_cris_libic_a_SOURCES = 
 @HAVE_LIBC_MACHINE_CRIS_TRUE@libc_machine_cris_libic_a_LIBADD = \
 @HAVE_LIBC_MACHINE_CRIS_TRUE@	libc/machine/cris/libc_a-setjmp.o \
@@ -7732,6 +7851,32 @@ libc/sys/tirtos/$(DEPDIR)/$(am__dirstamp):
 libc/sys/tirtos/libc_a-lock.$(OBJEXT):  \
 	libc/sys/tirtos/$(am__dirstamp) \
 	libc/sys/tirtos/$(DEPDIR)/$(am__dirstamp)
+libc/sys/vita/$(am__dirstamp):
+	@$(MKDIR_P) libc/sys/vita
+	@: > libc/sys/vita/$(am__dirstamp)
+libc/sys/vita/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) libc/sys/vita/$(DEPDIR)
+	@: > libc/sys/vita/$(DEPDIR)/$(am__dirstamp)
+libc/sys/vita/net/$(am__dirstamp):
+	@$(MKDIR_P) libc/sys/vita/net
+	@: > libc/sys/vita/net/$(am__dirstamp)
+libc/sys/vita/net/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) libc/sys/vita/net/$(DEPDIR)
+	@: > libc/sys/vita/net/$(DEPDIR)/$(am__dirstamp)
+libc/sys/vita/crt0.o: libc/sys/vita/$(am__dirstamp) \
+	libc/sys/vita/$(DEPDIR)/$(am__dirstamp)
+libc/sys/vita/libc_a-%.$(OBJEXT): libc/sys/vita/%.c \
+	libc/sys/vita/$(am__dirstamp) \
+	libc/sys/vita/$(DEPDIR)/$(am__dirstamp)
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libc_a_CPPFLAGS) $(CPPFLAGS) $(libc_a_CFLAGS) $(CFLAGS) -MT $@ -MD -MP -MF libc/sys/vita/$(DEPDIR)/libc_a-$*.Tpo -c -o $@ `test -f 'libc/sys/vita/$*.c' || echo '$(srcdir)/'`libc/sys/vita/$*.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) libc/sys/vita/$(DEPDIR)/libc_a-$*.Tpo libc/sys/vita/$(DEPDIR)/libc_a-$*.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libc_a_CPPFLAGS) $(CPPFLAGS) $(libc_a_CFLAGS) $(CFLAGS) -c -o $@ `test -f 'libc/sys/vita/$*.c' || echo '$(srcdir)/'`libc/sys/vita/$*.c
+libc/sys/vita/net/libc_a-%.$(OBJEXT): libc/sys/vita/net/%.c \
+	libc/sys/vita/net/$(am__dirstamp) \
+	libc/sys/vita/net/$(DEPDIR)/$(am__dirstamp)
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libc_a_CPPFLAGS) $(CPPFLAGS) $(libc_a_CFLAGS) $(CFLAGS) -MT $@ -MD -MP -MF libc/sys/vita/net/$(DEPDIR)/libc_a-$*.Tpo -c -o $@ `test -f 'libc/sys/vita/net/$*.c' || echo '$(srcdir)/'`libc/sys/vita/net/$*.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) libc/sys/vita/net/$(DEPDIR)/libc_a-$*.Tpo libc/sys/vita/net/$(DEPDIR)/libc_a-$*.Po
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libc_a_CPPFLAGS) $(CPPFLAGS) $(libc_a_CFLAGS) $(CFLAGS) -c -o $@ `test -f 'libc/sys/vita/net/$*.c' || echo '$(srcdir)/'`libc/sys/vita/net/$*.c
 libc/sys/w65/$(am__dirstamp):
 	@$(MKDIR_P) libc/sys/w65
 	@: > libc/sys/w65/$(am__dirstamp)

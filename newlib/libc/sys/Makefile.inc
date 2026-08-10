@@ -61,6 +61,9 @@ endif
 if HAVE_LIBC_SYS_TIRTOS_DIR
 include %D%/tirtos/Makefile.inc
 endif
+if HAVE_LIBC_SYS_VITA_DIR
+include %D%/vita/Makefile.inc
+endif
 if HAVE_LIBC_SYS_W65_DIR
 include %D%/w65/Makefile.inc
 endif
