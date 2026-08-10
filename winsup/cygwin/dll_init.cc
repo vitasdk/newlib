@@ -25,7 +25,7 @@ details. */
 #include <assert.h>
 #include <tls_pbuf.h>
 
-extern void __stdcall check_sanity_and_sync (per_process *);
+extern void check_sanity_and_sync (per_process *);
 
 #define fabort fork_info->abort
 
@@ -204,14 +204,6 @@ dll::init ()
 {
   int ret = 1;
 
-#ifdef __i386__
-  /* This should be a no-op.  Why didn't we just import this variable? */
-  if (!p.envptr)
-    p.envptr = &__cygwin_environ;
-  else if (*(p.envptr) != __cygwin_environ)
-    *(p.envptr) = __cygwin_environ;
-#endif
-
   /* Don't run constructors or the "main" if we've forked. */
   if (!in_forkee)
     {
@@ -387,9 +379,6 @@ dll_list::alloc (HINSTANCE h, per_process *p, dll_type type)
 	loaded_dlls++;
     }
   guard (false);
-#ifdef __i386__
-  assert (p->envptr != NULL);
-#endif
   return d;
 }
 
@@ -884,17 +873,6 @@ dll_dllcrt0_1 (VOID *x)
     res = (PVOID) d;
 }
 
-#ifdef __i386__
-/* OBSOLETE: This function is obsolete and will go away in the
-   future.  Cygwin can now handle being loaded from a noncygwin app
-   using the same entry point. */
-extern "C" int
-dll_noncygwin_dllcrt0 (HMODULE h, per_process *p)
-{
-  return (int) dll_dllcrt0 (h, p);
-}
-#endif /* __i386__ */
-
 extern "C" void
 cygwin_detach_dll (dll *)
 {
@@ -911,17 +889,3 @@ dlfork (int val)
 {
   dlls.reload_on_fork = val;
 }
-
-#ifdef __i386__
-/* Called from various places to update all of the individual
-   ideas of the environ block.  Explain to me again why we didn't
-   just import __cygwin_environ? */
-void __stdcall
-update_envptrs ()
-{
-  for (dll *d = dlls.istart (DLL_ANY); d; d = dlls.inext ())
-    if (*(d->p.envptr) != __cygwin_environ)
-      *(d->p.envptr) = __cygwin_environ;
-  *main_environ = __cygwin_environ;
-}
-#endif

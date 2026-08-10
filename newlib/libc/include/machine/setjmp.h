@@ -12,9 +12,13 @@ _BEGIN_STD_C
 #if defined(__arm__) || defined(__thumb__)
 /*
  * All callee preserved registers:
- * v1 - v7, fp, ip, sp, lr, f4, f5, f6, f7
+ *  core registers:
+ *   r4 - r10, fp, sp, lr
+ *  VFP registers (architectural support dependent):
+ *   d8 - d15
  */
-#define _JBLEN 23
+#define _JBLEN 20
+#define _JBTYPE long long
 #endif
 
 #if defined(__aarch64__)
@@ -173,10 +177,18 @@ _BEGIN_STD_C
 #endif
 
 #ifdef __PPC__
+#ifdef __powerpc64__
+#ifdef __ALTIVEC__
+#define _JBLEN 70
+#else
+#define _JBLEN 43
+#endif
+#else
 #ifdef __ALTIVEC__
 #define _JBLEN 64
 #else
 #define _JBLEN 32
+#endif
 #endif
 #define _JBTYPE double
 #endif

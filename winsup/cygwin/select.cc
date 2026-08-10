@@ -587,12 +587,17 @@ no_verify (select_record *, fd_set *, fd_set *, fd_set *)
 static int
 pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
 {
+  if (fh->get_device () == FH_PIPER)
+    {
+      DWORD nbytes_in_pipe;
+      if (!writing && PeekNamedPipe (h, NULL, 0, NULL, &nbytes_in_pipe, NULL))
+	return nbytes_in_pipe > 0;
+      return -1;
+    }
+
   IO_STATUS_BLOCK iosb = {{0}, 0};
   FILE_PIPE_LOCAL_INFORMATION fpli = {0};
   NTSTATUS status;
-
-  if (fh->has_ongoing_io ())
-    return 0;
 
   status = NtQueryInformationFile (h, &iosb, &fpli, sizeof (fpli),
 				   FilePipeLocalInformation);
@@ -608,29 +613,55 @@ pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
     }
   if (writing)
     {
-	/* If there is anything available in the pipe buffer then signal
-	   that.  This means that a pipe could still block since you could
-	   be trying to write more to the pipe than is available in the
-	   buffer but that is the hazard of select().  */
-      fpli.WriteQuotaAvailable = fpli.OutboundQuota - fpli.ReadDataAvailable;
+      /* If there is anything available in the pipe buffer then signal
+        that.  This means that a pipe could still block since you could
+        be trying to write more to the pipe than is available in the
+        buffer but that is the hazard of select().
+
+        Note that WriteQuotaAvailable is unreliable.
+
+        Usually WriteQuotaAvailable on the write side reflects the space
+        available in the inbound buffer on the read side.  However, if a
+        pipe read is currently pending, WriteQuotaAvailable on the write side
+        is decremented by the number of bytes the read side is requesting.
+        So it's possible (even likely) that WriteQuotaAvailable is 0, even
+        if the inbound buffer on the read side is not full.  This can lead to
+        a deadlock situation: The reader is waiting for data, but select
+        on the writer side assumes that no space is available in the read
+        side inbound buffer.
+
+        Consequentially, the only reliable information is available on the
+        read side, so fetch info from the read side via the pipe-specific
+        query handle.  Use fpli.WriteQuotaAvailable as storage for the actual
+        interesting value, which is the InboundQuote on the write side,
+        decremented by the number of bytes of data in that buffer. */
+      /* Note: Do not use NtQueryInformationFile() for query_hdl because
+	 NtQueryInformationFile() seems to interfere with reading pipes
+	 in non-cygwin apps. Instead, use PeekNamedPipe() here. */
+      if (fh->get_device () == FH_PIPEW && fpli.WriteQuotaAvailable == 0)
+	{
+	  HANDLE query_hdl = ((fhandler_pipe *) fh)->get_query_handle ();
+	  if (!query_hdl)
+	    query_hdl = ((fhandler_pipe *) fh)->temporary_query_hdl ();
+	  if (!query_hdl)
+	    return 1; /* We cannot know actual write pipe space. */
+	  DWORD nbytes_in_pipe;
+	  BOOL res =
+	    PeekNamedPipe (query_hdl, NULL, 0, NULL, &nbytes_in_pipe, NULL);
+	  if (!((fhandler_pipe *) fh)->get_query_handle ())
+	    CloseHandle (query_hdl); /* Close temporary query_hdl */
+	  if (!res)
+	    return 1;
+	  fpli.WriteQuotaAvailable = fpli.InboundQuota - nbytes_in_pipe;
+	}
       if (fpli.WriteQuotaAvailable > 0)
 	{
 	  paranoid_printf ("fd %d, %s, write: size %u, avail %u", fd,
-			   fh->get_name (), fpli.OutboundQuota,
+			   fh->get_name (), fpli.InboundQuota,
 			   fpli.WriteQuotaAvailable);
 	  return 1;
 	}
-      /* If we somehow inherit a tiny pipe (size < PIPE_BUF), then consider
-	 the pipe writable only if it is completely empty, to minimize the
-	 probability that a subsequent write will block.  */
-      if (fpli.OutboundQuota < PIPE_BUF
-	  && fpli.WriteQuotaAvailable == fpli.OutboundQuota)
-	{
-	  select_printf ("fd, %s, write tiny pipe: size %u, avail %u",
-			 fd, fh->get_name (), fpli.OutboundQuota,
-			 fpli.WriteQuotaAvailable);
-	  return 1;
-	}
+      /* TODO: Buffer really full or non-Cygwin reader? */
     }
   else if (fpli.ReadDataAvailable)
     {
@@ -721,15 +752,25 @@ out:
   h = fh->get_output_handle ();
   if (s->write_selected && dev != FH_PIPER)
     {
-      gotone += s->write_ready =  pipe_data_available (s->fd, fh, h, true);
-      select_printf ("write: %s, gotone %d", fh->get_name (), gotone);
+      if (dev == FH_PIPEW && ((fhandler_pipe *) fh)->reader_closed ())
+	{
+	  gotone += s->write_ready = true;
+	  if (s->except_selected)
+	    gotone += s->except_ready = true;
+	  return gotone;
+	}
+      int n = pipe_data_available (s->fd, fh, h, true);
+      select_printf ("write: %s, n %d", fh->get_name (), n);
+      gotone += s->write_ready = n;
+      if (n < 0 && s->except_selected)
+	gotone += s->except_ready = true;
     }
   return gotone;
 }
 
 static int start_thread_pipe (select_record *me, select_stuff *stuff);
 
-static DWORD WINAPI
+static DWORD
 thread_pipe (void *arg)
 {
   select_pipe_info *pi = (select_pipe_info *) arg;
@@ -771,7 +812,13 @@ start_thread_pipe (select_record *me, select_stuff *stuff)
     {
       pi->start = &stuff->start;
       pi->stop_thread = false;
-      pi->bye = CreateEvent (&sec_none_nih, TRUE, FALSE, NULL);
+      pi->bye = me->fh->get_select_sem ();
+      if (pi->bye)
+	DuplicateHandle (GetCurrentProcess (), pi->bye,
+			 GetCurrentProcess (), &pi->bye,
+			 0, 0, DUPLICATE_SAME_ACCESS);
+      else
+	pi->bye = CreateSemaphore (&sec_none_nih, 0, INT32_MAX, NULL);
       pi->thread = new cygthread (thread_pipe, pi, "pipesel");
       me->h = *pi->thread;
       if (!me->h)
@@ -789,7 +836,7 @@ pipe_cleanup (select_record *, select_stuff *stuff)
   if (pi->thread)
     {
       pi->stop_thread = true;
-      SetEvent (pi->bye);
+      ReleaseSemaphore (pi->bye, get_obj_handle_count (pi->bye), NULL);
       pi->thread->detach ();
       CloseHandle (pi->bye);
     }
@@ -903,7 +950,17 @@ peek_fifo (select_record *s, bool from_select)
 	    }
 	}
       fh->fifo_client_unlock ();
-      if (!nconnected && fh->hit_eof ())
+      /* According to POSIX and the Linux man page, we're supposed to
+	 report read ready if the FIFO is at EOF, i.e., if the pipe is
+	 empty and there are no writers.  But there seems to be an
+	 undocumented exception, observed on Linux and other platforms
+	 (https://cygwin.com/pipermail/cygwin/2022-September/252223.html):
+	 If no writer has ever been opened, then we do not report read
+	 ready.  This can happen if a reader is opened with O_NONBLOCK
+	 before any writers have opened.  To be consistent with other
+	 platforms, we use a special EOF test that returns false if
+	 there's never been a writer opened. */
+      if (!nconnected && fh->select_hit_eof ())
 	{
 	  select_printf ("read: %s, saw EOF", fh->get_name ());
 	  gotone += s->read_ready = true;
@@ -915,16 +972,18 @@ peek_fifo (select_record *s, bool from_select)
 out:
   if (s->write_selected)
     {
-      gotone += s->write_ready
-	= pipe_data_available (s->fd, fh, fh->get_handle (), true);
-      select_printf ("write: %s, gotone %d", fh->get_name (), gotone);
+      int n = pipe_data_available (s->fd, fh, fh->get_handle (), true);
+      select_printf ("write: %s, n %d", fh->get_name (), n);
+      gotone += s->write_ready = n;
+      if (n < 0 && s->except_selected)
+	gotone += s->except_ready = true;
     }
   return gotone;
 }
 
 static int start_thread_fifo (select_record *me, select_stuff *stuff);
 
-static DWORD WINAPI
+static DWORD
 thread_fifo (void *arg)
 {
   select_fifo_info *pi = (select_fifo_info *) arg;
@@ -966,7 +1025,13 @@ start_thread_fifo (select_record *me, select_stuff *stuff)
     {
       pi->start = &stuff->start;
       pi->stop_thread = false;
-      pi->bye = CreateEvent (&sec_none_nih, TRUE, FALSE, NULL);
+      pi->bye = me->fh->get_select_sem ();
+      if (pi->bye)
+	DuplicateHandle (GetCurrentProcess (), pi->bye,
+			 GetCurrentProcess (), &pi->bye,
+			 0, 0, DUPLICATE_SAME_ACCESS);
+      else
+	pi->bye = CreateSemaphore (&sec_none_nih, 0, INT32_MAX, NULL);
       pi->thread = new cygthread (thread_fifo, pi, "fifosel");
       me->h = *pi->thread;
       if (!me->h)
@@ -984,7 +1049,7 @@ fifo_cleanup (select_record *, select_stuff *stuff)
   if (pi->thread)
     {
       pi->stop_thread = true;
-      SetEvent (pi->bye);
+      ReleaseSemaphore (pi->bye, get_obj_handle_count (pi->bye), NULL);
       pi->thread->detach ();
       CloseHandle (pi->bye);
     }
@@ -1040,22 +1105,6 @@ fhandler_fifo::select_except (select_stuff *ss)
   return s;
 }
 
-extern HANDLE attach_mutex; /* Defined in fhandler_console.cc */
-
-static inline void
-acquire_attach_mutex (DWORD t)
-{
-  if (attach_mutex)
-    WaitForSingleObject (attach_mutex, t);
-}
-
-static inline void
-release_attach_mutex ()
-{
-  if (attach_mutex)
-    ReleaseMutex (attach_mutex);
-}
-
 static int
 peek_console (select_record *me, bool)
 {
@@ -1081,29 +1130,34 @@ peek_console (select_record *me, bool)
   HANDLE h;
   set_handle_or_return_if_not_open (h, me);
 
-  acquire_attach_mutex (INFINITE);
+  fh->acquire_input_mutex (mutex_timeout);
   while (!fh->input_ready && !fh->get_cons_readahead_valid ())
     {
       if (fh->bg_check (SIGTTIN, true) <= bg_eof)
 	{
-	  release_attach_mutex ();
+	  fh->release_input_mutex ();
 	  return me->read_ready = true;
 	}
-      else if (!PeekConsoleInputW (h, &irec, 1, &events_read) || !events_read)
-	break;
-      fh->acquire_input_mutex (INFINITE);
+      else
+	{
+	  acquire_attach_mutex (mutex_timeout);
+	  DWORD resume_pid = fh->attach_console (fh->get_owner ());
+	  BOOL r = PeekConsoleInputW (h, &irec, 1, &events_read);
+	  fh->detach_console (resume_pid, fh->get_owner ());
+	  release_attach_mutex ();
+	  if (!r || !events_read)
+	    break;
+	}
       if (fhandler_console::input_winch == fh->process_input_message ()
 	  && global_sigs[SIGWINCH].sa_handler != SIG_IGN
 	  && global_sigs[SIGWINCH].sa_handler != SIG_DFL)
 	{
 	  set_sig_errno (EINTR);
 	  fh->release_input_mutex ();
-	  release_attach_mutex ();
 	  return -1;
 	}
-      fh->release_input_mutex ();
     }
-  release_attach_mutex ();
+  fh->release_input_mutex ();
   if (fh->input_ready || fh->get_cons_readahead_valid ())
     return me->read_ready = true;
 
@@ -1119,7 +1173,7 @@ verify_console (select_record *me, fd_set *rfds, fd_set *wfds,
 
 static int console_startup (select_record *me, select_stuff *stuff);
 
-static DWORD WINAPI
+static DWORD
 thread_console (void *arg)
 {
   select_console_info *ci = (select_console_info *) arg;
@@ -1154,10 +1208,6 @@ thread_console (void *arg)
 static int
 console_startup (select_record *me, select_stuff *stuff)
 {
-  fhandler_console *fh = (fhandler_console *) me->fh;
-  fhandler_console::set_input_mode (tty::cygwin, &((tty *)fh->tc ())->ti,
-				    fh->get_handle_set ());
-
   select_console_info *ci = stuff->device_specific_console;
   if (ci->start)
     me->h = *(stuff->device_specific_console)->thread;
@@ -1313,8 +1363,6 @@ peek_pty_slave (select_record *s, bool from_select)
   fhandler_base *fh = (fhandler_base *) s->fh;
   fhandler_pty_slave *ptys = (fhandler_pty_slave *) fh;
 
-  ptys->reset_switch_to_pcon ();
-
   if (s->read_selected)
     {
       if (s->read_ready)
@@ -1350,15 +1398,18 @@ out:
   HANDLE h = ptys->get_output_handle ();
   if (s->write_selected)
     {
-      gotone += s->write_ready =  pipe_data_available (s->fd, fh, h, true);
-      select_printf ("write: %s, gotone %d", fh->get_name (), gotone);
+      int n = pipe_data_available (s->fd, fh, h, true);
+      select_printf ("write: %s, n %d", fh->get_name (), n);
+      gotone += s->write_ready = n;
+      if (n < 0 && s->except_selected)
+	gotone += s->except_ready = true;
     }
   return gotone;
 }
 
 static int pty_slave_startup (select_record *me, select_stuff *stuff);
 
-static DWORD WINAPI
+static DWORD
 thread_pty_slave (void *arg)
 {
   select_pipe_info *pi = (select_pipe_info *) arg;
@@ -1396,7 +1447,7 @@ pty_slave_startup (select_record *me, select_stuff *stuff)
   fhandler_base *fh = (fhandler_base *) me->fh;
   fhandler_pty_slave *ptys = (fhandler_pty_slave *) fh;
   if (me->read_selected)
-    ptys->mask_switch_to_pcon_in (true, true);
+    ptys->mask_switch_to_nat_pipe (true, true);
 
   select_pipe_info *pi = stuff->device_specific_ptys;
   if (pi->start)
@@ -1423,7 +1474,7 @@ pty_slave_cleanup (select_record *me, select_stuff *stuff)
   if (!pi)
     return;
   if (me->read_selected && pi->start)
-    ptys->mask_switch_to_pcon_in (false, false);
+    ptys->mask_switch_to_nat_pipe (false, false);
   if (pi->thread)
     {
       pi->stop_thread = true;
@@ -1734,7 +1785,7 @@ peek_socket (select_record *me, bool)
 
 static int start_thread_socket (select_record *, select_stuff *);
 
-static DWORD WINAPI
+static DWORD
 thread_socket (void *arg)
 {
   select_socket_info *si = (select_socket_info *) arg;

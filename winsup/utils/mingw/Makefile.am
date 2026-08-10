@@ -18,6 +18,8 @@ include $(top_srcdir)/Makefile.am.common
 CFLAGS_COMMON=-Wimplicit-fallthrough=4 -Werror -D_WIN32_WINNT=0x0a00 -DNTDDI_VERSION=WDK_NTDDI_VERSION
 AM_CXXFLAGS=-fno-exceptions -fno-rtti -fno-use-cxa-atexit $(flags_common) $(CFLAGS_COMMON)
 
+AM_LDFLAGS = -static
+
 bin_PROGRAMS = \
 	cygcheck \
 	cygwin-console-helper \
@@ -30,6 +32,7 @@ cygcheck_SOURCES = \
 	dump_setup.cc \
 	path.cc
 cygcheck_CPPFLAGS=-I$(srcdir)/.. -idirafter ${top_srcdir}/cygwin/include
+cygcheck_LDFLAGS = ${AM_LDFLAGS} -Wl,--disable-high-entropy-va
 cygcheck_LDADD = -lz -lwininet -lpsapi -lntdll
 
 cygwin_console_helper_SOURCES = cygwin-console-helper.cc
@@ -39,7 +42,8 @@ ldh_SOURCES = ldh.cc
 strace_SOURCES = \
 	path.cc \
 	strace.cc
-strace_CPPFLAGS=-I$(srcdir)/.. -idirafter ${top_srcdir}/cygwin -idirafter ${top_srcdir}/cygwin/include
+strace_CPPFLAGS=-I$(srcdir)/.. -idirafter ${top_srcdir}/cygwin/local_includes -idirafter ${top_srcdir}/cygwin/include
+strace_LDFLAGS = ${AM_LDFLAGS} -Wl,--disable-high-entropy-va
 strace_LDADD = -lntdll
 
 noinst_PROGRAMS = path-testsuite

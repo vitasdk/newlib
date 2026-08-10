@@ -625,12 +625,7 @@ dll_info (const char *path, HANDLE fh, int lvl, int recurse)
     }
   int base_off = 108;
 #else
-  if (arch != IMAGE_FILE_MACHINE_I386)
-    {
-      puts (verbose ? " (not x86 dll)" : "\n");
-      return;
-    }
-  int base_off = 92;
+#error unimplemented for this target
 #endif
   int opthdr_ofs = pe_header_offset + 4 + 20;
   unsigned short v[6];
@@ -1418,8 +1413,19 @@ dump_sysinfo ()
 	      }
 	  else if (osversion.dwMajorVersion == 10)
 	    {
-	      strcpy (osname, osversion.wProductType == VER_NT_WORKSTATION
-			      ? "10" : "2016");
+	      if (osversion.wProductType == VER_NT_WORKSTATION)
+		strcpy (osname, osversion.dwBuildNumber >= 22000 ? "11" : "10");
+	      else
+		{
+		  if (osversion.dwBuildNumber <= 14393)
+		    strcpy (osname, "2016");
+		  else if (osversion.dwBuildNumber <= 17763)
+		    strcpy (osname, "2019");
+		  else if (osversion.dwBuildNumber <= 20348)
+		    strcpy (osname, "2022");
+		  else
+		    strcpy (osname, "20??");
+		}
 	    }
 	  DWORD prod;
 	  if (GetProductInfo (osversion.dwMajorVersion,
@@ -1593,26 +1599,6 @@ dump_sysinfo ()
   if (osversion.dwPlatformId == VER_PLATFORM_WIN32s
       || osversion.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
     exit (EXIT_FAILURE);
-
-  BOOL is_wow64 = FALSE;
-  if (IsWow64Process (GetCurrentProcess (), &is_wow64) && is_wow64)
-    {
-      SYSTEM_INFO natinfo;
-      GetNativeSystemInfo (&natinfo);
-      fputs ("\nRunning under WOW64 on ", stdout);
-      switch (natinfo.wProcessorArchitecture)
-	{
-	  case PROCESSOR_ARCHITECTURE_IA64:
-	    puts ("IA64");
-	    break;
-	  case PROCESSOR_ARCHITECTURE_AMD64:
-	    puts ("AMD64");
-	    break;
-	  default:
-	    puts("??");
-	    break;
-	}
-    }
 
   if (GetSystemMetrics (SM_REMOTESESSION))
     printf ("\nRunning in Terminal Service session\n");
@@ -2028,7 +2014,7 @@ static const char base_url[] =
 #ifdef __x86_64__
 #define ARCH_STR  "&arch=x86_64"
 #else
-#define ARCH_STR  "&arch=x86"
+#error unimplemented for this target
 #endif
 static const char *ARCH_str = ARCH_STR;
 

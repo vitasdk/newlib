@@ -1,3 +1,38 @@
+*** Major changes in newlib version 4.3.0:
+
+- remove i?86-pc-linux-gnu support
+- remove decstation & sunos support
+- remove phoenix OS support
+- remove unused members from struct _reent (see also --enable-newlib-reent-binary-compat)
+- build system internals heavily rewritten & updated
+- make arm jmp_buf size and alignment ABI-conformant
+- fixed bug in arm setjmp/longjmp to preserve floating-point register values
+- add --enable-newlib-reent-thread-local configuration option
+- add --enable-newlib-reent-binary-compat configuration option
+- add 64-bit powerpc setjmp/longjmp support
+- use global stdio streams for all configurations
+- use global atexit data for all configurations
+- vectorized math routines added for amdgcn platform
+- nvptx: remove newlib ELIX level 1 restriction
+
+*** Major changes in newlib version 4.2.0:
+
+- remove use of --cygnus option for automake
+- rename configure.in files to configure.ac
+- enable automake silent rules
+- import gdtoa from OpenBSD
+- update to Unicode 14.0
+- ignore _FORTIFY_SOURCE when building newlib
+- fixes to ldtoa
+- add clock support to nvptx port
+- various pthread POSIX APIs added
+- added implementatio for sig2str/str2sig
+- strtod/strtof to set errno to ERANGE consistently for underflow
+- fixed rounding issue with sqrt/sqrtf
+- fixed heap fragmentation issue with nano-malloc
+- FTW port for newlib
+- additions to sys/tree.h
+
 *** Major changes in newlib version 4.1.0:
 
 - fixes for regressions to pow/powf and tgamma functions

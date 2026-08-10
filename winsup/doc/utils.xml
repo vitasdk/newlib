@@ -846,7 +846,7 @@ line separates the ACLs for each file.
 <screen>
 $ gmondump gmon.out.21900.zstd.exe
 file gmon.out.21900.zstd.exe, gmon version 0x51879, sample rate 100
-  address range 0x0x100401000..0x0x1004cc668
+  address range 0x100401000..0x1004cc668
   numbuckets 208282, hitbuckets 1199, hitcount 12124, numrawarcs 0
 </screen>
     </refsect1>
@@ -1939,6 +1939,62 @@ D: on /d type fat (binary,user,noumount)
     </refsect1>
   </refentry>
 
+  <refentry id="newgrp">
+    <refmeta>
+      <refentrytitle>newgrp</refentrytitle>
+      <manvolnum>1</manvolnum>
+      <refmiscinfo class="manual">Cygwin Utilities</refmiscinfo>
+    </refmeta>
+
+    <refnamediv>
+      <refname>newgrp</refname>
+      <refpurpose>change primary group for a command</refpurpose>
+    </refnamediv>
+
+    <refsynopsisdiv>
+      <cmdsynopsis>
+	<command>newgrp</command>
+	<arg choice="opt">-</arg>
+	<arg choice="opt"><replaceable>group</replaceable></arg>
+	<arg><replaceable>command</replaceable>
+	<arg rep="repeat"><replaceable>args</replaceable></arg>
+	</arg>
+      </cmdsynopsis>
+    </refsynopsisdiv>
+
+    <refsect1 id="newgrp-desc">
+      <title>Description</title>
+      <para><command>newgrp</command> changes the primary group for a
+        command.</para>
+
+      <para>If the <option>-</option> flag is given as first argument, the
+	user's environment will be reinitialized as though the user had logged
+	in, otherwise the current environment, including current working
+	directory, remains unchanged.</para>
+
+      <para><command>newgrp</command> changes the current primary group to the
+        named group, or to the default group listed in /etc/passwd if no group
+	name is given.</para>
+
+      <para>By default, the user's standard shell is started, called as login
+        shell if the <option>-</option> flag has been specified.  If a group
+	has been given as argument, a command and its arguments can be
+	specified on the command line.</para>
+
+      <para>Please note that setting the primary group to any arbitrary group
+        is no privileged operation on Windows.  However, even if this group is
+	not in your current user token, or if the group is in your user token
+	but marked as <literal>deny-only</literal>, no additional permissions
+	can be obtained by setting this group as primary group.</para>
+    </refsect1>
+
+    <refsect1 id="newgrp-seealso">
+      <title>See also</title>
+      <para><command>id</command>(1), <command>login</command>(1).</para>
+    </refsect1>
+
+  </refentry>
+
   <refentry id="passwd">
     <refmeta>
       <refentrytitle>passwd</refentrytitle>
@@ -2240,9 +2296,10 @@ specifying an empty password.
 
     <refsect1 id="profiler-desc">
       <title>Description</title>
-    <para>The <command>profiler</command> utility executes a given program, and
-      optionally the children of that program, collecting the location of the
-      CPU instruction pointer (IP) many times per second. This gives a profile
+    <para>The <command>profiler</command> utility executes a given program and
+      any children of that program, collecting the location of the CPU
+      instruction pointer (IP) many times per second. (It is optional to
+      collect this info from child processes.) This info gives a profile
       of the program's execution, showing where the most time is being spent.
       This profiling technique is called "IP sampling".</para>
 
@@ -2950,7 +3007,7 @@ Idx Name          Size      VMA       LMA       File off  Algn
       section and the VMA of the section after it (sections are usually
       contiguous; you can also add the Size to the VMA to get the end address).
       In this case, the VMA is 0x61001000 and the ending address is either
-      0x61080000 (start of .data method) or 0x0x6107fa00 (VMA+Size method). </para>
+      0x61080000 (start of .data method) or 0x6107fa00 (VMA+Size method). </para>
 
     <para> There are two basic ways to use SSP - either profiling a whole
       program, or selectively profiling parts of the program. </para>

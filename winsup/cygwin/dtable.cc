@@ -58,7 +58,7 @@ dtable_init ()
     cygheap->fdtab.extend (NOFILE_INCR, 0);
 }
 
-void __stdcall
+void
 set_std_handle (int fd)
 {
   fhandler_base *fh = cygheap->fdtab[fd];
@@ -406,13 +406,23 @@ dtable::init_std_file_from_handle (int fd, HANDLE handle)
 	}
       if (!fh->init (handle, access, bin))
 	api_fatal ("couldn't initialize fd %d for %s", fd, fh->get_name ());
+      if (fh->ispipe ())
+	{
+	  fhandler_pipe *fhp = (fhandler_pipe *) fh;
+	  fhp->set_pipe_buf_size ();
+	  /* Set read pipe always to nonblocking */
+	  fhp->set_pipe_non_blocking (fhp->get_device () == FH_PIPER ?
+				      true : fhp->is_nonblocking ());
+	}
 
-      fh->open_setup (openflags);
+      if (!fh->open_setup (openflags))
+	api_fatal ("open_setup failed, %E");
       fh->usecount = 0;
       cygheap->fdtab[fd] = fh;
       cygheap->fdtab[fd]->inc_refcnt ();
       set_std_handle (fd);
       paranoid_printf ("fd %d, handle %p", fd, handle);
+      fh->post_open_setup (fd);
     }
 }
 
@@ -571,6 +581,9 @@ fh_alloc (path_conv& pc)
 	  break;
 	case FH_DEV:
 	  fh = cnew (fhandler_dev);
+	  break;
+	case FH_DEV_FD:
+	  fh = cnew (fhandler_dev_fd);
 	  break;
 	case FH_CYGDRIVE:
 	  fh = cnew (fhandler_cygdrive);

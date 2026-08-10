@@ -28,7 +28,6 @@ details. */
 #ifdef FSTAB_ONLY
 #include <sys/cygwin.h>
 #endif
-#include "loadlib.h"
 
 #ifndef FSTAB_ONLY
 /* Used when treating / and \ as equivalent. */
@@ -283,7 +282,7 @@ find_ws (char *in)
 inline char *
 conv_fstab_spaces (char *field)
 {
-  register char *sp = field;
+  char *sp = field;
   while ((sp = strstr (sp, "\\040")) != NULL)
     {
       *sp++ = ' ';

@@ -168,6 +168,15 @@ extern int isnan (double);
    #else
     /* Implementation-defined.  Assume float_t and double_t have been
      * defined previously for this configuration (e.g. config.h). */
+
+   /* If __DOUBLE_TYPE is defined (__FLOAT_TYPE is then supposed to be
+      defined as well) float_t and double_t definition is suggested by
+      an arch specific header.  */
+   #ifdef __DOUBLE_TYPE
+    typedef __DOUBLE_TYPE double_t;
+    typedef __FLOAT_TYPE float_t;
+   #endif
+   /* Assume config.h has provided these types.  */
   #endif
 #else
     /* Assume basic definitions.  */
@@ -509,6 +518,7 @@ extern long double erfcl (long double);
 #else /* !_LDBL_EQ_DBL && !__CYGWIN__ */
 extern long double hypotl (long double, long double);
 extern long double sqrtl (long double);
+extern long double frexpl (long double, int *);
 #ifdef __i386__
 /* Other long double precision functions.  */
 extern _LONG_DOUBLE rintl (_LONG_DOUBLE);

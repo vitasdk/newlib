@@ -20,11 +20,9 @@ HANDLE NO_COPY hProcImpToken;
 HANDLE my_wr_proc_pipe;
 HMODULE NO_COPY cygwin_hmodule;
 HMODULE NO_COPY hntdll;
-int NO_COPY sigExeced;
+LONG NO_COPY sigExeced;
 WCHAR windows_system_directory[MAX_PATH];
 UINT windows_system_directory_length;
-WCHAR system_wow64_directory[MAX_PATH];
-UINT system_wow64_directory_length;
 WCHAR windows_directory_buf[MAX_PATH];
 PWCHAR windows_directory = windows_directory_buf + 4;
 UINT windows_directory_length;
@@ -69,7 +67,7 @@ int NO_COPY dynamically_loaded;
 /* Some CYGWIN environment variable variables. */
 bool allow_glob = true;
 bool ignore_case_with_glob;
-bool pipe_byte;
+bool pipe_byte = true; /* Default to byte mode so that C# programs work. */
 bool reset_com;
 bool wincmdln;
 winsym_t allow_winsymlinks = WSYM_default;
@@ -122,8 +120,6 @@ const int __collate_load_error = 0;
   extern UNICODE_STRING _RDATA ro_u_empty = _ROU (L"");
   extern UNICODE_STRING _RDATA ro_u_lnk = _ROU (L".lnk");
   extern UNICODE_STRING _RDATA ro_u_exe = _ROU (L".exe");
-  extern UNICODE_STRING _RDATA ro_u_dll = _ROU (L".dll");
-  extern UNICODE_STRING _RDATA ro_u_com = _ROU (L".com");
   extern UNICODE_STRING _RDATA ro_u_scr = _ROU (L".scr");
   extern UNICODE_STRING _RDATA ro_u_sys = _ROU (L".sys");
   extern UNICODE_STRING _RDATA ro_u_proc = _ROU (L"proc");
@@ -157,12 +153,7 @@ const int __collate_load_error = 0;
   extern UNICODE_STRING _RDATA ro_u_mq_suffix = _ROU (L":mqueue");
   #undef _ROU
 
-  /* This is an exported copy of environ which can be used by DLLs
-     which use cygwin.dll.  */
-  char **__cygwin_environ;
-#ifdef __i386__
-  char ***main_environ = &__cygwin_environ;
-#endif
+  char **environ;
   /* __progname used in getopt error message */
   char *__progname;
   char *program_invocation_name;
@@ -173,9 +164,6 @@ const int __collate_load_error = 0;
    /* dll_major */ CYGWIN_VERSION_DLL_MAJOR,
    /* dll_major */ CYGWIN_VERSION_DLL_MINOR,
    /* impure_ptr_ptr */ NULL,
-#ifdef __i386__
-   /* envptr */ NULL,
-#endif
    /* malloc */ malloc, /* free */ free,
    /* realloc */ realloc,
    /* fmode_ptr */ NULL, /* main */ NULL, /* ctors */ NULL,

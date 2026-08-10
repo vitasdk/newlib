@@ -47,7 +47,7 @@ void * func(void * arg)
   struct sched_param param;
 
   assert(pthread_getschedparam(pthread_self(), &policy, &param) == 0);
-  return (void *) param.sched_priority;
+  return (void *) (size_t)param.sched_priority;
 }
 
 int
@@ -65,8 +65,8 @@ main()
   int policy;
   int inheritsched = -1;
 
-  assert((maxPrio = sched_get_priority_max(SCHED_OTHER)) != -1);
-  assert((minPrio = sched_get_priority_min(SCHED_OTHER)) != -1);
+  assert((maxPrio = sched_get_priority_max(SCHED_FIFO)) != -1);
+  assert((minPrio = sched_get_priority_min(SCHED_FIFO)) != -1);
 
   assert(pthread_attr_init(&attr) == 0);
   assert(pthread_attr_setinheritsched(&attr, PTHREAD_INHERIT_SCHED) == 0);
@@ -78,9 +78,9 @@ main()
       mainParam.sched_priority = prio;
 
       /* Change the main thread priority */
-      assert(pthread_setschedparam(mainThread, SCHED_OTHER, &mainParam) == 0);
+      assert(pthread_setschedparam(mainThread, SCHED_FIFO, &mainParam) == 0);
       assert(pthread_getschedparam(mainThread, &policy, &mainParam) == 0);
-      assert(policy == SCHED_OTHER);
+      assert(policy == SCHED_FIFO);
       assert(mainParam.sched_priority == prio);
 
       for (param.sched_priority = prio;
@@ -91,7 +91,7 @@ main()
           assert(pthread_attr_setschedparam(&attr, &param) == 0);
           assert(pthread_create(&t, &attr, func, NULL) == 0);
           pthread_join(t, &result);
-          assert((int) result == mainParam.sched_priority);
+          assert((int)(size_t) result == mainParam.sched_priority);
         }
     }
 

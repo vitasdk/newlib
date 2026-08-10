@@ -40,13 +40,8 @@ clk_t::init ()
 void inline
 clk_realtime_t::init ()
 {
-  if (wincap.has_precise_system_time ())
-    {
-      if (!ticks_per_sec)
-	InterlockedExchange64 (&ticks_per_sec, system_qpc_tickspersec ());
-    }
-  else if (!period)
-    InterlockedExchange64 (&period, system_tickcount_period ());
+  if (!ticks_per_sec)
+    InterlockedExchange64 (&ticks_per_sec, system_qpc_tickspersec ());
 }
 
 void inline
@@ -74,9 +69,7 @@ clk_realtime_t::now (clockid_t clockid, struct timespec *ts)
 {
   LARGE_INTEGER now;
 
-  wincap.has_precise_system_time ()
-      ? GetSystemTimePreciseAsFileTime ((LPFILETIME) &now)
-      : GetSystemTimeAsFileTime ((LPFILETIME) &now);
+  GetSystemTimePreciseAsFileTime ((LPFILETIME) &now);
   /* Add conversion factor for UNIX vs. Windows base time */
   now.QuadPart -= FACTOR;
   ts->tv_sec = now.QuadPart / NS100PERSEC;
@@ -142,9 +135,6 @@ clk_thread_t::now (clockid_t clockid, struct timespec *ts)
   return 0;
 }
 
-extern "C" void WINAPI QueryUnbiasedInterruptTimePrecise (PULONGLONG);
-extern "C" void WINAPI QueryInterruptTimePrecise (PULONGLONG);
-
 int
 clk_monotonic_t::now (clockid_t clockid, struct timespec *ts)
 {
@@ -190,26 +180,13 @@ clk_monotonic_t::now (clockid_t clockid, struct timespec *ts)
 int
 clk_monotonic_coarse_t::now (clockid_t clockid, struct timespec *ts)
 {
-  if (wincap.has_unbiased_interrupt_time ())
-    {
-      /* Suspend time not taken into account, as on Linux */
-      ULONGLONG now;
+  /* Suspend time not taken into account, as on Linux */
+  ULONGLONG now;
 
-      QueryUnbiasedInterruptTime (&now);
-      ts->tv_sec = now / NS100PERSEC;
-      now %= NS100PERSEC;
-      ts->tv_nsec = now * (NSPERSEC/NS100PERSEC);
-    }
-  else
-    {
-      /* Vista-only: GetTickCount64 is biased but it's coarse and monotonic. */
-      ULONGLONG now;
-
-      now = GetTickCount64 ();	/* Returns ms since boot */
-      ts->tv_sec = now / MSPERSEC;
-      now %= MSPERSEC;
-      ts->tv_nsec = now * (NSPERSEC/MSPERSEC);
-    }
+  QueryUnbiasedInterruptTime (&now);
+  ts->tv_sec = now / NS100PERSEC;
+  now %= NS100PERSEC;
+  ts->tv_nsec = now * (NSPERSEC/NS100PERSEC);
   return 0;
 }
 
@@ -252,10 +229,7 @@ clk_realtime_t::resolution (struct timespec *ts)
 {
   init ();
   ts->tv_sec = 0;
-  if (wincap.has_precise_system_time ())
-    ts->tv_nsec = NSPERSEC / ticks_per_sec;
-  else
-    ts->tv_nsec = period * (NSPERSEC/NS100PERSEC);
+  ts->tv_nsec = NSPERSEC / ticks_per_sec;
 }
 
 void

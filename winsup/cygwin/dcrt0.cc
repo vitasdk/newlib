@@ -7,7 +7,7 @@ Cygwin license.  Please consult the file "CYGWIN_LICENSE" for
 details. */
 
 #include "winsup.h"
-#include "miscfuncs.h"
+#include "create_posix_thread.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include "glob.h"
@@ -29,6 +29,7 @@ details. */
 #include "shared_info.h"
 #include "cygwin_version.h"
 #include "dll_init.h"
+#include "cygmalloc.h"
 #include "heap.h"
 #include "tls_pbuf.h"
 #include "exception.h"
@@ -60,7 +61,7 @@ do_global_dtors ()
     }
 }
 
-static void __stdcall
+static void
 do_global_ctors (void (**in_pfunc)(), int force)
 {
   if (!force && in_forkee)
@@ -83,7 +84,7 @@ do_global_ctors (void (**in_pfunc)(), int force)
  * A \@file is replaced with @file so that echo \@foo would print
  * @foo and not the contents of foo.
  */
-static bool __stdcall
+static bool
 insert_file (char *name, char *&cmd)
 {
   HANDLE f;
@@ -202,7 +203,7 @@ quoted (char *cmd, int winshell)
 			    && isalpha ((s)[2]) \
 			    && strchr ((s) + 3, '\\')))
 
-static int __stdcall
+static int
 globify (char *word, char **&argv, int &argc, int &argvlen)
 {
   if (*word != '~' && strpbrk (word, "?*[\"\'(){}") == NULL)
@@ -289,7 +290,7 @@ globify (char *word, char **&argv, int &argc, int &argvlen)
 
 /* Build argv, argc from string passed from Windows.  */
 
-static void __stdcall
+static void
 build_argv (char *cmd, char **&argv, int &argc, int winshell)
 {
   int argvlen = 0;
@@ -364,7 +365,7 @@ build_argv (char *cmd, char **&argv, int &argc, int winshell)
 }
 
 /* sanity and sync check */
-void __stdcall
+void
 check_sanity_and_sync (per_process *p)
 {
   /* Sanity check to make sure developers didn't change the per_process    */
@@ -373,14 +374,7 @@ check_sanity_and_sync (per_process *p)
   if (sizeof (per_process) != SIZEOF_PER_PROCESS)
     api_fatal ("per_process sanity check failed");
 
-  /* Make sure that the app and the dll are in sync. */
-
-  /* Complain if older than last incompatible change */
-  if (p->dll_major < CYGWIN_VERSION_DLL_EPOCH)
-    api_fatal ("cygwin DLL and APP are out of sync -- DLL version mismatch %u < %u",
-	       p->dll_major, CYGWIN_VERSION_DLL_EPOCH);
-
-  /* magic_biscuit != 0 if using the old style version numbering scheme.  */
+  /* magic_biscuit must be SIZEOF_PER_PROCESS.  */
   if (p->magic_biscuit != SIZEOF_PER_PROCESS)
     api_fatal ("Incompatible cygwin .dll -- incompatible per_process info %u != %u",
 	       p->magic_biscuit, SIZEOF_PER_PROCESS);
@@ -389,14 +383,6 @@ check_sanity_and_sync (per_process *p)
   if (p->api_major > cygwin_version.api_major)
     api_fatal ("cygwin DLL and APP are out of sync -- API version mismatch %u > %u",
 	       p->api_major, cygwin_version.api_major);
-
-#ifdef __i386__
-  /* This is a kludge to work around a version of _cygwin_common_crt0
-     which overwrote the cxx_malloc field with the local DLL copy.
-     Hilarity ensues if the DLL is not loaded while the process
-     is forking. */
-  __cygwin_user_data.cxx_malloc = &default_cygwin_cxx_malloc;
-#endif
 }
 
 child_info NO_COPY *child_proc_info;
@@ -541,9 +527,6 @@ get_cygwin_startup_info ()
     {
       if ((res->intro & OPROC_MAGIC_MASK) == OPROC_MAGIC_GENERIC)
 	multiple_cygwin_problem ("proc intro", res->intro, 0);
-      else if (res->cygheap != (void *) &_cygheap_start)
-	multiple_cygwin_problem ("cygheap base", (uintptr_t) res->cygheap,
-				 (uintptr_t) &_cygheap_start);
 
       unsigned should_be_cb = 0;
       switch (res->type)
@@ -580,17 +563,10 @@ get_cygwin_startup_info ()
   return res;
 }
 
-#ifdef __x86_64__
 #define dll_data_start &__data_start__
 #define dll_data_end &__data_end__
 #define dll_bss_start &__bss_start__
 #define dll_bss_end &__bss_end__
-#else
-#define dll_data_start &_data_start__
-#define dll_data_end &_data_end__
-#define dll_bss_start &_bss_start__
-#define dll_bss_end &_bss_end__
-#endif
 
 void
 child_info_fork::handle_fork ()
@@ -644,7 +620,6 @@ bool
 child_info_spawn::get_parent_handle ()
 {
   parent = OpenProcess (PROCESS_VM_READ, FALSE, parent_winpid);
-  moreinfo->myself_pinfo = NULL;
   return !!parent;
 }
 
@@ -731,15 +706,6 @@ init_windows_system_directory ()
       RtlInitCountedUnicodeString (&windows_directory_path,
 	    windows_directory_buf,
 	    (windows_directory_length + 4) * sizeof (WCHAR));
-#ifdef __i386__
-      system_wow64_directory_length =
-	    GetSystemWow64DirectoryW (system_wow64_directory, MAX_PATH);
-      if (system_wow64_directory_length)
-	{
-	  system_wow64_directory[system_wow64_directory_length++] = L'\\';
-	  system_wow64_directory[system_wow64_directory_length] = L'\0';
-	}
-#endif /* __i386__ */
     }
 }
 
@@ -755,10 +721,6 @@ dll_crt0_0 ()
   SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 
   lock_process::init ();
-  _impure_ptr = _GLOBAL_REENT;
-  _impure_ptr->_stdin = &_impure_ptr->__sf[0];
-  _impure_ptr->_stdout = &_impure_ptr->__sf[1];
-  _impure_ptr->_stderr = &_impure_ptr->__sf[2];
   user_data->impure_ptr = _impure_ptr;
   user_data->impure_ptr_ptr = &_impure_ptr;
 
@@ -803,10 +765,8 @@ dll_crt0_0 ()
   if (!dynamically_loaded)
     sigproc_init ();
 
-#ifdef __x86_64__
   /* See comment preceeding myfault_altstack_handler in exception.cc. */
   AddVectoredContinueHandler (0, myfault_altstack_handler);
-#endif
 
   debug_printf ("finished dll_crt0_0 initialization");
 }
@@ -815,7 +775,7 @@ static inline void
 main_thread_sinit ()
 {
   __sinit (_impure_ptr);
-  /* At this point, _impure_ptr == _global_impure_ptr == _GLOBAL_REENT is
+  /* At this point, _impure_ptr == _GLOBAL_REENT is
      initialized, but _REENT == _my_tls.local_clib doesn't know about it.
      It has been copied over from _GLOBAL_REENT in _cygtls::init_thread
      *before* the initialization took place.
@@ -823,15 +783,13 @@ main_thread_sinit ()
      As soon as the main thread calls a stdio function, this would be
      rectified.  But if another thread calls a stdio function on
      stdin/out/err before the main thread does, all the required
-     initialization of stdin/out/err will be done, but _REENT->__sdidinit
-     is *still* 0.  This in turn will result in a call to __sinit in the
+     initialization of stdin/out/err will be done, but _REENT->__cleanup
+     is *still* NULL.  This in turn will result in a call to __sinit in the
      wrong spot.  The input or output buffer will be NULLed and nothing is
      read or written in the first stdio function call in the main thread.
 
-     To fix this issue we have to copy over the relevant part of _GLOBAL_REENT
-     to _REENT here again. */
-  _REENT->__sdidinit = -1;
-  _REENT->__cleanup = _GLOBAL_REENT->__cleanup;
+     To fix this issue we set __cleanup to _cygtls::cleanup_early here. */
+  _REENT_CLEANUP(_REENT) = _cygtls::cleanup_early;
 }
 
 /* Take over from libc's crt0.o and start the application. Note the
@@ -846,7 +804,7 @@ dll_crt0_1 (void *)
   _my_tls.incyg++;
   /* Inherit "parent" exec'ed process sigmask */
   if (spawn_info && !in_forkee)
-    _my_tls.sigmask = spawn_info->moreinfo->sigmask;
+    _my_tls.sigmask = spawn_info->sigmask;
 
   if (dynamically_loaded)
     sigproc_init ();
@@ -891,10 +849,6 @@ dll_crt0_1 (void *)
 #ifdef DEBUGGING
   strace.microseconds ();
 #endif
-
-  /* Initialize debug muto, if DLL is built with --enable-debugging.
-     Need to do this before any helper threads start. */
-  debug_init ();
 
   cygbench ("pre-forkee");
   if (in_forkee)
@@ -1033,11 +987,7 @@ dll_crt0_1 (void *)
       sig_dispatch_pending (false);
       _my_tls.call_signal_handler ();
       _my_tls.incyg--;	/* Not in Cygwin anymore */
-#ifdef __x86_64__
-      cygwin_exit (user_data->main (__argc, newargv, __cygwin_environ));
-#else
-      cygwin_exit (user_data->main (__argc, newargv, *user_data->envptr));
-#endif
+      cygwin_exit (user_data->main (__argc, newargv, environ));
     }
   __asm__ ("				\n\
 	.global _cygwin_exit_return	\n\
@@ -1048,10 +998,9 @@ __cygwin_exit_return:			\n\
 ");
 }
 
-extern "C" void __stdcall
+extern "C" void
 _dll_crt0 ()
 {
-#ifdef __x86_64__
   /* Starting with Windows 10 rel 1511, the main stack of an application is
      not reproducible if a 64 bit process has been started from a 32 bit
      process.  Given that we have enough virtual address space on 64 bit
@@ -1065,13 +1014,10 @@ _dll_crt0 ()
 	  /* Must be static since it's referenced after the stack and frame
 	     pointer registers have been changed. */
 	  static PVOID allocationbase;
-	  SIZE_T commitsize = in_forkee ? (PBYTE) fork_info->stackbase
-					  - (PBYTE) fork_info->stacklimit
-					: 0;
-	  PVOID stackaddr = create_new_main_thread_stack (allocationbase,
-							  commitsize);
+	  PVOID stackaddr = create_new_main_thread_stack (allocationbase);
 	  if (stackaddr)
 	    {
+#ifdef __x86_64__
 	      /* Set stack pointer to new address.  Set frame pointer to
 	         stack pointer and subtract 32 bytes for shadow space. */
 	      __asm__ ("\n\
@@ -1079,6 +1025,9 @@ _dll_crt0 ()
 		       movq  %%rsp, %%rbp  \n\
 		       subq  $32,%%rsp     \n"
 		       : : [ADDR] "r" (stackaddr));
+#else
+#error unimplemented for this target
+#endif
 	      /* We're on the new stack now.  Free up space taken by the former
 		 main thread stack and set DeallocationStack correctly. */
 	      VirtualFree (NtCurrentTeb ()->DeallocationStack, 0, MEM_RELEASE);
@@ -1088,11 +1037,6 @@ _dll_crt0 ()
       else
 	fork_info->alloc_stack ();
     }
-#else
-  main_environ = user_data->envptr;
-  if (in_forkee)
-    fork_info->alloc_stack ();
-#endif
 
   fesetenv (FE_DFL_ENV);
   _main_tls = &_my_tls;
@@ -1112,7 +1056,7 @@ dll_crt0 (per_process *uptr)
 }
 
 /* This must be called by anyone who uses LoadLibrary to load cygwin1.dll.
-   You must have CYGTLS_PADSIZE bytes reserved at the bottom of the stack
+   You must have __CYGTLS_PADSIZE__ bytes reserved at the bottom of the stack
    calling this function, and that storage must not be overwritten until you
    unload cygwin1.dll, as it is used for _my_tls.  It is best to load
    cygwin1.dll before spawning any additional threads in your process.
@@ -1122,18 +1066,10 @@ dll_crt0 (per_process *uptr)
 extern "C" void
 cygwin_dll_init ()
 {
-#ifdef __i386__
-  static char **envp;
-#endif
   static int _fmode;
 
   user_data->magic_biscuit = sizeof (per_process);
-
-#ifdef __i386__
-  user_data->envptr = &envp;
-#endif
   user_data->fmode_ptr = &_fmode;
-
   _dll_crt0 ();
 }
 
@@ -1155,7 +1091,7 @@ __main (void)
   sig_dispatch_pending (true);
 }
 
-void __reg1
+void
 do_exit (int status)
 {
   syscall_printf ("do_exit (%d), exit_state %d", status, exit_state);
@@ -1257,7 +1193,6 @@ cygwin_atexit (void (*fn) (void))
   int res;
 
   dll *d = dlls.find ((void *) _my_tls.retaddr ());
-#ifdef __x86_64__
   /* x86_64 DLLs created with GCC 4.8.3-3 register __gcc_deregister_frame
      as atexit function using a call to atexit, rather than __cxa_atexit.
      Due to GCC's tail call optimizing, cygwin_atexit doesn't get the correct
@@ -1279,7 +1214,6 @@ cygwin_atexit (void (*fn) (void))
      use the statically linked atexit function though, as outlined above. */
   if (!d)
     d = dlls.find ((void *) fn);
-#endif
   res = d ? __cxa_atexit ((void (*) (void *)) fn, NULL, d->handle) : atexit (fn);
   return res;
 }
@@ -1327,7 +1261,7 @@ api_fatal (const char *fmt, ...)
 void
 multiple_cygwin_problem (const char *what, uintptr_t magic_version, uintptr_t version)
 {
-  if (_cygwin_testing && (strstr (what, "proc") || strstr (what, "cygheap")))
+  if (_cygwin_testing && (strstr (what, "proc")))
     {
       child_proc_info->type = _CH_WHOOPS;
       return;
@@ -1350,7 +1284,7 @@ are unable to find another cygwin DLL.",
 }
 
 #ifdef DEBUGGING
-void __reg1
+void
 cygbench (const char *s)
 {
   if (GetEnvironmentVariableA ("CYGWIN_BENCH", NULL, 0))

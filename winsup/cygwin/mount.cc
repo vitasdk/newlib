@@ -47,7 +47,7 @@ int NO_COPY mount_info::root_idx = -1;
    This function is only used to test for valid input strings.
    The later normalization drops the native prefixes. */
 
-static inline bool __stdcall
+static inline bool
 is_native_path (const char *path)
 {
   return isdirsep (path[0])
@@ -57,7 +57,7 @@ is_native_path (const char *path)
 	 && isalpha (path[4]);
 }
 
-static inline bool __stdcall
+static inline bool
 is_unc_share (const char *path)
 {
   const char *p;
@@ -294,13 +294,13 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
   if (is_remote_drive ())
     {
 /* Should be reevaluated for each new OS.  Right now this mask is valid up
-   to Windows 8.  The important point here is to test only flags indicating
+   to Windows 11.  The important point here is to test only flags indicating
    capabilities and to ignore flags indicating a specific state of this
    volume.  At present these flags to ignore are FILE_VOLUME_IS_COMPRESSED,
    FILE_READ_ONLY_VOLUME, and FILE_SEQUENTIAL_WRITE_ONCE.  The additional
    filesystem flags supported since Windows 7 are also ignored for now.
-   They add information, but only on W7 and later, and only for filesystems
-   also supporting these flags, right now only NTFS. */
+   They add information only for filesystems also supporting these flags,
+   right now only NTFS. */
 #define GETVOLINFO_VALID_MASK (0x002701ffUL)
 #define TEST_GVI(f,m) (((f) & GETVOLINFO_VALID_MASK) == (m))
 
@@ -723,12 +723,12 @@ mount_info::conv_to_win32_path (const char *src_path, char *dst, device& dev,
   return rc;
 }
 
-int
-mount_info::get_mounts_here (const char *parent_dir, int parent_dir_len,
+size_t
+mount_info::get_mounts_here (const char *parent_dir, size_t parent_dir_len,
 			     PUNICODE_STRING mount_points,
 			     PUNICODE_STRING cygd)
 {
-  int n_mounts = 0;
+  size_t n_mounts = 0;
 
   for (int i = 0; i < nmounts; i++)
     {
@@ -739,18 +739,27 @@ mount_info::get_mounts_here (const char *parent_dir, int parent_dir_len,
       if (last_slash == mi->posix_path)
 	{
 	  if (parent_dir_len == 1 && mi->posix_pathlen > 1)
-	    RtlCreateUnicodeStringFromAsciiz (&mount_points[n_mounts++],
-					      last_slash + 1);
+	    sys_mbstouni_alloc (&mount_points[n_mounts++], HEAP_BUF,
+			        last_slash + 1);
 	}
-      else if (parent_dir_len == last_slash - mi->posix_path
+      else if (parent_dir_len == (size_t) (last_slash - mi->posix_path)
 	       && strncasematch (parent_dir, mi->posix_path, parent_dir_len))
-	RtlCreateUnicodeStringFromAsciiz (&mount_points[n_mounts++],
-					  last_slash + 1);
+	sys_mbstouni_alloc (&mount_points[n_mounts++], HEAP_BUF,
+			    last_slash + 1);
     }
-  RtlCreateUnicodeStringFromAsciiz (cygd, cygdrive + 1);
+  sys_mbstouni_alloc (cygd, HEAP_BUF, cygdrive + 1);
   if (cygd->Length)
     cygd->Length -= 2;	// Strip trailing slash
   return n_mounts;
+}
+
+void
+mount_info::free_mounts_here (PUNICODE_STRING mount_points, int n_mounts,
+			      PUNICODE_STRING cygd)
+{
+  for (int i = 0; i < n_mounts; ++i)
+    cfree (mount_points[i].Buffer);
+  cfree (cygd->Buffer);
 }
 
 /* cygdrive_posix_path: Build POSIX path used as the
@@ -997,7 +1006,7 @@ find_ws (char *in)
 inline char *
 conv_fstab_spaces (char *field)
 {
-  register char *sp = field;
+  char *sp = field;
   while ((sp = strstr (sp, "\\040")) != NULL)
     {
       *sp++ = ' ';
@@ -1276,8 +1285,8 @@ static mount_item *mounts_for_sort;
 
 /* sort_by_posix_name: qsort callback to sort the mount entries.  Sort
    user mounts ahead of system mounts to the same POSIX path. */
-/* FIXME: should the user should be able to choose whether to
-   prefer user or system mounts??? */
+/* FIXME: should the user be able to choose whether to prefer user or
+   system mounts??? */
 static int
 sort_by_posix_name (const void *a, const void *b)
 {
@@ -1312,8 +1321,8 @@ sort_by_posix_name (const void *a, const void *b)
 
 /* sort_by_native_name: qsort callback to sort the mount entries.  Sort
    user mounts ahead of system mounts to the same POSIX path. */
-/* FIXME: should the user should be able to choose whether to
-   prefer user or system mounts??? */
+/* FIXME: should the user be able to choose whether to prefer user or
+   system mounts??? */
 static int
 sort_by_native_name (const void *a, const void *b)
 {

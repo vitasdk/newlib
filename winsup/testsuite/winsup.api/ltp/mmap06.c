@@ -121,11 +121,13 @@ main(int ac, char **av)
 		 * Call mmap to map the temporary file 'TEMPFILE'
 	 	 * with read access.
 		 */
-		TEST(mmap(0, page_sz, PROT_READ,
-			    MAP_FILE|MAP_SHARED, fildes, 0));
+		errno = 0;
+		addr = mmap(0, page_sz, PROT_READ,
+			    MAP_FILE|MAP_SHARED, fildes, 0);
+		TEST_ERRNO = errno;
 
 		/* Check for the return value of mmap() */
-		if (TEST_RETURN != (int)MAP_FAILED) {
+		if (addr != MAP_FAILED) {
 			tst_resm(TFAIL, "mmap() returned invalid value, "
 				 "expected: -1");
 			/* Unmap the mapped memory */
@@ -197,7 +199,7 @@ setup()
 	}
 
 	/* Write test buffer contents into temporary file */
-	if (write(fildes, tst_buff, strlen(tst_buff)) < (int)strlen(tst_buff)) {
+	if (write(fildes, tst_buff, page_sz) < page_sz) {
 		tst_brkm(TFAIL, NULL,
 			 "write() on %s Failed, errno=%d : %s",
 			 TEMPFILE, errno, strerror(errno));

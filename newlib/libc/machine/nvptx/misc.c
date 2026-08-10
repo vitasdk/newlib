@@ -15,11 +15,40 @@
 
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+
 #undef errno
 extern int errno;
 
 int
 close(int fd) {
+  return -1;
+}
+
+int
+fstat (int fd, struct stat *buf) {
+  return -1;
+}
+
+int
+gettimeofday (struct timeval *tv, void *tz) {
+  return -1;
+}
+
+int
+getpid (void) {
+  return 0;
+}
+
+int
+isatty (int fd) {
+  return fd == 1;
+}
+
+int
+kill (int pid, int sig) {
+  errno = ESRCH;
   return -1;
 }
 
@@ -29,6 +58,26 @@ lseek(int fd, off_t offset, int whence) {
 }
 
 int
+open (const char *pathname, int flags, ...) {
+  return -1;
+}
+
+int
 read(int fd, void *buf, size_t count) {
   return 0;
+}
+
+int
+stat (const char *file, struct stat *pstat) {
+  errno = EACCES;
+  return -1;
+}
+
+void
+sync (void) {
+}
+
+int
+unlink (const char *pathname) {
+  return -1;
 }

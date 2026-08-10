@@ -11,8 +11,10 @@ details. */
 
 #include "winsup.h"
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/cygwin.h>
 #include <sys/signalfd.h>
+#include <sys/reent.h> /* needed for __stdio_exit_handler declaration */
 #include "pinfo.h"
 #include "sigproc.h"
 #include "cygtls.h"
@@ -25,7 +27,7 @@ details. */
 
 #define _SA_NORESTART	0x8000
 
-static int __reg3 sigaction_worker (int, const struct sigaction *, struct sigaction *, bool);
+static int sigaction_worker (int, const struct sigaction *, struct sigaction *, bool);
 
 #define sigtrapped(func) ((func) != SIG_IGN && (func) != SIG_DFL)
 
@@ -174,7 +176,7 @@ sleep (unsigned int seconds)
   return 0;
 }
 
-extern "C" unsigned int
+extern "C" int
 usleep (useconds_t useconds)
 {
   struct timespec req;
@@ -202,18 +204,18 @@ sigprocmask (int how, const sigset_t *set, sigset_t *oldset)
   return res;
 }
 
-int __reg3
+int
 handle_sigprocmask (int how, const sigset_t *set, sigset_t *oldset, sigset_t& opmask)
 {
-  /* check that how is in right range */
-  if (how != SIG_BLOCK && how != SIG_UNBLOCK && how != SIG_SETMASK)
+  /* check that how is in right range if set is not NULL */
+  if (set && how != SIG_BLOCK && how != SIG_UNBLOCK && how != SIG_SETMASK)
     {
       syscall_printf ("Invalid how value %d", how);
       return EINVAL;
     }
 
   __try
-	{
+    {
       if (oldset)
 	*oldset = opmask;
 
@@ -246,7 +248,7 @@ handle_sigprocmask (int how, const sigset_t *set, sigset_t *oldset, sigset_t& op
   return 0;
 }
 
-int __reg2
+int
 _pinfo::kill (siginfo_t& si)
 {
   int res;
@@ -301,9 +303,14 @@ extern "C" int
 raise (int sig)
 {
   pthread *thread = _my_tls.tid;
-  if (!thread)
+  if (!thread || !__isthreaded)
     return kill (myself->pid, sig);
-  return pthread_kill (thread, sig);
+
+  /* Make sure to return -1 and set errno, as on Linux. */
+  int err = pthread_kill (thread, sig);
+  if (err)
+    set_errno (err);
+  return err ? -1 : 0;
 }
 
 static int
@@ -403,12 +410,12 @@ abort (void)
   _my_tls.call_signal_handler (); /* Call any signal handler */
 
   /* Flush all streams as per SUSv2.  */
-  if (_GLOBAL_REENT->__cleanup)
-    _GLOBAL_REENT->__cleanup (_GLOBAL_REENT);
+  if (__stdio_exit_handler)
+    (*__stdio_exit_handler) ();
   do_exit (SIGABRT);	/* signal handler didn't exit.  Goodbye. */
 }
 
-static int __reg3
+static int
 sigaction_worker (int sig, const struct sigaction *newact,
 		  struct sigaction *oldact, bool isinternal)
 {

@@ -29,7 +29,7 @@
 /* The structure of the following #if #else #endif conditional chain
    must match the chain in memcpy-stub.c.  */
 
-#include "acle-compat.h"
+#include "arm-acle-compat.h"
 
 #if defined (__vita__)
   /* Defined in memcpy-stub.c.  */

@@ -4,6 +4,79 @@
 
 <sect1 id="ov-new"><title>What's new and what changed in Cygwin</title>
 
+<sect2 id="ov-new3.5"><title>What's new and what changed in 3.5</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Drop support for Windows 7, Windows 8, Server 2008 R2 and Server 2012.
+</para></listitem>
+
+<listitem><para>
+The console device gets accessible from other terminals such as other
+consoles and ptys. Thanks to this new feature, GNU screen and tmux now
+work in the console.
+</para></listitem>
+
+<listitem><para>
+newgrp(1) tool.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
+<sect2 id="ov-new3.4"><title>What's new and what changed in 3.4</title>
+
+<itemizedlist mark="bullet">
+
+<listitem><para>
+Drop support for Vista and Server 2008.
+</para></listitem>
+
+<listitem><para>
+Drop support for 32 bit Windows and WOW64.
+</para></listitem>
+
+<listitem><para>
+Allow to run with full ASLR enabled and enable on Cygwin DLL by default.
+</para></listitem>
+
+<listitem><para>
+Remove any special handling for the .com filename suffix. It has to
+be used always explicitely.
+</para></listitem>
+
+<listitem><para>
+Add code to handle setrlimit(RLIMIT_AS).
+</para></listitem>
+
+<listitem><para>
+- Add code to handle signal masks in /proc/&lt;PID&gt;/status.
+</para></listitem>
+
+<listitem><para>
+The CYGWIN=pipe_byte option is now set by default, so that pipes are
+opened in byte mode rather than message mode.
+</para></listitem>
+
+<listitem><para>
+Handle UDP_SEGMENT and UDP_GRO socket options.
+</para></listitem>
+
+<listitem><para>
+The stdio input functions no longer try again to read after EOF.
+</para></listitem>
+
+<listitem><para>
+The default values of FD_SETSIZE and NOFILE are now 1024 and 3200,
+respectively.
+</para></listitem>
+
+</itemizedlist>
+
+</sect2>
+
 <sect2 id="ov-new3.3"><title>What's new and what changed in 3.3</title>
 
 <itemizedlist mark="bullet">
@@ -20,13 +93,24 @@ option '-pg'.  (Continue using gprof to get symbolic profile displays.)
 </para></listitem>
 
 <listitem><para>
-New GNU-specific APIs: pthread_cond_clockwait, pthread_mutex_clocklock,
-pthread_rwlock_clockrdlock, pthread_rwlock_clockwrlock, sem_clockwait.
+New GNU-specific APIs, slated to become part of the next POSIX standard:
+pthread_cond_clockwait, pthread_mutex_clocklock, pthread_rwlock_clockrdlock,
+pthread_rwlock_clockwrlock, sem_clockwait.
+</para></listitem>
+
+<listitem><para>
+New Solaris-specific APIs, slated to become part of the next POSIX standard:
+sig2str, str2sig.
 </para></listitem>
 
 <listitem><para>
 The speed argument to cfsetspeed(3) can now be a numerical baud rate
 rather than a Bnnn constant, as on Linux.
+</para></listitem>
+
+<listitem><para>
+The internal implementation of pipes has been overhauled; this should
+result in improved performance.
 </para></listitem>
 
 </itemizedlist>

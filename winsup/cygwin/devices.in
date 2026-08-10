@@ -8,6 +8,8 @@
 #include "path.h"
 #include "fhandler.h"
 #include "ntdll.h"
+#include "dtable.h"
+#include "cygheap.h"
 
 typedef const _device *KR_device_t;
 }
@@ -63,6 +65,21 @@ exists_ntdev_silent (const device& dev)
   return exists_ntdev (dev) ? -1 : false;
 }
 
+static BOOL CALLBACK
+enum_cons_dev (HWND hw, LPARAM lp)
+{
+  unsigned long *bitmask = (unsigned long *) lp;
+  HANDLE h = NULL;
+  fhandler_console::console_state *cs;
+  if ((cs = fhandler_console::open_shared_console (hw, h)))
+    {
+      *bitmask |= (1UL << cs->tty_min_state.getntty ());
+      UnmapViewOfFile ((void *) cs);
+      CloseHandle (h);
+    }
+  return TRUE;
+}
+
 static int
 exists_console (const device& dev)
 {
@@ -72,10 +89,16 @@ exists_console (const device& dev)
     case FH_CONSOLE:
     case FH_CONIN:
     case FH_CONOUT:
-      return fhandler_console::exists ();
+      return cygheap && cygheap->ctty && cygheap->ctty->is_console ()
+	&& fhandler_console::exists ();
     default:
-      /* Only show my own console device (for now?) */
-      return iscons_dev (myself->ctty) && myself->ctty == devn;
+      if (dev.get_minor () < MAX_CONS_DEV)
+	{
+	  unsigned long bitmask = 0;
+	  EnumWindows (enum_cons_dev, (LPARAM) &bitmask);
+	  return bitmask & (1UL << dev.get_minor ());
+	}
+      return false;
     }
 }
 
@@ -175,6 +198,10 @@ const _device dev_error_storage =
 "/dev/fd%(0-15)d", BRACK(FHDEV(DEV_FLOPPY_MAJOR, {$1})), "\\Device\\Floppy{$1}", exists_ntdev, S_IFBLK
 "/dev/scd%(0-15)d", BRACK(FHDEV(DEV_CDROM_MAJOR, {$1})), "\\Device\\CdRom{$1}", exists_ntdev, S_IFBLK
 "/dev/sr%(0-15)d", BRACK(FHDEV(DEV_CDROM_MAJOR, {$1})), "\\Device\\CdRom{$1}", exists_ntdev, S_IFBLK
+"/dev/fd", BRACK(FH_DEV_FD), "/proc/self/fd", exists, S_IFLNK
+"/dev/stdin", BRACK(FH_DEV_FD), "/proc/self/fd/0", exists, S_IFLNK
+"/dev/stdout", BRACK(FH_DEV_FD), "/proc/self/fd/1", exists, S_IFLNK
+"/dev/stderr", BRACK(FH_DEV_FD), "/proc/self/fd/2", exists, S_IFLNK
 %other	{return	NULL;}
 %%
 #undef BRACK

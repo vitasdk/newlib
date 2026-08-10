@@ -216,22 +216,6 @@ allow_others_to_sync ()
   done = true;
 }
 
-/* Get the handle count of an object. */
-static ULONG
-get_obj_handle_count (HANDLE h)
-{
-  OBJECT_BASIC_INFORMATION obi;
-  NTSTATUS status;
-  ULONG hdl_cnt = 0;
-
-  status = NtQueryObject (h, ObjectBasicInformation, &obi, sizeof obi, NULL);
-  if (!NT_SUCCESS (status))
-    debug_printf ("NtQueryObject: %y", status);
-  else
-    hdl_cnt = obi.HandleCount;
-  return hdl_cnt;
-}
-
 /* Helper struct to construct a local OBJECT_ATTRIBUTES on the stack. */
 struct lockfattr_t
 {
@@ -596,34 +580,46 @@ lockf_t::from_obj_name (inode_t *node, lockf_t **head, const wchar_t *name)
 lockf_t *
 inode_t::get_all_locks_list ()
 {
-  struct fdbi
-  {
-    DIRECTORY_BASIC_INFORMATION dbi;
-    WCHAR buf[2][NAME_MAX + 1];
-  } f;
+  tmp_pathbuf tp;
   ULONG context;
   NTSTATUS status;
+  BOOLEAN restart = TRUE;
+  bool last_run = false;
   lockf_t newlock, *lock = i_all_lf;
 
-  for (BOOLEAN restart = TRUE;
-       NT_SUCCESS (status = NtQueryDirectoryObject (i_dir, &f, sizeof f, TRUE,
-						    restart, &context, NULL));
-       restart = FALSE)
+  PDIRECTORY_BASIC_INFORMATION dbi_buf = (PDIRECTORY_BASIC_INFORMATION)
+					 tp.w_get ();
+  while (!last_run)
     {
-      if (f.dbi.ObjectName.Length != LOCK_OBJ_NAME_LEN * sizeof (WCHAR))
-	continue;
-      f.dbi.ObjectName.Buffer[LOCK_OBJ_NAME_LEN] = L'\0';
-      if (!newlock.from_obj_name (this, &i_all_lf, f.dbi.ObjectName.Buffer))
-	continue;
-      if (lock - i_all_lf >= MAX_LOCKF_CNT)
+      status = NtQueryDirectoryObject (i_dir, dbi_buf, 65536, FALSE, restart,
+				       &context, NULL);
+      if (!NT_SUCCESS (status))
 	{
-	  system_printf ("Warning, can't handle more than %d locks per file.",
-			 MAX_LOCKF_CNT);
+	  debug_printf ("NtQueryDirectoryObject, status %y", status);
 	  break;
 	}
-      if (lock > i_all_lf)
-	lock[-1].lf_next = lock;
-      new (lock++) lockf_t (newlock);
+      if (status != STATUS_MORE_ENTRIES)
+	last_run = true;
+      restart = FALSE;
+      for (PDIRECTORY_BASIC_INFORMATION dbi = dbi_buf;
+	   dbi->ObjectName.Length > 0;
+	   dbi++)
+	{
+	  if (dbi->ObjectName.Length != LOCK_OBJ_NAME_LEN * sizeof (WCHAR))
+	    continue;
+	  dbi->ObjectName.Buffer[LOCK_OBJ_NAME_LEN] = L'\0';
+	  if (!newlock.from_obj_name (this, &i_all_lf, dbi->ObjectName.Buffer))
+	    continue;
+	  if (lock - i_all_lf >= MAX_LOCKF_CNT)
+	    {
+	      system_printf ("Warning, can't handle more than %d locks per file.",
+			     MAX_LOCKF_CNT);
+	      break;
+	    }
+	  if (lock > i_all_lf)
+	    lock[-1].lf_next = lock;
+	  new (lock++) lockf_t (newlock);
+	}
     }
   /* If no lock has been found, return NULL. */
   if (lock == i_all_lf)
@@ -646,7 +642,7 @@ lockf_t::create_lock_obj_attr (lockfattr_t *attr, ULONG flags, void *sd_buf)
   return &attr->attr;
 }
 
-DWORD WINAPI
+DWORD
 create_lock_in_parent (PVOID param)
 {
   HANDLE lf_obj;
@@ -725,7 +721,7 @@ err:
   return 1;
 }
 
-DWORD WINAPI
+DWORD
 delete_lock_in_parent (PVOID param)
 {
   inode_t *node, *next_node;
@@ -955,10 +951,8 @@ fhandler_base::lock (int a_op, struct flock *fl)
     a_flags = F_POSIX; /* default */
 
   /* FIXME: For BSD flock(2) we need a valid, per file table entry OS handle.
-     Therefore we can't allow using flock(2) on nohandle devices and
-     pre-Windows 8 console handles (recognized by their odd handle value). */
-  if ((a_flags & F_FLOCK)
-      && (nohandle () || (((uintptr_t) get_handle () & 0x3) == 0x3)))
+     Therefore we can't allow using flock(2) on nohandle devices. */
+  if ((a_flags & F_FLOCK) && nohandle ())
     {
       set_errno (EINVAL);
       debug_printf ("BSD locking on nohandle and old-style console devices "
@@ -1874,7 +1868,7 @@ struct lock_parms {
   NTSTATUS	   status;
 };
 
-static DWORD WINAPI
+static DWORD
 blocking_lock_thr (LPVOID param)
 {
   struct lock_parms *lp = (struct lock_parms *) param;

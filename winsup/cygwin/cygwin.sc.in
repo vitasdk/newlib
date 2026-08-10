@@ -2,9 +2,7 @@
 OUTPUT_FORMAT(pei-x86-64)
 SEARCH_DIR("/usr/x86_64-pc-cygwin/lib/w32api"); SEARCH_DIR("=/usr/lib/w32api");
 #else
-#undef i386
-OUTPUT_FORMAT(pei-i386)
-SEARCH_DIR("/usr/i686-pc-cygwin/lib/w32api"); SEARCH_DIR("=/usr/lib/w32api");
+#error unimplemented for this target
 #endif
 #define __CONCAT1(a,b)	a##b
 #define __CONCAT(a,b) __CONCAT1(a,b)
@@ -113,37 +111,10 @@ SECTIONS
     SORT(*)(.idata$7)
     . = ALIGN(16);
   }
-  .gnu_debuglink_overlay ALIGN(__section_alignment__) (NOLOAD):
-  {
-    BYTE(0)	/* c */
-    BYTE(0)	/* y */
-    BYTE(0)	/* g */
-    BYTE(0)	/* w */
-    BYTE(0)	/* i */
-    BYTE(0)	/* n */
-    BYTE(0)	/* 1 */
-    BYTE(0)	/* . */
-    BYTE(0)	/* d */
-    BYTE(0)	/* b */
-    BYTE(0)	/* g */
-    BYTE(0)	/* \0 */
-    LONG(0)	/* checksum */
-  }
   .rsrc BLOCK(__section_alignment__) :
   {
     *(.rsrc)
     *(SORT(.rsrc$*))
-    _SYM (_cygheap_start) = .;
-  }
-  .cygheap ALIGN(__section_alignment__) :
-  {
-#ifdef __x86_64__
-    . = . + (3072 * 1024);
-#else
-    . = . + (2048 * 1024);
-#endif
-    . = ALIGN(0x10000);
-    _SYM (_cygheap_end) = .;
   }
   /DISCARD/ :
   {
@@ -178,8 +149,13 @@ SECTIONS
   .debug_typenames ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_typenames) }
   .debug_varnames  ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_varnames) }
   .debug_macro    ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_macro) }
-  /* DWARF 3. */
+  /* DWARF 3 */
   .debug_ranges   ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_ranges) }
-  /* DWARF 4. */
+  /* DWARF 4, merged back into .debug_info with DWARF 5 */
   .debug_types	  ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_types .gnu.linkonce.wt.*) }
+  /* DWARF 5 */
+  .debug_loclists ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_loclists) }
+  .debug_rnglists ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_rnglists) }
+  .debug_line_str ALIGN(__section_alignment__) (NOLOAD) : { *(.debug_line_str) }
+
 }
