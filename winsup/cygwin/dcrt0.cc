@@ -64,7 +64,7 @@ do_global_dtors ()
 static void
 do_global_ctors (void (**in_pfunc)(), int force)
 {
-  if (!force && in_forkee)
+  if (!force && __in_forkee == FORKING)
     return;		// inherit constructed stuff from parent pid
 
   /* Run ctors backwards, so skip the first entry and find how many
@@ -236,12 +236,13 @@ globify (char *word, char **&argv, int &argc, int &argvlen)
 	char quote = *s;
 	while (*++s && *s != quote)
 	  {
+	    mbstate_t mbs = { 0 };
 	    if (dos_spec || *s != '\\')
 	      /* nothing */;
 	    else if (s[1] == quote || s[1] == '\\')
 	      s++;
 	    *p++ = '\\';
-	    size_t cnt = isascii (*s) ? 1 : mbtowc (NULL, s, MB_CUR_MAX);
+	    size_t cnt = isascii (*s) ? 1 : mbrtowi (NULL, s, MB_CUR_MAX, &mbs);
 	    if (cnt <= 1 || cnt == (size_t)-1)
 	      *p++ = *s;
 	    else
@@ -532,7 +533,7 @@ get_cygwin_startup_info ()
       switch (res->type)
 	{
 	  case _CH_FORK:
-	    in_forkee = true;
+	    __in_forkee = FORKING;
 	    should_be_cb = sizeof (child_info_fork);
 	    fallthrough;
 	  case _CH_SPAWN:
@@ -803,11 +804,14 @@ dll_crt0_1 (void *)
 
   _my_tls.incyg++;
   /* Inherit "parent" exec'ed process sigmask */
-  if (spawn_info && !in_forkee)
+  if (spawn_info && __in_forkee != FORKING)
     _my_tls.sigmask = spawn_info->sigmask;
 
   if (dynamically_loaded)
     sigproc_init ();
+
+  /* Call this before accessing any files. */
+  RtlSetProcessPlaceholderCompatibilityMode (PHCM_EXPOSE_PLACEHOLDERS);
 
   check_sanity_and_sync (user_data);
 
@@ -840,7 +844,7 @@ dll_crt0_1 (void *)
 
   /* Initialize pthread mainthread when not forked and it is safe to call new,
      otherwise it is reinitalized in fixup_after_fork */
-  if (!in_forkee)
+  if (__in_forkee != FORKING)
     {
       pthread::init_mainthread ();
       _pei386_runtime_relocator (user_data);
@@ -851,7 +855,7 @@ dll_crt0_1 (void *)
 #endif
 
   cygbench ("pre-forkee");
-  if (in_forkee)
+  if (__in_forkee == FORKING)
     {
       /* Make sure to restore the TEB's stack info.  If guardsize is -1 the
 	 stack has been provided by the application and must not be deallocated
@@ -924,17 +928,17 @@ dll_crt0_1 (void *)
   /* Set up standard fds in file descriptor table. */
   cygheap->fdtab.stdio_init ();
 
-  /* Set up __progname for getopt error call. */
-  if (__argv[0] && (__progname = strrchr (__argv[0], '/')))
-    ++__progname;
-  else
-    __progname = __argv[0];
+  /* Set up program_invocation_name and program_invocation_short_name.
+     __progname is an export alias for program_invocation_short_name. */
   program_invocation_name = __argv[0];
-  program_invocation_short_name = __progname;
-  if (__progname)
+  if (__argv[0] && (program_invocation_short_name = strrchr (__argv[0], '/')))
+    ++program_invocation_short_name;
+  else
+    program_invocation_short_name = __argv[0];
+  if (program_invocation_short_name)
     {
-      char *cp = strchr (__progname, '\0') - 4;
-      if (cp > __progname && ascii_strcasematch (cp, ".exe"))
+      char *cp = strchr (program_invocation_short_name, '\0') - 4;
+      if (cp > program_invocation_short_name && ascii_strcasematch (cp, ".exe"))
 	*cp = '\0';
     }
   SetThreadName (GetCurrentThreadId (), program_invocation_short_name);
@@ -1018,7 +1022,7 @@ _dll_crt0 ()
      under our own control and avoids collision with the OS. */
   if (!dynamically_loaded)
     {
-      if (!in_forkee)
+      if (__in_forkee != FORKING)
 	{
 	  /* Must be static since it's referenced after the stack and frame
 	     pointer registers have been changed. */
@@ -1056,7 +1060,7 @@ void
 dll_crt0 (per_process *uptr)
 {
   /* Set the local copy of the pointer into the user space. */
-  if (!in_forkee && uptr && uptr != user_data)
+  if (__in_forkee != FORKING && uptr && uptr != user_data)
     {
       memcpy (user_data, uptr, per_process_overwrite);
       *(user_data->impure_ptr_ptr) = _GLOBAL_REENT;
@@ -1246,15 +1250,13 @@ extern "C" void
 vapi_fatal (const char *fmt, va_list ap)
 {
   char buf[4096];
-  int n = __small_sprintf (buf, "%P: *** fatal error %s- ", in_forkee ? "in forked process " : "");
+  int n = __small_sprintf (buf, "%P: *** fatal error %s- ",
+				(__in_forkee == FORKING)
+				? "in forked process " : "");
   __small_vsprintf (buf + n, fmt, ap);
   va_end (ap);
   strace.prntf (_STRACE_SYSTEM, NULL, "%s", buf);
-
-#ifdef DEBUGGING
-  try_to_debug ();
-#endif
-  cygwin_stackdump ();
+  api_fatal_debug();
   myself.exit (__api_fatal_exit_val);
 }
 

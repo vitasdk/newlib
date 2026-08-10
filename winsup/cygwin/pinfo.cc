@@ -102,6 +102,8 @@ pinfo_init (char **envp, int envc)
       myself->gid = ILLEGAL_GID;
       environ_init (NULL, 0);	/* call after myself has been set up */
       myself->nice = winprio_to_nice (GetPriorityClass (GetCurrentProcess ()));
+      myself->sched_policy = SCHED_OTHER;
+      myself->sched_reset_on_fork = false;
       myself->ppid = 1;		/* always set last */
       debug_printf ("Set nice to %d", myself->nice);
     }
@@ -118,7 +120,7 @@ pinfo_init (char **envp, int envc)
 DWORD
 pinfo::status_exit (DWORD x)
 {
-  switch (x)
+  switch ((NTSTATUS) x)
     {
     case STATUS_DLL_NOT_FOUND:
       {
@@ -237,7 +239,7 @@ pinfo::exit (DWORD n)
 }
 # undef self
 
-/* Return next free Cygwin PID between 2 and 65535, round-robin.  Each new
+/* Return next free Cygwin PID between 2 and MAX_PID, round-robin.  Each new
    PID is checked that it doesn't collide with an existing PID.  For that,
    just check if the "cygpid.PID" section exists. */
 pid_t
@@ -515,7 +517,7 @@ const char *
 _pinfo::_ctty (char *buf)
 {
   if (!CTTY_IS_VALID (ctty))
-    strcpy (buf, "no ctty");
+    stpcpy (buf, "no ctty");
   else
     {
       device d;
@@ -642,30 +644,24 @@ commune_process (void *arg)
       {
 	sigproc_printf ("processing PICOM_CMDLINE");
 	unsigned n = 0;
-	const char *argv[__argc_safe + 1];
+	int argc = __argv0_orig ? 1 : __argc_safe;
+	const char *argv[argc + 1];
 
-	for (int i = 0; i < __argc_safe; i++)
+	for (int i = 0; i < argc; i++)
 	  {
-	    if (IsBadStringPtr (__argv[i], INT32_MAX))
-	      argv[i] = "";
-	    else
-	      argv[i] = __argv[i];
+	    argv[i] = __argv[i] ?: "";
 	    n += strlen (argv[i]) + 1;
 	  }
-	argv[__argc_safe] = NULL;
+	argv[argc] = NULL;
 	if (!WritePipeOverlapped (tothem, &n, sizeof n, &nr, 1000L))
-	  {
-	    /*__seterrno ();*/	// this is run from the signal thread, so don't set errno
-	    sigproc_printf ("WritePipeOverlapped sizeof argv failed, %E");
-	  }
-	else
-	  for (const char **a = argv; *a; a++)
-	    if (!WritePipeOverlapped (tothem, *a, strlen (*a) + 1, &nr, 1000L))
-	      {
-		sigproc_printf ("WritePipeOverlapped arg %d failed, %E",
-				a - argv);
-		break;
-	      }
+	  sigproc_printf ("WritePipeOverlapped sizeof argv failed, %E");
+	else for (int i = 0; i < argc; i++)
+	  if (!WritePipeOverlapped (tothem, __argv[i],
+				    strlen (__argv[i]) + 1, &nr, 1000L))
+	    {
+	      sigproc_printf ("WritePipeOverlapped arg %d failed, %E", i);
+	      break;
+	    }
 	break;
       }
     case PICOM_CWD:
@@ -1165,15 +1161,14 @@ _pinfo::cmdline (size_t& n)
   else
     {
       n = 0;
-      for (char **a = __argv; *a; a++)
-	n += strlen (*a) + 1;
+      int argc = __argv0_orig ? 1 : __argc_safe;
+
+      for (int i = 0; i < argc; ++i)
+	n += strlen (__argv[i]) + 1;
       char *p;
       p = s = (char *) cmalloc_abort (HEAP_COMMUNE, n);
-      for (char **a = __argv; *a; a++)
-	{
-	  strcpy (p, *a);
-	  p = strchr (p, '\0') + 1;
-	}
+      for (int i = 0; i < argc; ++i)
+	p = stpcpy (p, __argv[i]) + 1;
     }
   return s;
 }
@@ -1231,10 +1226,7 @@ _pinfo::environ (size_t& n)
   char *p, *s;
   p = s = (char *) cmalloc_abort (HEAP_COMMUNE, n);
   for (char **e = env; *e; e++)
-    {
-      strcpy (p, *e);
-      p = strchr (p, '\0') + 1;
-    }
+    p = stpcpy (p, *e) + 1;
   return s;
 }
 

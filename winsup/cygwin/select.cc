@@ -584,14 +584,15 @@ no_verify (select_record *, fd_set *, fd_set *, fd_set *)
   return 0;
 }
 
-static int
-pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
+ssize_t
+pipe_data_available (int fd, fhandler_base *fh, HANDLE h, int flags)
 {
   if (fh->get_device () == FH_PIPER)
     {
       DWORD nbytes_in_pipe;
-      if (!writing && PeekNamedPipe (h, NULL, 0, NULL, &nbytes_in_pipe, NULL))
-	return nbytes_in_pipe > 0;
+      if (!(flags & PDA_WRITE)
+	  && PeekNamedPipe (h, NULL, 0, NULL, &nbytes_in_pipe, NULL))
+	return nbytes_in_pipe;
       return -1;
     }
 
@@ -609,9 +610,17 @@ pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
 	 access on the write end.  */
       select_printf ("fd %d, %s, NtQueryInformationFile failed, status %y",
 		     fd, fh->get_name (), status);
-      return writing ? 1 : -1;
+      switch (flags)
+	{
+	case PDA_WRITE:
+	  return 1;
+	case PDA_SELECT | PDA_WRITE:
+	  return PIPE_BUF;
+	default:
+	  return -1;
+	}
     }
-  if (writing)
+  if (flags & PDA_WRITE)
     {
       /* If there is anything available in the pipe buffer then signal
         that.  This means that a pipe could still block since you could
@@ -630,36 +639,36 @@ pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
         on the writer side assumes that no space is available in the read
         side inbound buffer.
 
-        Consequentially, the only reliable information is available on the
-        read side, so fetch info from the read side via the pipe-specific
-        query handle.  Use fpli.WriteQuotaAvailable as storage for the actual
-        interesting value, which is the InboundQuote on the write side,
-        decremented by the number of bytes of data in that buffer. */
-      /* Note: Do not use NtQueryInformationFile() for query_hdl because
-	 NtQueryInformationFile() seems to interfere with reading pipes
-	 in non-cygwin apps. Instead, use PeekNamedPipe() here. */
+	Consequentially, there are two possibilities when WriteQuotaAvailable
+	is 0. One is that the buffer is really full. The other is that the
+	reader is currently trying to read the pipe and it is pending.
+	In the latter case, the fact that the reader cannot read the data
+	immediately means that the pipe is empty. In the former case,
+	NtSetInformationFile() in set_pipe_non_blocking(true) will fail
+	with STATUS_PIPE_BUSY, while it succeeds in the latter case.
+	Therefore, we can distinguish these cases by calling set_pipe_non_
+	blocking(true). If it returns success, the pipe is empty, so we
+	return the pipe buffer size. Otherwise, we return 0. */
       if (fh->get_device () == FH_PIPEW && fpli.WriteQuotaAvailable == 0)
 	{
-	  HANDLE query_hdl = ((fhandler_pipe *) fh)->get_query_handle ();
-	  if (!query_hdl)
-	    query_hdl = ((fhandler_pipe *) fh)->temporary_query_hdl ();
-	  if (!query_hdl)
-	    return 1; /* We cannot know actual write pipe space. */
-	  DWORD nbytes_in_pipe;
-	  BOOL res =
-	    PeekNamedPipe (query_hdl, NULL, 0, NULL, &nbytes_in_pipe, NULL);
-	  if (!((fhandler_pipe *) fh)->get_query_handle ())
-	    CloseHandle (query_hdl); /* Close temporary query_hdl */
-	  if (!res)
-	    return 1;
-	  fpli.WriteQuotaAvailable = fpli.InboundQuota - nbytes_in_pipe;
+	  NTSTATUS status =
+	    ((fhandler_pipe *) fh)->set_pipe_non_blocking (true);
+	  if (status == STATUS_PIPE_BUSY)
+	    return 0; /* Full */
+	  else if (!NT_SUCCESS (status))
+	    /* We cannot know actual write pipe space. */
+	    return (flags & PDA_SELECT) ? PIPE_BUF : 1;
+	  /* Restore pipe mode to blocking mode */
+	  ((fhandler_pipe *) fh)->set_pipe_non_blocking (false);
+	  /* Empty */
+	  fpli.WriteQuotaAvailable = fpli.InboundQuota;
 	}
       if (fpli.WriteQuotaAvailable > 0)
 	{
 	  paranoid_printf ("fd %d, %s, write: size %u, avail %u", fd,
 			   fh->get_name (), fpli.InboundQuota,
 			   fpli.WriteQuotaAvailable);
-	  return 1;
+	  return fpli.WriteQuotaAvailable;
 	}
       /* TODO: Buffer really full or non-Cygwin reader? */
     }
@@ -667,7 +676,7 @@ pipe_data_available (int fd, fhandler_base *fh, HANDLE h, bool writing)
     {
       paranoid_printf ("fd %d, %s, read avail %u", fd, fh->get_name (),
 		       fpli.ReadDataAvailable);
-      return 1;
+      return fpli.ReadDataAvailable;
     }
   if (fpli.NamedPipeState & FILE_PIPE_CLOSING_STATE)
     return -1;
@@ -715,10 +724,10 @@ peek_pipe (select_record *s, bool from_select)
 	  gotone = s->read_ready = true;
 	  goto out;
 	}
-      int n = pipe_data_available (s->fd, fh, h, false);
+      ssize_t n = pipe_data_available (s->fd, fh, h, PDA_SELECT);
       /* On PTY masters, check if input from the echo pipe is available. */
       if (n == 0 && fh->get_echo_handle ())
-	n = pipe_data_available (s->fd, fh, fh->get_echo_handle (), false);
+	n = pipe_data_available (s->fd, fh, fh->get_echo_handle (), PDA_SELECT);
 
       if (n < 0)
 	{
@@ -759,9 +768,9 @@ out:
 	    gotone += s->except_ready = true;
 	  return gotone;
 	}
-      int n = pipe_data_available (s->fd, fh, h, true);
+      ssize_t n = pipe_data_available (s->fd, fh, h, PDA_SELECT | PDA_WRITE);
       select_printf ("write: %s, n %d", fh->get_name (), n);
-      gotone += s->write_ready = n;
+      gotone += s->write_ready = (n >= PIPE_BUF);
       if (n < 0 && s->except_selected)
 	gotone += s->except_ready = true;
     }
@@ -972,9 +981,10 @@ peek_fifo (select_record *s, bool from_select)
 out:
   if (s->write_selected)
     {
-      int n = pipe_data_available (s->fd, fh, fh->get_handle (), true);
+      ssize_t n = pipe_data_available (s->fd, fh, fh->get_handle (),
+				       PDA_SELECT | PDA_WRITE);
       select_printf ("write: %s, n %d", fh->get_name (), n);
-      gotone += s->write_ready = n;
+      gotone += s->write_ready = (n >= PIPE_BUF);
       if (n < 0 && s->except_selected)
 	gotone += s->except_ready = true;
     }
@@ -1398,9 +1408,9 @@ out:
   HANDLE h = ptys->get_output_handle ();
   if (s->write_selected)
     {
-      int n = pipe_data_available (s->fd, fh, h, true);
+      ssize_t n = pipe_data_available (s->fd, fh, h, PDA_SELECT | PDA_WRITE);
       select_printf ("write: %s, n %d", fh->get_name (), n);
-      gotone += s->write_ready = n;
+      gotone += s->write_ready = (n >= PIPE_BUF);
       if (n < 0 && s->except_selected)
 	gotone += s->except_ready = true;
     }

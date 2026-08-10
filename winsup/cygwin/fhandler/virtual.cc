@@ -20,7 +20,7 @@ details. */
 #include <dirent.h>
 
 fhandler_virtual::fhandler_virtual ():
-  fhandler_base (), filebuf (NULL), fileid (-1)
+  fhandler_base (), filebuf (NULL)
 {
 }
 
@@ -45,9 +45,7 @@ fhandler_virtual::opendir (int fd)
   DIR *res = NULL;
   size_t len;
 
-  if (!virt_ftype_isdir (exists ()))
-    set_errno (ENOTDIR);
-  else if ((len = strlen (get_name ())) > PATH_MAX - 3)
+  if ((len = strlen (get_name ())) > PATH_MAX - 3)
     set_errno (ENAMETOOLONG);
   else if ((dir = (DIR *) malloc (sizeof (DIR))) == NULL)
     set_errno (ENOMEM);

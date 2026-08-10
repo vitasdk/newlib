@@ -52,6 +52,7 @@ details. */
 #define DUMPSTACK_FRAME_LIMIT    32
 
 PWCHAR debugger_command;
+PWCHAR dumper_command;
 extern uint8_t _sigbe;
 extern uint8_t _sigdelayed_end;
 
@@ -129,6 +130,42 @@ error_start_init (const char *buf)
   wcpcpy (cp, global_progname);
   for (PWCHAR p = wcschr (cp, L'\\'); p; p = wcschr (p, L'\\'))
     *p = L'/';
+  wcscat (cp, L"\"");
+}
+
+extern "C" void
+dumper_init (void)
+{
+  WCHAR dll_dir[PATH_MAX];
+  if (!GetModuleFileNameW (cygwin_hmodule, dll_dir, PATH_MAX))
+    return;
+
+  /* Strip off last path component ("\\cygwin1.dll") */
+  PWCHAR w = wcsrchr (dll_dir, L'\\');
+  if (!w)
+    return;
+
+  *w = L'\0';
+
+  /* Calculate the length of the command, allowing for an appended DWORD PID and
+     terminating null */
+  int cmd_len = 1 + wcslen(dll_dir) + 11 + 5 + 1 + wcslen(global_progname) + 1 + 10 + 1;
+  if (cmd_len > 32767)
+    {
+      /* If this comes to more than the 32,767 characters CreateProcess() can
+           accept, we can't work, so don't set dumper_command */
+      return;
+    }
+
+  dumper_command = (PWCHAR) malloc(cmd_len * sizeof (WCHAR));
+
+  PWCHAR cp = dumper_command;
+  cp = wcpcpy (cp, L"\"");
+  cp = wcpcpy (cp, dll_dir);
+  cp = wcpcpy (cp, L"\\dumper.exe");
+  cp = wcpcpy (cp, L"\" -n ");
+  cp = wcpcpy (cp, L"\"");
+  cp = wcpcpy (cp, global_progname);
   wcscat (cp, L"\"");
 }
 
@@ -454,20 +491,14 @@ cygwin_stackdump ()
   exc.dumpstack ();
 }
 
-extern "C" int
-try_to_debug ()
+static
+int exec_prepared_command (PWCHAR command)
 {
-  if (!debugger_command)
+  if (!command)
     return 0;
-  debug_printf ("debugger_command '%W'", debugger_command);
-  if (being_debugged ())
-    {
-      extern void break_here ();
-      break_here ();
-      return 0;
-    }
+  debug_printf ("executing prepared command '%W'", command);
 
-  PWCHAR dbg_end = wcschr (debugger_command, L'\0');
+  PWCHAR dbg_end = wcschr (command, L'\0');
   __small_swprintf (dbg_end, L" %u", GetCurrentProcessId ());
 
   LONG prio = GetThreadPriority (GetCurrentThread ());
@@ -509,11 +540,15 @@ try_to_debug ()
     }
   FreeEnvironmentStringsW (rawenv);
 
-  console_printf ("*** starting debugger for pid %u, tid %u\n",
+  /* timeout from waiting for debugger to attach after 10 seconds */
+  ULONGLONG timeout = GetTickCount64() + 10*1000;
+
+  console_printf ("*** starting '%W' for pid %u, tid %u\r\n",
+		  command,
 		  cygwin_pid (GetCurrentProcessId ()), GetCurrentThreadId ());
   BOOL dbg;
   dbg = CreateProcessW (NULL,
-			debugger_command,
+			command,
 			NULL,
 			NULL,
 			FALSE,
@@ -527,24 +562,44 @@ try_to_debug ()
      we can't wait here for the error_start process to exit, as if it's a
      debugger, it might want to continue this thread.  So we busy wait until a
      debugger attaches, which stops this process, after which it can decide if
-     we continue or not. */
+     we continue or not.
+
+     Note that this is still racy: if the error_start process does it's work too
+     fast, we don't notice that it attached and get stuck here.  So we also
+     apply a timeout to ensure we exit eventually.
+  */
 
   *dbg_end = L'\0';
   if (!dbg)
-    system_printf ("Failed to start debugger, %E");
+    system_printf ("Failed to start, %E");
   else
     {
-      SetThreadPriority (GetCurrentThread (), THREAD_PRIORITY_IDLE);
-      while (!being_debugged ())
-	Sleep (1);
+      while (!being_debugged () && GetTickCount64() < timeout)
+	Sleep (0);
       Sleep (2000);
     }
 
-  console_printf ("*** continuing pid %u from debugger call (%d)\n",
-		  cygwin_pid (GetCurrentProcessId ()), dbg);
+  console_printf ("*** continuing pid %u\r\n",
+		  cygwin_pid (GetCurrentProcessId ()));
 
   SetThreadPriority (GetCurrentThread (), prio);
   return dbg;
+}
+
+extern "C" int
+try_to_debug ()
+{
+  /* If already being debugged, break into the debugger (Note that this function
+     can be called from places other than an exception) */
+  if (being_debugged ())
+    {
+      extern void break_here ();
+      break_here ();
+      return 1;
+    }
+
+  /* Otherwise, invoke the JIT debugger, if set */
+  return exec_prepared_command (debugger_command);
 }
 
 /* myfault exception handler. */
@@ -610,7 +665,7 @@ exception::handle (EXCEPTION_RECORD *e, exception_list *frame, CONTEXT *in,
   siginfo_t si = {};
   si.si_code = SI_KERNEL;
   /* Coerce win32 value to posix value.  */
-  switch (e->ExceptionCode)
+  switch ((NTSTATUS) e->ExceptionCode)
     {
     case STATUS_FLOAT_DIVIDE_BY_ZERO:
       si.si_signo = SIGFPE;
@@ -836,8 +891,9 @@ sig_handle_tty_stop (int sig, siginfo_t *, void *)
       sigproc_printf ("process %d stopped by signal %d", myself->pid, sig);
       /* FIXME! This does nothing to suspend anything other than the main
 	 thread. */
-      /* Use special cygwait parameter to handle SIGCONT.  _main_tls.sig will
-	 be cleared under lock when SIGCONT is detected.  */
+      /* Use special cygwait parameter to handle SIGCONT.
+         _main_tls.current_sig will be cleared under lock when SIGCONT is
+	 detected.  */
       pthread::suspend_all_except_self ();
       DWORD res = cygwait (NULL, cw_infinite, cw_sig_cont);
       pthread::resume_all ();
@@ -864,9 +920,8 @@ _cygtls::interrupt_now (CONTEXT *cx, siginfo_t& si, void *handler,
 
   /* Delay the interrupt if we are
      1) somehow inside the DLL
-     2) in _sigfe (spinning is true) and about to enter cygwin DLL
-     3) in a Windows DLL.  */
-  if (incyg || spinning || inside_kernel (cx))
+     2) in a Windows DLL.  */
+  if (incyg || inside_kernel (cx))
     interrupted = false;
   else
     {
@@ -897,7 +952,8 @@ _cygtls::interrupt_setup (siginfo_t& si, void *handler, struct sigaction& siga)
     }
 
   infodata = si;
-  this->sig = si.si_signo; /* Should always be last thing set to avoid race */
+  /* current_sig should always be last thing set to avoid race */
+  this->current_sig = si.si_signo;
 
   if (incyg)
     set_signal_arrived ();
@@ -921,10 +977,10 @@ sigpacket::setup_handler (void *handler, struct sigaction& siga, _cygtls *tls)
   CONTEXT cx;
   bool interrupted = false;
 
-  if (tls->sig)
+  if (tls->current_sig)
     {
       sigproc_printf ("trying to send signal %d but signal %d already armed",
-		      si.si_signo, tls->sig);
+		      si.si_signo, tls->current_sig);
       goto out;
     }
 
@@ -1264,7 +1320,6 @@ signal_exit (int sig, siginfo_t *si, void *)
   debug_printf ("exiting due to signal %d", sig);
   exit_state = ES_SIGNAL_EXIT;
 
-  if (cygheap->rlim_core > 0UL)
     switch (sig)
       {
       case SIGABRT:
@@ -1277,9 +1332,24 @@ signal_exit (int sig, siginfo_t *si, void *)
       case SIGTRAP:
       case SIGXCPU:
       case SIGXFSZ:
-	sig |= 0x80;		/* Flag that we've "dumped core" */
 	if (try_to_debug ())
 	  break;
+
+	if (cygheap->rlim_core == 0Ul)
+	  break;
+
+	sig |= __WCOREFLAG; /* Set flag in exit status to show that we've "dumped core" */
+
+	/* If core dump size is >1MB, try to invoke dumper to write a
+	   .core file */
+	if (cygheap->rlim_core > 1024*1024)
+	  {
+	    if (exec_prepared_command (dumper_command))
+	      break;
+	    /* If that failed, fall-through to... */
+	  }
+
+	/* Otherwise write a .stackdump */
 	if (si->si_code != SI_USER && si->si_cyg)
 	  {
 	    cygwin_exception *exc = (cygwin_exception *) si->si_cyg;
@@ -1330,9 +1400,27 @@ signal_exit (int sig, siginfo_t *si, void *)
 }
 } /* extern "C" */
 
+/* As above, but before exiting due to api_fatal */
+extern "C"
+void
+api_fatal_debug ()
+{
+  if (try_to_debug ())
+    return;
+
+  if (cygheap->rlim_core == 0Ul)
+    return;
+
+  if (cygheap->rlim_core > 1024*1024)
+    if (exec_prepared_command (dumper_command))
+      return;
+
+  cygwin_stackdump();
+}
+
 /* Attempt to carefully handle SIGCONT when we are stopped. */
 void
-_cygtls::handle_SIGCONT ()
+_cygtls::handle_SIGCONT (threadlist_t * &tl_entry)
 {
   if (NOTSTATE (myself, PID_STOPPED))
     return;
@@ -1345,22 +1433,26 @@ _cygtls::handle_SIGCONT ()
      before exiting the loop.  */
   bool sigsent = false;
   while (1)
-    if (sig)		/* Assume that it's ok to just test sig outside of a
+    if (current_sig)	/* Assume that it's ok to just test sig outside of a
 			   lock since setup_handler does it this way.  */
-      yield ();		/* Attempt to schedule another thread.  */
+      {
+	cygheap->unlock_tls (tl_entry);
+	yield ();	/* Attempt to schedule another thread.  */
+	tl_entry = cygheap->find_tls (_main_tls);
+      }
     else if (sigsent)
       break;		/* SIGCONT has been recognized by other thread */
     else
       {
-	sig = SIGCONT;
+	current_sig = SIGCONT;
 	set_signal_arrived (); /* alert sig_handle_tty_stop */
 	sigsent = true;
       }
   /* Clear pending stop signals */
-  sig_clear (SIGSTOP);
-  sig_clear (SIGTSTP);
-  sig_clear (SIGTTIN);
-  sig_clear (SIGTTOU);
+  sig_clear (SIGSTOP, false);
+  sig_clear (SIGTSTP, false);
+  sig_clear (SIGTTIN, false);
+  sig_clear (SIGTTOU, false);
 }
 
 int
@@ -1389,7 +1481,7 @@ sigpacket::process ()
   if (si.si_signo == SIGCONT)
     {
       tl_entry = cygheap->find_tls (_main_tls);
-      _main_tls->handle_SIGCONT ();
+      _main_tls->handle_SIGCONT (tl_entry);
       cygheap->unlock_tls (tl_entry);
     }
 
@@ -1440,11 +1532,14 @@ sigpacket::process ()
   if ((HANDLE) *tls)
     tls->signal_debugger (si);
 
-  if (issig_wait)
+  tls->lock ();
+  if (issig_wait && tls->sigwait_mask != 0)
     {
       tls->sigwait_mask = 0;
+      tls->unlock ();
       goto dosig;
     }
+  tls->unlock ();
 
   if (handler == SIG_IGN)
     {
@@ -1458,14 +1553,14 @@ sigpacket::process ()
     goto exit_sig;
   if (si.si_signo == SIGSTOP)
     {
-      sig_clear (SIGCONT);
+      sig_clear (SIGCONT, false);
       goto stop;
     }
 
   /* Clear pending SIGCONT on stop signals */
   if (si.si_signo == SIGTSTP || si.si_signo == SIGTTIN
       || si.si_signo == SIGTTOU)
-    sig_clear (SIGCONT);
+    sig_clear (SIGCONT, false);
 
   if (handler == (void *) SIG_DFL)
     {
@@ -1585,7 +1680,7 @@ _cygtls::call_signal_handler ()
   while (1)
     {
       lock ();
-      if (!sig)
+      if (!current_sig)
 	{
 	  unlock ();
 	  break;
@@ -1596,7 +1691,7 @@ _cygtls::call_signal_handler ()
       if (retaddr () == (__tlsstack_t) sigdelayed)
 	pop ();
 
-      debug_only_printf ("dealing with signal %d", sig);
+      debug_only_printf ("dealing with signal %d", current_sig);
       this_sa_flags = sa_flags;
 
       sigset_t this_oldmask = set_process_mask_delta ();
@@ -1609,7 +1704,7 @@ _cygtls::call_signal_handler ()
 	}
 
       /* Save information locally on stack to pass to handler. */
-      int thissig = sig;
+      int thissig = current_sig;
       siginfo_t thissi = infodata;
       void (*thisfunc) (int, siginfo_t *, void *) = func;
 
@@ -1630,7 +1725,10 @@ _cygtls::call_signal_handler ()
 		 context, unwind to the caller and in case we're called
 		 from sigdelayed, fix the instruction pointer accordingly. */
 	      context.uc_mcontext.ctxflags = CONTEXT_FULL;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 	      RtlCaptureContext ((PCONTEXT) &context.uc_mcontext);
+#pragma GCC diagnostic pop
 	      __unwind_single_frame ((PCONTEXT) &context.uc_mcontext);
 	      if (stackptr > stack)
 		{
@@ -1675,7 +1773,7 @@ _cygtls::call_signal_handler ()
       int this_errno = saved_errno;
       reset_signal_arrived ();
       incyg = false;
-      sig = 0;		/* Flag that we can accept another signal */
+      current_sig = 0;	/* Flag that we can accept another signal */
       unlock ();	/* unlock signal stack */
 
       /* Alternate signal stack requested for this signal and alternate signal

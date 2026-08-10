@@ -53,7 +53,10 @@ details. */
 #define __undef_CRITICAL
 #endif
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
 #include <windows.h>
+#pragma GCC diagnostic pop
 #include <wincrypt.h>
 #include <lmcons.h>
 #include <ntdef.h>
@@ -95,6 +98,17 @@ details. */
 #endif
 #ifndef FILE_SUPPORTS_GHOSTING
 #define FILE_SUPPORTS_GHOSTING                  0x40000000
+#endif
+
+#ifndef FILE_ATTRIBUTE_RECALL_ON_OPEN
+#define FILE_ATTRIBUTE_RECALL_ON_OPEN		0x00040000
+#endif
+#ifndef FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+#define FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS	0x00400000
+#endif
+
+#ifndef DOMAIN_ALIAS_RID_DEVICE_OWNERS
+#define DOMAIN_ALIAS_RID_DEVICE_OWNERS		(__MSABI_LONG(0x00000247))
 #endif
 
 /* So-called "Microsoft Account" SIDs (S-1-11-...) have a netbios domain name

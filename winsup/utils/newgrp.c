@@ -136,6 +136,7 @@ main (int argc, const char **argv)
   char **child_env;
   bool new_child_env = false;
   gid_t gid;
+  int ngrps;
 
   setlocale (LC_ALL, "");
 
@@ -160,6 +161,7 @@ main (int argc, const char **argv)
   if (argv[1] == NULL)
     {
       gid = pw->pw_gid;
+      gr = getgrgid (gid);
     }
   else
     {
@@ -175,11 +177,34 @@ main (int argc, const char **argv)
       ++argv;
     }
 
+  /* Windows does not allow to set the primary group to another group if
+     it's not already part of the supplementary group list.  However, our
+     setgid() allows this, otherwise OpenSSH and other account-switching
+     processes wouldn't work, given we only actually switch the user
+     context at setuid() time.  Therefore we test this here and don't
+     allow other groups. */
+  ngrps = getgroups (0, NULL);
+  if (ngrps > 0)
+    {
+      gid_t *glist = (gid_t *) alloca (ngrps * sizeof (gid_t));
+
+      ngrps = getgroups (ngrps, glist);
+	while (--ngrps >= 0)
+	  if (gid == glist[ngrps])
+	    break;
+      if (ngrps < 0)
+	{
+	  fprintf (stderr, "%s: can't switch primary group to '%s'\n",
+		   program_invocation_short_name, gr->gr_name);
+	  return 2;
+	}
+    }
+
   /* Set primary group */
   if (setgid (gid) != 0)
     {
       fprintf (stderr, "%s: can't switch primary group to '%s'\n",
-	       program_invocation_short_name, argv[1]);
+	       program_invocation_short_name, gr->gr_name);
       return 2;
     }
 

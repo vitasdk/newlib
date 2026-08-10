@@ -2459,64 +2459,31 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
 	      /* Skip this when creating group entries and for non-users. */
 	      if (is_group() || acc_type != SidTypeUser)
 		break;
-	      /* On AD machines, use LDAP to fetch domain account infos. */
-	      if (cygheap->dom.primary_dns_name ())
+	      /* Fetch primary group from AD and overwrite the one we
+		 just guessed above. */
+	      if (cldap->fetch_ad_account (sid, false, domain))
 		{
-		  /* Fetch primary group from AD and overwrite the one we
-		     just guessed above. */
-		  if (cldap->fetch_ad_account (sid, false, domain))
-		    {
-		      if ((val = cldap->get_account_name ()))
-			wcscpy (name, val);
-		      if ((id_val = cldap->get_primary_gid ()) != ILLEGAL_GID)
-			gid = posix_offset + id_val;
-		    }
-		  home = cygheap->pg.get_home (cldap, sid, dom, domain,
-					       name, fully_qualified_name);
-		  shell = cygheap->pg.get_shell (cldap, sid, dom, domain,
-						 name,
-						 fully_qualified_name);
-		  gecos = cygheap->pg.get_gecos (cldap, sid, dom, domain,
-						 name, fully_qualified_name);
-		  /* Check and, if necessary, add unix<->windows id mapping
-		     on the fly, unless we're called from getpwent. */
-		  if (!pldap && cldap->is_open ())
-		    {
-		      id_val = cldap->get_unix_uid ();
-		      if (id_val != ILLEGAL_UID
-			  && cygheap->ugid_cache.get_uid (id_val)
-			     == ILLEGAL_UID)
-			cygheap->ugid_cache.add_uid (id_val, uid);
-		    }
+		  if ((val = cldap->get_account_name ()))
+		    wcscpy (name, val);
+		  if ((id_val = cldap->get_primary_gid ()) != ILLEGAL_GID)
+		    gid = posix_offset + id_val;
 		}
-	      /* If primary_dns_name() is empty, we're likely running under an
-		 NT4 domain, so we can't use LDAP.  For user accounts fall back
-		 to NetUserGetInfo.  This isn't overly fast, but keep in mind
-		 that NT4 domains are mostly replaced by AD these days. */
-	      else
+	      home = cygheap->pg.get_home (cldap, sid, dom, domain,
+					   name, fully_qualified_name);
+	      shell = cygheap->pg.get_shell (cldap, sid, dom, domain,
+					     name,
+					     fully_qualified_name);
+	      gecos = cygheap->pg.get_gecos (cldap, sid, dom, domain,
+					     name, fully_qualified_name);
+	      /* Check and, if necessary, add unix<->windows id mapping
+		 on the fly, unless we're called from getpwent. */
+	      if (!pldap && cldap->is_open ())
 		{
-		  WCHAR server[INTERNET_MAX_HOST_NAME_LENGTH + 3];
-		  NET_API_STATUS nas;
-		  PUSER_INFO_3 ui;
-
-		  if (!get_logon_server (cygheap->dom.primary_flat_name (),
-					 server, DS_IS_FLAT_NAME))
-		    break;
-		  nas = NetUserGetInfo (server, name, 3, (PBYTE *) &ui);
-		  if (nas != NERR_Success)
-		    {
-		      debug_printf ("NetUserGetInfo(%W) %u", name, nas);
-		      break;
-		    }
-		  /* Overwrite name to be sure case is same as in SAM */
-		  wcscpy (name, ui->usri3_name);
-		  gid = posix_offset + ui->usri3_primary_group_id;
-		  home = cygheap->pg.get_home (ui, sid, dom, name,
-					       fully_qualified_name);
-		  shell = cygheap->pg.get_shell (ui, sid, dom, name,
-						 fully_qualified_name);
-		  gecos = cygheap->pg.get_gecos (ui, sid, dom, name,
-						 fully_qualified_name);
+		  id_val = cldap->get_unix_uid ();
+		  if (id_val != ILLEGAL_UID
+		      && cygheap->ugid_cache.get_uid (id_val)
+			 == ILLEGAL_UID)
+		    cygheap->ugid_cache.add_uid (id_val, uid);
 		}
 	    }
 	  /* Otherwise check account domain (local SAM).*/
@@ -2624,9 +2591,15 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
 		  + (sid_sub_auth_rid (sid) & 0xff);
 #else
 	  if (sid_id_auth (sid) == 15 /* SECURITY_APP_PACKAGE_AUTHORITY */)
-	    uid = 0x10000 + 0x100 * sid_id_auth (sid)
-		  + 0x10 * sid_sub_auth (sid, 0)
-		  + (sid_sub_auth_rid (sid) & 0xf);
+	    {
+	      /* Filter out all SIDs not referring to an App Package, for
+	         instance, Capability SIDs (S-1-15-3-...) */
+	      if (sid_sub_auth (sid, 0) != SECURITY_APP_PACKAGE_BASE_RID)
+		return NULL;
+	      uid = 0x10000 + 0x100 * sid_id_auth (sid)
+		    + 0x10 * SECURITY_APP_PACKAGE_BASE_RID
+		    + (sid_sub_auth_rid (sid) & 0xf);
+	    }
 	  else if (sid_id_auth (sid) != 5 /* SECURITY_NT_AUTHORITY */)
 	    uid = 0x10000 + 0x100 * sid_id_auth (sid)
 		  + (sid_sub_auth_rid (sid) & 0xff);
@@ -2682,21 +2655,8 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
       fully_qualified_name = true;
       acc_type = SidTypeUnknown;
     }
-  else if (sid_id_auth (sid) == 12 && sid_sub_auth (sid, 0) == 1)
-    {
-      /* Special AzureAD group SID which can't be resolved by
-         LookupAccountSid (ERROR_NONE_MAPPED).  This is only allowed
-	 as group entry, not as passwd entry. */
-      if (is_passwd ())
-	return NULL;
-      uid = gid = 0x1001;
-      wcpcpy (dom, L"AzureAD");
-      wcpcpy (name = namebuf, L"Group");
-      fully_qualified_name = true;
-      acc_type = SidTypeUnknown;
-    }
-  else if (sid_id_auth (sid) == 5 &&
-	   sid_sub_auth (sid, 0) == SECURITY_APPPOOL_ID_BASE_RID)
+  else if (sid_id_auth (sid) == 5 /* SECURITY_NT_AUTHORITY */
+	   && sid_sub_auth (sid, 0) == SECURITY_APPPOOL_ID_BASE_RID)
     {
       /* Special IIS APPPOOL group SID which can't be resolved by
          LookupAccountSid (ERROR_NONE_MAPPED).  This is only allowed
@@ -2728,6 +2688,24 @@ pwdgrp::fetch_account_from_windows (fetch_user_arg_t &arg, cyg_ldap *pldap)
 	}
       acc_type = SidTypeUnknown;
     }
+  else if (sid_id_auth (sid) == 12 /* AzureAD ID */
+	   && sid_sub_auth (sid, 0) == 1 /* Azure ID base RID */)
+    {
+      /* Special AzureAD group SID which can't be resolved by
+         LookupAccountSid (ERROR_NONE_MAPPED).  This is only allowed
+	 as group entry, not as passwd entry. */
+      if (is_passwd ())
+	return NULL;
+      uid = gid = 0x1001;
+      wcpcpy (dom, L"AzureAD");
+      wcpcpy (name = namebuf, L"Group");
+      fully_qualified_name = true;
+      acc_type = SidTypeUnknown;
+    }
+  else if (sid_id_auth (sid) == 15 /* SECURITY_APP_PACKAGE_AUTHORITY */
+	   && sid_sub_auth (sid, 0) == SECURITY_CAPABILITY_BASE_RID)
+    /* Filter out Capability SIDs */
+    return NULL;
   else if (sid_id_auth (sid) == 22)
     {
       /* Samba UNIX Users/Groups

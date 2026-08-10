@@ -113,6 +113,7 @@ static struct parse_thing
       } values[2];
   } known[] NO_COPY =
 {
+  {"disable_pcon", {&disable_pcon}, setbool, NULL, {{false}, {true}}},
   {"error_start", {func: error_start_init}, isfunc, NULL, {{0}, {0}}},
   {"export", {&export_settings}, setbool, NULL, {{false}, {true}}},
   {"glob", {func: glob_init}, isfunc, NULL, {{0}, {s: "normal"}}},
@@ -120,8 +121,8 @@ static struct parse_thing
   {"proc_retry", {func: set_proc_retry}, isfunc, NULL, {{0}, {5}}},
   {"reset_com", {&reset_com}, setbool, NULL, {{false}, {true}}},
   {"wincmdln", {&wincmdln}, setbool, NULL, {{false}, {true}}},
+  {"winjitdebug", {&winjitdebug}, setbool, NULL, {{false}, {true}}},
   {"winsymlinks", {func: set_winsymlinks}, isfunc, NULL, {{0}, {0}}},
-  {"disable_pcon", {&disable_pcon}, setbool, NULL, {{false}, {true}}},
   {NULL, {0}, setdword, 0, {{0}, {0}}}
 };
 
@@ -832,6 +833,7 @@ environ_init (char **envp, int envc)
     out:
       findenv_func = (char * (*)(const char*, int*)) my_findenv;
       environ = envp;
+      dumper_init ();
       if (envp_passed_in)
 	{
 	  p = getenv ("CYGWIN");

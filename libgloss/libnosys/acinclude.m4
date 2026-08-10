@@ -3,7 +3,7 @@ case "${target}" in
   *-*-cygwin*) ;;
   a29k-amd-udi) ;;
   aarch64*-*-*) ;;
-  arc-*-*) ;;
+  arc*-*-*) ;;
   arm*-*-*) ;;
   bfin-*-*) ;;
   cris-*-* | crisv32-*-*) ;;
@@ -16,6 +16,7 @@ case "${target}" in
   mn10?00-*-*) ;;
   riscv*-*-*) ;;
   powerpcle-*-pe) ;;
+  pru-*-*) ;;
   sh*-*-*) ;;
   sparc-sun-sunos*) ;;
   sparc64-*-*) ;;

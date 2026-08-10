@@ -159,6 +159,8 @@ extern "C" int __ljfault (jmp_buf, int);
 
 typedef uintptr_t __tlsstack_t;
 
+struct threadlist_t;
+
 class _cygtls
 {
 public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
@@ -192,10 +194,9 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   class cygthread *_ctinfo;
   class san *andreas;
   waitq wq;
-  int sig;
+  int current_sig;
   unsigned incyg;
-  unsigned spinning;
-  unsigned stacklock;
+  volatile unsigned stacklock;
   __tlsstack_t *stackptr;
   __tlsstack_t stack[TLS_STACK_SIZE];
   unsigned initialized;
@@ -223,9 +224,20 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   int call_signal_handler ();
   void remove_wq (DWORD);
   void fixup_after_fork ();
-  void lock ();
-  void unlock ();
-  bool locked ();
+  void lock ()
+  {
+    while (InterlockedExchange (&stacklock, 1))
+      {
+#ifdef __x86_64__
+	__asm__ ("pause");
+#else
+#error unimplemented for this target
+#endif
+	Sleep (0);
+      }
+  }
+  void unlock () { stacklock = 0; }
+  bool locked () { return !!stacklock; }
   HANDLE get_signal_arrived (bool wait_for_lock = true)
   {
     if (!signal_arrived)
@@ -262,7 +274,7 @@ public: /* Do NOT remove this public: line, it's a marker for gentls_offsets. */
   {
     will_wait_for_signal = false;
   }
-  void handle_SIGCONT ();
+  void handle_SIGCONT (threadlist_t * &);
   static void cleanup_early(struct _reent *);
 private:
   void call2 (DWORD (*) (void *, void *), void *, void *);

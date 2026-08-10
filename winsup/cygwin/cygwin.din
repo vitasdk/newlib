@@ -347,6 +347,7 @@ clog10l NOSIGFE
 clogf NOSIGFE
 clogl NOSIGFE
 close SIGFE
+close_range SIGFE
 closedir SIGFE
 closelog SIGFE
 cnd_broadcast SIGFE
@@ -519,6 +520,7 @@ fcvt SIGFE
 fcvtbuf SIGFE
 fcvtf SIGFE
 fdatasync SIGFE
+fdclosedir SIGFE
 fdim NOSIGFE
 fdimf NOSIGFE
 fdiml NOSIGFE
@@ -695,6 +697,7 @@ getifaddrs SIGFE
 getitimer SIGFE
 getline = __getline SIGFE
 getloadavg SIGFE
+getlocalename_l SIGFE
 getlogin NOSIGFE
 getlogin_r NOSIGFE
 getmntent SIGFE
@@ -1043,6 +1046,7 @@ poll SIGFE
 popen SIGFE
 posix_fadvise SIGFE
 posix_fallocate SIGFE
+posix_getdents SIGFE
 posix_madvise SIGFE
 posix_memalign SIGFE
 posix_openpt SIGFE
@@ -1349,6 +1353,7 @@ setpassent NOSIGFE
 setpgid SIGFE
 setpgrp SIGFE
 setpriority SIGFE
+setproctitle SIGFE
 setprogname NOSIGFE
 setprotoent = cygwin_setprotoent SIGFE
 setpwent NOSIGFE
@@ -1554,6 +1559,7 @@ timerfd_create SIGFE
 timerfd_gettime SIGFE
 timerfd_settime SIGFE
 times SIGFE
+timespec_get SIGFE
 timezone SIGFE
 timingsafe_bcmp NOSIGFE
 timingsafe_memcmp NOSIGFE

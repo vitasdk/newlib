@@ -1,0 +1,80 @@
+What's new:
+-----------
+
+- New API call: getlocalename_l.
+
+- New API calls: fdclosedir, posix_getdents.
+
+- New API call: setproctitle.
+
+- New API call: timespec_get.
+
+- Add FS_IOC_[GS]ETFLAGS FS_PINNED_FL and FS_UNPINNED_FL flags to handle
+  Windows attributes FILE_ATTRIBUTE_PINNED and FILE_ATTRIBUTE_UNPINNED.
+  Add matching 'p' and 'u' mode bits in chattr(1) and lsattr(1).
+
+- New libaio.a provided for projects checking for POSIX aio support
+  by looking for this library at configure time.
+
+- cygpath -r option allows to generate all Windows paths with root-local
+  path prefix \\?\.
+
+
+What changed:
+-------------
+
+- ps -f now prints the commandline rather than the full path to the
+  executable.
+
+- Drop support for NT4 and Samba < 3.0.22.
+
+- Now that SMBv1 is ultimately deprecated and not installed by default
+  on latest Windows versions, use Network Discovery (i. e. WSD, "Web
+  Service Discovery") for enumerating network servers in //, just like
+  Windows Explorer.
+
+- If "server" is given as FQDN, and if "server" is an NFS server,
+  ls //server now also enumerates NFS shares.  If "server" is given
+  as a flat name, only SMB shares are enumerated.
+
+- Expose //tsclient (Microsoft Terminal Services) shares as well as
+  //wsl$ (Plan 9 Network Provider) shares, i. e., WSL installation
+  root dirs.
+
+- Redesign pipe handling to minimize toggling blocking mode.
+  The query_hdl stuff is no longer needed in new implementation.
+
+- Now using AVX/AVX2/AVX-512 instructions in signal handler does not
+  break their context.
+
+- nice(2), setpriority(2) and sched_setparam(2) now fail with EACCES
+  or EPERM if Windows would silently set a lower priority
+  (HIGH_PRIORITY_CLASS instead of REALTIME_PRIORITY_CLASS) due to
+  missing administrator privileges.
+
+- nice(2) now returns the new nice value instead of 0 on success
+  and sets errno to EPERM instead of EACCES on failure.  This confirms
+  to POSIX and Linux (glibc >= 2.2.4) behavior.
+
+- sched_setscheduler(2) now emulates changes between SCHED_OTHER,
+  SCHED_BATCH, SCHED_IDLE, SCHED_FIFO and SCHED_RR.  If SCHED_OTHER or
+  SCHED_BATCH is selected, the Windows priority is set according to the
+  nice value where SCHED_BATCH sets a one step lower priority.  If
+  SCHED_IDLE is selected, the nice value is preserved and the Windows
+  priority is set to IDLE_PRIORITY_CLASS.  If SCHED_FIFO or SCHED_RR is
+  selected, the nice value is preserved and the Windows priority is set
+  according to the realtime priority.
+  If the SCHED_RESET_ON_FORK flag is set, SCHED_FIFO and SCHED_RR are
+  reset to SCHED_OTHER and negative nice values are reset to zero in
+  each child process created with fork(2).
+  Note: Windows does not offer alternative scheduling policies so
+  this could only emulate API behavior.
+
+- If SCHED_FIFO or SCHED_RR is selected, the /proc/<PID>/stat field
+  '(18) priority' is now set to the negated sched_policy minus one.
+  If SCHED_IDLE is selected, this field is set to 39.  The '(19) nice'
+  field is now set to the originally requested nice value.
+
+- Raise maximum pid from 65536 to 4194304 to account for scenarios
+  with lots of CPUs and lots of tasks.
+  Addresses: https://cygwin.com/pipermail/cygwin/2024-December/256927.html

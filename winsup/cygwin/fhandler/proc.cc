@@ -180,14 +180,18 @@ fhandler_proc::exists ()
   debug_printf ("exists (%s)", path);
   path += proc_len;
   if (*path == 0)
-    return virt_rootdir;
+    {
+      fileid () = 0;
+      return virt_rootdir;
+    }
   virt_tab_t *entry = virt_tab_search (path + 1, false, proc_tab,
 				       PROC_LINK_COUNT);
   if (entry)
     {
-      fileid = entry - proc_tab;
+      fileid () = entry - proc_tab;
       return entry->type;
     }
+  fileid () = -1;
   return virt_none;
 }
 
@@ -243,6 +247,8 @@ fhandler_proc::opendir (int fd)
   DIR *dir = fhandler_virtual::opendir (fd);
   if (dir && !(dir->__handle = (void *) new winpids ((DWORD) 0)))
     {
+      free (dir->__d_dirname);
+      free (dir->__d_dirent);
       free (dir);
       dir = NULL;
       set_errno (ENOMEM);
@@ -375,7 +381,7 @@ fhandler_proc::open (int flags, mode_t mode)
       goto out;
     }
 
-  fileid = proc_file_no;
+  fileid () = proc_file_no;
   if (!fill_filebuf ())
     {
       res = 0;
@@ -399,9 +405,9 @@ out:
 bool
 fhandler_proc::fill_filebuf ()
 {
-  if (fileid < PROC_LINK_COUNT && proc_tab[fileid].format_func)
+  if (fileid () < PROC_LINK_COUNT && proc_tab[fileid ()].format_func)
     {
-      filesize = proc_tab[fileid].format_func (NULL, filebuf);
+      filesize = proc_tab[fileid ()].format_func (NULL, filebuf);
       if (filesize > 0)
 	return true;
     }
@@ -1015,14 +1021,14 @@ format_proc_cpuinfo (void *, char *&destbuf)
       ftcprint (features1,  9, "apic"); /* APIC enabled */
       ftcprint (features1, 11, "sep");  /* sysenter/sysexit */
       ftcprint (features1, 12, "mtrr"); /* memory type range registers */
-      ftcprint (features1, 13, "pge");  /* page global extension */
+      ftcprint (features1, 13, "pge");  /* page global enable */
       ftcprint (features1, 14, "mca");  /* machine check architecture */
       ftcprint (features1, 15, "cmov"); /* conditional move */
       ftcprint (features1, 16, "pat");  /* page attribute table */
       ftcprint (features1, 17, "pse36");/* 36 bit page size extensions */
       ftcprint (features1, 18, "pn");   /* processor serial number */
       ftcprint (features1, 19, "clflush"); /* clflush instruction */
-      ftcprint (features1, 21, "dts");  /* debug store */
+      ftcprint (features1, 21, "ds");	/* debug store */
       ftcprint (features1, 22, "acpi"); /* ACPI via MSR */
       ftcprint (features1, 23, "mmx");  /* multimedia extensions */
       ftcprint (features1, 24, "fxsr"); /* fxsave/fxrstor */
@@ -1233,6 +1239,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
       ftcprint (features2, 13, "cx16");     /* cmpxchg16b instruction */
       ftcprint (features2, 14, "xtpr");     /* send task priority messages */
       ftcprint (features2, 15, "pdcm");     /* perf/debug capabilities MSR */
+/*    ftcprint (features2, 16, "");     */  /* unused */
       ftcprint (features2, 17, "pcid");     /* process context identifiers */
       ftcprint (features2, 18, "dca");      /* direct cache access */
       ftcprint (features2, 19, "sse4_1");   /* xmm 4_1 sse 4.1 */
@@ -1273,14 +1280,18 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	      ftcprint (features1, 11, "xop");		/* sse 5 extended AVX */
 	      ftcprint (features1, 12, "skinit");       /* skinit/stgi */
 	      ftcprint (features1, 13, "wdt");          /* watchdog timer */
+/*	      ftcprint (features1, 14, ""); */		/* unused */
 	      ftcprint (features1, 15, "lwp");          /* light weight prof */
 	      ftcprint (features1, 16, "fma4");         /* 4 operand MAC */
 	      ftcprint (features1, 17, "tce");          /* translat cache ext */
+/*	      ftcprint (features1, 18, ""); */		/* unused */
 	      ftcprint (features1, 19, "nodeid_msr");   /* nodeid MSR */
+/*	      ftcprint (features1, 20, ""); */		/* unused */
 	      ftcprint (features1, 21, "tbm");          /* trailing bit manip */
 	      ftcprint (features1, 22, "topoext");      /* topology ext */
 	      ftcprint (features1, 23, "perfctr_core"); /* core perf ctr ext */
 	      ftcprint (features1, 24, "perfctr_nb");   /* NB perf ctr ext */
+/*	      ftcprint (features1, 25, ""); */		/* unused */
 	      ftcprint (features1, 26, "bpext");        /* data brkpt ext */
 	      ftcprint (features1, 27, "ptsc");         /* perf timestamp ctr */
 	      ftcprint (features1, 28, "perfctr_llc");  /* ll cache perf ctr */
@@ -1315,13 +1326,6 @@ format_proc_cpuinfo (void *, char *&destbuf)
 
 	  ftcprint (features1,  3, "epb");	/* energy perf bias */
 	}
-      /* cpuid 0x00000007:1 ebx */
-      if (maxf >= 0x00000007)
-	{
-	  cpuid (&unused, &features1, &unused, &unused, 0x00000007, 1);
-
-	  ftcprint (features1,  0, "intel_ppin"); /* Prot Proc Id No */
-	}
       /* cpuid 0x00000010 ebx */
       if (maxf >= 0x00000010)
 	{
@@ -1349,6 +1353,13 @@ format_proc_cpuinfo (void *, char *&destbuf)
 
 /*	  ftcprint (features1, 11, "pti");*//* Page Table Isolation reqd with Meltdown */
 
+      /* cpuid 0x00000007:1 ebx */
+      if (maxf >= 0x00000007)
+	{
+	  cpuid (&unused, &features1, &unused, &unused, 0x00000007, 1);
+
+	  ftcprint (features1,  0, "intel_ppin"); /* Prot Proc Id No */
+	}
       /* cpuid 0x00000010:2 ecx */
       if (maxf >= 0x00000010)
 	{
@@ -1395,8 +1406,8 @@ format_proc_cpuinfo (void *, char *&destbuf)
 /*	  ftcprint (features1,  4, "rdpru");	*//* user level rd proc reg */
 /*	  ftcprint (features1,  6, "mba");	*//* memory BW alloc */
 /*	  ftcprint (features1,  9, "wbnoinvd"); *//* wbnoinvd instruction */
-	  ftcprint (features1, 12, "ibpb");	/* ind br pred barrier */
 	  ftcprint (features1, 14, "ibrs");	/* ind br restricted spec */
+	  ftcprint (features1, 12, "ibpb");	/* ind br pred barrier */
 	  ftcprint (features1, 15, "stibp");	/* 1 thread ind br pred */
 	  ftcprint (features1, 16, "ibrs_enhanced"); /* ibrs_enhanced IBRS always on */
 /*	  ftcprint (features1, 17, "stibp_always_on"); */ /* stibp always on */
@@ -1431,14 +1442,14 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  3, "bmi1");         /* bit manip ext group 1 */
 	  ftcprint (features1,  4, "hle");          /* hardware lock elision */
 	  ftcprint (features1,  5, "avx2");         /* AVX ext instructions */
-/*	  ftcprint (features1,  6, "fpdx"); */	    /* "" FP data ptr upd on exc */
+/*	  ftcprint (features1,  6, "fdp_excptn_only"); *//* FP data ptr upd on exc */
 	  ftcprint (features1,  7, "smep");         /* super mode exec prot */
 	  ftcprint (features1,  8, "bmi2");         /* bit manip ext group 2 */
 	  ftcprint (features1,  9, "erms");         /* enh rep movsb/stosb */
 	  ftcprint (features1, 10, "invpcid");      /* inv proc context id */
 	  ftcprint (features1, 11, "rtm");          /* restricted txnal mem */
 	  ftcprint (features1, 12, "cqm");          /* cache QoS monitoring */
-/*	  ftcprint (features1, 13, "fpcsdsz"); */   /* "" zero FP cs/ds */
+/*	  ftcprint (features1, 13, "zero_fcs_fds");*//* zero FP CS/DS */
 	  ftcprint (features1, 14, "mpx");          /* mem prot ext */
 	  ftcprint (features1, 15, "rdt_a");        /* rsrc dir tech alloc */
 	  ftcprint (features1, 16, "avx512f");      /* vec foundation */
@@ -1447,6 +1458,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1, 19, "adx");          /* adcx/adox */
 	  ftcprint (features1, 20, "smap");         /* sec mode access prev */
 	  ftcprint (features1, 21, "avx512ifma");   /* vec int FMA */
+/*	  ftcprint (features1, 22, ""); */	    /* unused */
 	  ftcprint (features1, 23, "clflushopt");   /* cache line flush opt */
 	  ftcprint (features1, 24, "clwb");         /* cache line write back */
 	  ftcprint (features1, 25, "intel_pt");     /* intel processor trace */
@@ -1468,6 +1480,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  1, "xsavec");   /* xsavec instruction */
 	  ftcprint (features1,  2, "xgetbv1");  /* xgetbv ecx 1 */
 	  ftcprint (features1,  3, "xsaves");   /* xsaves/xrstors */
+/*	  ftcprint (features1,  4, "xfd"); */	/* eXtended Feature Disabling */
 	}
       /* cpuid 0x0000000f edx */
       if (maxf >= 0x0000000f)
@@ -1502,9 +1515,18 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  4, "avx_vnni");	    /* vex enc NN vec */
 	  ftcprint (features1,  5, "avx512_bf16");  /* vec bfloat16 short */
 /*	  ftcprint (features1,  7, "cmpccxadd"); */ /* CMPccXADD instructions */
-/*	  ftcprint (features1, 18, "lkgs");	 */ /* load kernel (userspace) GS */
-/*	  ftcprint (features1, 21, "amx_fp16");	 */ /* AMX fp16 Support */
-/*	  ftcprint (features1, 23, "avx_ifma");	 */ /* Support for VPMADD52[H,L]UQ */
+/*	  ftcprint (features1,  8, "arch_perf"); */ /* Arch PerfMon Extension */
+/*	  ftcprint (features1, 10, "fzrm");	*/  /* Fast zero-length REP MOVSB */
+/*	  ftcprint (features1, 11, "fsrs");	*/  /* Fast short REP STOSB    */
+/*	  ftcprint (features1, 12, "fsrc");	*/  /* Fast short REP {CMPSB,SCASB} */
+	  ftcprint (features1, 17, "fred");	    /* Flexible Return and Event Delivery */
+/*	  ftcprint (features1, 18, "lkgs");	*/  /* load kernel (userspace) GS */
+/*	  ftcprint (features1, 19, "wrmsrns");	*/  /* Non-serializing WRMSR */
+/*	  ftcprint (features1, 21, "amx_fp16");	*/  /* AMX fp16 Support	*/
+/*	  ftcprint (features1, 22, "amx_bf16");	*/  /* AMX bf16 Support */
+/*	  ftcprint (features1, 23, "avx_ifma");	*/  /* Support for VPMADD52[H,L]UQ */
+/*	  ftcprint (features1, 24, "amx_tile");	*/  /* AMX tile Support */
+/*	  ftcprint (features1, 25, "amx_int8");	*/  /* AMX int8 Support */
 	  ftcprint (features1, 26, "lam");	    /* Linear Address Masking */
 	}
 
@@ -1519,11 +1541,11 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  4, "rdpru");	    /* user level rd proc reg */
 /*	  ftcprint (features1,  6, "mba"); */	    /* memory BW alloc */
 	  ftcprint (features1,  9, "wbnoinvd");     /* wbnoinvd instruction */
-/*	  ftcprint (features1, 12, "ibpb" ); */	    /* ind br pred barrier */
-/*	  ftcprint (features1, 14, "ibrs" ); */	    /* ind br restricted spec */
-/*	  ftcprint (features1, 15, "stibp"); */	    /* 1 thread ind br pred */
-/*	  ftcprint (features1, 16, "ibrs_enhanced"); */  /* ibrs_enhanced IBRS always on */
-/*	  ftcprint (features1, 17, "stibp_always_on"); */ /* stibp always on */
+/*	  ftcprint (features1, 12, "amd_ibpb" ); */ /* ind br pred barrier */
+/*	  ftcprint (features1, 14, "amd_ibrs" ); */ /* ind br restricted spec */
+/*	  ftcprint (features1, 15, "amd_stibp"); */ /* 1 thread ind br pred */
+/*	  ftcprint (features1, 16, "ibrs_enhanced");*//* ibrs_enhanced IBRS always on */
+/*	  ftcprint (features1, 17, "amd_stibp_always_on");*//* stibp always on */
 /*	  ftcprint (features1, 18, "ibrs_pref"); */ /* ibrs_pref IBRS preferred */
 	  ftcprint (features1, 23, "amd_ppin");     /* protected proc id no */
 /*	  ftcprint (features1, 24, "ssbd"); */	    /* spec store byp dis */
@@ -1531,6 +1553,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 /*	  ftcprint (features1, 26, "ssb_no"); */    /* ssb fixed in hardware */
 	  ftcprint (features1, 27, "cppc");	    /* collab proc perf ctl */
 /*	  ftcprint (features1, 28, "amd_psfd"); */  /* predictive store fwd dis */
+/*	  ftcprint (features1, 29, "btc_no"); */    /* Not vulnerable to Branch Type Confusion */
 	  ftcprint (features1, 31, "brs");	    /* branch sampling */
         }
 
@@ -1549,6 +1572,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  9, "hwp_act_window"); /* HWP activity window */
 	  ftcprint (features1, 10, "hwp_epp");  /* HWP energy perf pref */
 	  ftcprint (features1, 11, "hwp_pkg_req"); /* HWP package level req */
+/*	  ftcprint (features1, 15, "hwp_highest_perf_change");*//* HWP highest perf change */
 	  ftcprint (features1, 19, "hfi");	/* Hardware Feedback Interface */
 	}
 
@@ -1564,12 +1588,13 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  4, "tsc_scale");        /* TSC rate control */
 	  ftcprint (features1,  5, "vmcb_clean");       /* VMCB clean bits */
 	  ftcprint (features1,  6, "flushbyasid");      /* flush by ASID */
-	  ftcprint (features1,  7, "decode_assists");   /* decode assists */
+	  ftcprint (features1,  7, "decodeassists");	/* decode assists */
 	  ftcprint (features1, 10, "pausefilter");      /* filt pause intrcpt */
 	  ftcprint (features1, 12, "pfthreshold");      /* pause filt thresh */
 	  ftcprint (features1, 13, "avic");             /* virt int control */
 	  ftcprint (features1, 15, "v_vmsave_vmload");  /* virt vmsave vmload */
 	  ftcprint (features1, 16, "vgif");             /* virt glb int flag */
+	  ftcprint (features1, 18, "x2avic");           /* virt x2apic */
 	  ftcprint (features1, 20, "v_spec_ctrl");	/* virt spec ctrl support */
 	  ftcprint (features1, 25, "vnmi");             /* virt NMI */
 /*	  ftcprint (features1, 28, "svme_addr_chk");  *//* secure vmexit addr check */
@@ -1580,6 +1605,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
         {
 	  cpuid (&unused, &unused, &features1, &unused, 0x00000007, 0);
 
+/*	  ftcprint (features1,  0, ""); */		/* unused */
 	  ftcprint (features1,  1, "avx512vbmi");	/* vec bit manip */
 	  ftcprint (features1,  2, "umip");             /* user mode ins prot */
 	  ftcprint (features1,  3, "pku");              /* prot key userspace */
@@ -1594,10 +1620,14 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1, 12, "avx512_bitalg");    /* vpopcnt/b/w vpshuf */
 	  ftcprint (features1, 13, "tme");              /* total mem encrypt */
 	  ftcprint (features1, 14, "avx512_vpopcntdq"); /* vec popcnt dw/qw */
+/*	  ftcprint (features1, 15, ""); */		/* unused */
 	  ftcprint (features1, 16, "la57");             /* 5 level paging */
+/*	  ftcprint (features1, .., ""); */		/* unused */
 	  ftcprint (features1, 22, "rdpid");            /* rdpid instruction */
+/*	  ftcprint (features1, 23, ""); */		/* unused */
 	  ftcprint (features1, 24, "bus_lock_detect");	/* bus lock detect dbg excptn */
 	  ftcprint (features1, 25, "cldemote");         /* cldemote instr */
+/*	  ftcprint (features1, 26, ""); */		/* unused */
 	  ftcprint (features1, 27, "movdiri");          /* movdiri instr */
 	  ftcprint (features1, 28, "movdir64b");        /* movdir64b instr */
 	  ftcprint (features1, 29, "enqcmd");		/* enqcmd/s instructions*/
@@ -1610,8 +1640,9 @@ format_proc_cpuinfo (void *, char *&destbuf)
           cpuid (&unused, &features1, &unused, &unused, 0x80000007, 0);
 
           ftcprint (features1,  0, "overflow_recov");	/* MCA oflow recovery */
-          ftcprint (features1,  1, "succor");           /* uncor err recovery */
-          ftcprint (features1,  3, "smca");             /* scalable MCA */
+          ftcprint (features1,  1, "succor");		/* uncor err recovery */
+/*        ftcprint (features1,  2, ""); */		/* unused */
+          ftcprint (features1,  3, "smca");		/* scalable MCA */
         }
 
       /* Intel cpuid 0x00000007 edx */
@@ -1646,8 +1677,9 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features2,  1, "sev");	/* AMD secure encrypted virt */
 /*	  ftcprint (features2,  2, "vm_page_flush");*/	/* VM page flush MSR */
 	  ftcprint (features2,  3, "sev_es");	/* AMD SEV encrypted state */
-/*	  ftcprint (features2,  4, "sev_snp");*//* AMD SEV secure nested paging */
+	  ftcprint (features2,  4, "sev_snp");	/* AMD SEV secure nested paging */
 /*	  ftcprint (features2,  5, "vmpl");   *//* VM permission levels support */
+/*	  ftcprint (features2,  9, "v_tsc_aux"); */	/* Virtual TSC_AUX */
 /*	  ftcprint (features2, 10, "sme_coherent");   *//* SME h/w cache coherent */
 /*	  ftcprint (features2, 11, "sev_64b");*//* SEV 64 bit host guest only */
 /*	  ftcprint (features2, 12, "sev_rest_inj");   *//* SEV restricted injection */
@@ -1655,6 +1687,13 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features2, 14, "debug_swap");   /* SEV-ES full debug state swap */
 /*	  ftcprint (features2, 15, "no_host_ibs");    *//* host IBS unsupported */
 /*	  ftcprint (features2, 16, "vte");    *//* virtual transparent encryption */
+	}
+
+      /* cpuid 0x80000022 eax */
+      if (is_amd && maxe >= 0x80000022)
+	{
+	  cpuid (&features1, &unused, &unused, &unused, 0x80000022);
+	  ftcprint (features1,  2, "amd_lbr_pmc_freeze ");/* AMD LBR & PMC Freeze */
 	}
 
       print ("\n");
@@ -1714,15 +1753,16 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1, 12, "acc_power");    /* core power reporting */
 /*	  ftcprint (features1, 13, "connstby"); */  /* connected standby */
 /*	  ftcprint (features1, 14, "rapl"); */	    /* running average power limit */
+
+	  print ("\n");
 	}
+
+      print ("\n");
 
       if (orig_affinity_mask != 0)
 	SetThreadGroupAffinity (GetCurrentThread (), &orig_group_affinity,
 				NULL);
-      print ("\n");
     }
-
-  print ("\n");
 
   destbuf = (char *) crealloc_abort (destbuf, bufptr - buf);
   memcpy (destbuf, buf, bufptr - buf);
@@ -2153,8 +2193,7 @@ format_proc_locale_proc (LPWSTR win_locale, DWORD info, LPARAM param)
       if (!(cp2 = wcschr (cp + 2, L'-')))
         return TRUE;
       /* Otherwise, store in iso15924 */
-      if (iso15924)
-        wcpcpy (wcpncpy (iso15924, cp, cp2 - cp), L";");
+      wcpcpy (wcpncpy (iso15924, cp, cp2 - cp), L";");
     }
   cp = wcsrchr (win_locale, L'-');
   if (cp)

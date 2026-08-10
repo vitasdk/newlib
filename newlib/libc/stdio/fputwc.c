@@ -169,7 +169,7 @@ _fputwc_r (struct _reent *ptr,
   wint_t r;
 
   _newlib_flockfile_start (fp);
-  __fputwc(ptr, wc, fp);
+  r = __fputwc(ptr, wc, fp);
   _newlib_flockfile_end (fp);
   return r;
 }
@@ -181,5 +181,10 @@ fputwc (wchar_t wc,
   struct _reent *reent = _REENT;
 
   CHECK_INIT(reent, fp);
-  return _fputwc_r (reent, wc, fp);
+  wint_t r;
+
+  _newlib_flockfile_start (fp);
+  r = __fputwc(reent, wc, fp);
+  _newlib_flockfile_end (fp);
+  return r;
 }

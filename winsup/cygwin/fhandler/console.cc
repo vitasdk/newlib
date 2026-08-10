@@ -33,6 +33,7 @@ details. */
 #include "child_info.h"
 #include "cygwait.h"
 #include "winf.h"
+#include "psapi.h"
 
 /* Don't make this bigger than NT_MAX_PATH as long as the temporary buffer
    is allocated using tmp_pathbuf!!! */
@@ -48,6 +49,9 @@ details. */
 		  con.b.srWindow.Top + con.scroll_region.Bottom)
 #define con_is_legacy (shared_console_info[unit] && con.is_legacy)
 
+static HANDLE NO_COPY shared_info_mutex;
+static int NO_COPY shared_info_state[MAX_CONS_DEV];
+
 #define CONS_THREAD_SYNC "cygcons.thread_sync"
 static bool NO_COPY master_thread_started = false;
 
@@ -55,6 +59,10 @@ const unsigned fhandler_console::MAX_WRITE_CHARS = 16384;
 
 fhandler_console::console_state NO_COPY
   *fhandler_console::shared_console_info[MAX_CONS_DEV + 1];
+
+static bool NO_COPY inside_pcon_checked = false;
+static bool NO_COPY inside_pcon = false;
+static int NO_COPY parent_pty;
 
 bool NO_COPY fhandler_console::invisible_console;
 
@@ -67,37 +75,33 @@ static struct fhandler_base::rabuf_t con_ra;
 static wchar_t last_char;
 
 DWORD
-fhandler_console::attach_console (pid_t owner, bool *err)
+fhandler_console::attach_console (DWORD owner, bool *err)
 {
   DWORD resume_pid = (DWORD) -1;
-  pinfo p (owner);
-  if (p)
+  if (!process_alive (owner))
+    return resume_pid;
+  DWORD attached =
+    get_console_process_id (owner, true, false, false);
+  if (!attached)
     {
-      DWORD attached =
-	fhandler_pty_common::get_console_process_id (p->dwProcessId,
-						     true, false, false);
-      if (!attached)
+      resume_pid =
+	get_console_process_id (GetCurrentProcessId (), false, false, false);
+      FreeConsole ();
+      BOOL r = AttachConsole (owner);
+      if (!r)
 	{
-	  resume_pid =
-	    fhandler_pty_common::get_console_process_id (myself->dwProcessId,
-							 false, false, false);
-	  FreeConsole ();
-	  BOOL r = AttachConsole (p->dwProcessId);
-	  if (!r)
-	    {
-	      if (resume_pid)
-		AttachConsole (resume_pid);
-	      if (err)
-		*err = true;
-	      return (DWORD) -1;
-	    }
+	  if (resume_pid)
+	    AttachConsole (resume_pid);
+	  if (err)
+	    *err = true;
+	  return (DWORD) -1;
 	}
     }
   return resume_pid;
 }
 
 void
-fhandler_console::detach_console (DWORD resume_pid, pid_t owner)
+fhandler_console::detach_console (DWORD resume_pid, DWORD owner)
 {
   if (resume_pid == (DWORD) -1)
     return;
@@ -106,11 +110,11 @@ fhandler_console::detach_console (DWORD resume_pid, pid_t owner)
       FreeConsole ();
       AttachConsole (resume_pid);
     }
-  else if (myself->pid != owner)
+  else if (GetCurrentProcessId () != owner)
     FreeConsole ();
 }
 
-pid_t
+DWORD
 fhandler_console::get_owner ()
 {
   return con.owner;
@@ -129,14 +133,14 @@ public:
   {
     empty ();
   }
-  inline void put (HANDLE output_handle, pid_t owner, char x)
+  inline void put (HANDLE output_handle, DWORD owner, char x)
   {
     if (ixput == WPBUF_LEN)
       send (output_handle, owner);
     buf[ixput++] = x;
   }
   inline void empty () { ixput = 0u; }
-  inline void send (HANDLE output_handle, pid_t owner)
+  inline void send (HANDLE output_handle, DWORD owner)
   {
     if (!output_handle)
       {
@@ -224,42 +228,52 @@ fhandler_console::open_shared_console (HWND hw, HANDLE& h, bool& created)
   return res;
 }
 
-class console_unit
+fhandler_console::console_unit::console_unit (int n0, HANDLE *input_mutex) :
+  n (-1)
 {
-  int n;
-  unsigned long bitmask;
-  HWND me;
-
-public:
-  operator int () const {return n;}
-  console_unit (HWND);
-  friend BOOL CALLBACK enum_windows (HWND, LPARAM);
-};
-
-BOOL CALLBACK
-enum_windows (HWND hw, LPARAM lp)
-{
-  console_unit *this1 = (console_unit *) lp;
-  if (hw == this1->me)
-    return TRUE;
-  HANDLE h = NULL;
-  fhandler_console::console_state *cs;
-  if ((cs = fhandler_console::open_shared_console (hw, h)))
+  char buf[MAX_PATH];
+  for (int i = max(0, n0); i < MAX_CONS_DEV; i++)
     {
-      this1->bitmask ^= 1UL << cs->tty_min_state.getntty ();
-      UnmapViewOfFile ((void *) cs);
-      CloseHandle (h);
+      shared_name (buf, "cygcons.input.mutex", i);
+      SetLastError (ERROR_SUCCESS);
+      HANDLE input_mutex0 = CreateMutex (&sec_none, FALSE, buf);
+      DWORD err = GetLastError ();
+      if (err == ERROR_ALREADY_EXISTS || err == ERROR_ACCESS_DENIED)
+	{
+	  if (n0 >= 0)
+	    n = i;
+	}
+      else if (n0 == CONS_SCAN_UNUSED)
+	{
+	  n = i;
+	  if (input_mutex)
+	    *input_mutex = input_mutex0;
+	  break;
+	}
+      if (input_mutex0)
+	CloseHandle (input_mutex0);
+      if (n0 >= 0)
+	break;
     }
-  return TRUE;
+  if (n0 == CONS_SCAN_UNUSED && n < 0)
+    {
+      __small_sprintf (buf, "console device allocation failure - "
+		       "too many consoles in use, max consoles is %d",
+		       MAX_CONS_DEV);
+      api_fatal (buf);
+    }
 }
 
-console_unit::console_unit (HWND me0):
-  bitmask (~0UL), me (me0)
+fhandler_console::console_unit::operator console_state * () const
 {
-  EnumWindows (enum_windows, (LPARAM) this);
-  n = (_minor_t) ffs (bitmask) - 1;
-  if (n < 0)
-    api_fatal ("console device allocation failure - too many consoles in use, max consoles is 64");
+  if (n < 0 || n >= MAX_CONS_DEV)
+    return NULL;
+  HANDLE h = NULL;
+  fhandler_console::console_state *cs;
+  HWND hw = cygwin_shared->cons_hwnd[n];
+  if ((cs = fhandler_console::open_shared_console (hw, h)))
+    CloseHandle (h);
+  return cs;
 }
 
 static DWORD
@@ -270,17 +284,23 @@ cons_master_thread (VOID *arg)
   fhandler_console::handle_set_t handle_set;
   fh->get_duplicated_handle_set (&handle_set);
   HANDLE thread_sync_event;
-  DuplicateHandle (GetCurrentProcess (), fh->thread_sync_event,
-		   GetCurrentProcess (), &thread_sync_event,
-		   0, FALSE, DUPLICATE_SAME_ACCESS);
-  SetEvent (thread_sync_event);
-  master_thread_started = true;
-  /* Do not touch class members after here because the class instance
-     may have been destroyed. */
-  fhandler_console::cons_master_thread (&handle_set, ttyp);
-  fhandler_console::close_handle_set (&handle_set);
-  SetEvent (thread_sync_event);
-  CloseHandle (thread_sync_event);
+  if (DuplicateHandle (GetCurrentProcess (), fh->thread_sync_event,
+		       GetCurrentProcess (), &thread_sync_event,
+		       0, FALSE, DUPLICATE_SAME_ACCESS))
+    {
+      SetEvent (thread_sync_event);
+      master_thread_started = true;
+      /* Do not touch class members after here because the class instance
+	 may have been destroyed. */
+      fhandler_console::cons_master_thread (&handle_set, ttyp);
+      fhandler_console::close_handle_set (&handle_set);
+      SetEvent (thread_sync_event);
+      CloseHandle (thread_sync_event);
+      master_thread_started = false;
+    }
+  else
+    debug_printf ("cons_master_thread not started because thread_sync_event "
+		  "could not be duplicated %08x", GetLastError ());
   return 0;
 }
 
@@ -375,7 +395,7 @@ fhandler_console::cons_master_thread (handle_set_t *p, tty *ttyp)
       }
   };
   termios &ti = ttyp->ti;
-  while (con.owner == myself->pid)
+  while (con.owner == GetCurrentProcessId ())
     {
       DWORD total_read, n, i;
 
@@ -420,6 +440,12 @@ fhandler_console::cons_master_thread (handle_set_t *p, tty *ttyp)
 	}
 
       WaitForSingleObject (p->input_mutex, mutex_timeout);
+      /* Ensure accessing input recored is not disabled. */
+      if (con.disable_master_thread)
+	{
+	  ReleaseMutex (p->input_mutex);
+	  continue;
+	}
       total_read = 0;
       switch (cygwait (p->input_handle, (DWORD) 0))
 	{
@@ -443,6 +469,8 @@ fhandler_console::cons_master_thread (handle_set_t *p, tty *ttyp)
 	case WAIT_CANCELED:
 	  break;
 	default: /* Error */
+	  free (input_rec);
+	  free (input_tmp);
 	  ReleaseMutex (p->input_mutex);
 	  return;
 	}
@@ -627,32 +655,6 @@ skip_writeback:
   free (input_tmp);
 }
 
-struct scan_console_args_t
-{
-  _minor_t unit;
-  fhandler_console::console_state **shared_console_info;
-};
-
-BOOL CALLBACK
-scan_console (HWND hw, LPARAM lp)
-{
-  scan_console_args_t *p = (scan_console_args_t *) lp;
-  HANDLE h = NULL;
-  fhandler_console::console_state *cs;
-  if ((cs = fhandler_console::open_shared_console (hw, h)))
-    {
-     if (p->unit == minor (cs->tty_min_state.getntty ()))
-       {
-	 *p->shared_console_info = cs;
-	 CloseHandle (h);
-	 return FALSE;
-       }
-      UnmapViewOfFile ((void *) cs);
-      CloseHandle (h);
-    }
-  return TRUE;
-}
-
 bool
 fhandler_console::set_unit ()
 {
@@ -668,6 +670,11 @@ fhandler_console::set_unit ()
   else if (myself->ctty != CTTY_UNINITIALIZED)
     unit = device::minor (myself->ctty);
 
+  if (!shared_info_mutex)
+    shared_info_mutex = CreateMutex (&sec_none_nih, FALSE, NULL);
+
+  WaitForSingleObject (shared_info_mutex, INFINITE);
+
   if (shared_console_info[unit])
     ; /* Do nothing */
   else if (generic_console
@@ -677,9 +684,8 @@ fhandler_console::set_unit ()
     {
       if (!generic_console && (dev_t) myself->ctty != get_device ())
 	{
-	  /* Scan for existing shared console info */
-	  scan_console_args_t arg = { unit,  &shared_console_info[unit] };
-	  EnumWindows (scan_console, (LPARAM) &arg);
+	  shared_console_info[unit] = console_unit (unit);
+	  shared_info_state[unit]++;
 	}
       if (generic_console || !shared_console_info[unit])
 	{
@@ -691,32 +697,28 @@ fhandler_console::set_unit ()
 	      created = true;
 	      fhandler_console::console_state *cs =
 		open_shared_console (me, cygheap->console_h, created);
+	      shared_info_state[unit]++;
 	      ProtectHandleINH (cygheap->console_h);
 	      if (created)
 		{
-		  unit = console_unit (me);
+		  unit = console_unit (CONS_SCAN_UNUSED, &input_mutex);
+		  cygwin_shared->cons_hwnd[unit] = me;
 		  cs->tty_min_state.setntty (DEV_CONS_MAJOR, unit);
 		}
 	      else
 		unit = device::minor (cs->tty_min_state.ntty);
 	      shared_console_info[unit] = cs;
 	      if (created)
-		con.owner = myself->pid;
+		con.owner = GetCurrentProcessId ();
 	    }
 	}
     }
+  ReleaseMutex (shared_info_mutex);
+
   if (shared_console_info[unit])
     {
       devset = (fh_devices) shared_console_info[unit]->tty_min_state.getntty ();
       _tc = &(shared_console_info[unit]->tty_min_state);
-      if (!created)
-	{
-	  while (con.owner > MAX_PID)
-	    Sleep (1);
-	  pinfo p (con.owner);
-	  if (!p)
-	    con.owner = myself->pid;
-	}
     }
 
   dev ().parse (devset);
@@ -816,6 +818,7 @@ fhandler_console::set_input_mode (tty::cons_mode m, const termios *t,
   GetConsoleMode (p->input_handle, &oflags);
   DWORD flags = oflags
     & (ENABLE_EXTENDED_FLAGS | ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE);
+  con.curr_input_mode = m;
   switch (m)
     {
     case tty::restore:
@@ -865,6 +868,7 @@ fhandler_console::set_output_mode (tty::cons_mode m, const termios *t,
   if (con.orig_virtual_terminal_processing_mode)
     flags |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
   WaitForSingleObject (p->output_mutex, mutex_timeout);
+  con.curr_output_mode = m;
   switch (m)
     {
     case tty::restore:
@@ -913,10 +917,10 @@ fhandler_console::cleanup_for_non_cygwin_app (handle_set_t *p)
   /* conmode can be tty::restore when non-cygwin app is
      exec'ed from login shell. */
   tty::cons_mode conmode =
-    (con.owner == myself->pid) ? tty::restore : tty::cygwin;
+    (con.owner == GetCurrentProcessId ()) ? tty::restore : tty::cygwin;
   set_output_mode (conmode, ti, p);
   set_input_mode (conmode, ti, p);
-  set_disable_master_thread (con.owner == myself->pid);
+  set_disable_master_thread (con.owner == GetCurrentProcessId ());
 }
 
 /* Return the tty structure associated with a given tty number.  If the
@@ -1029,7 +1033,7 @@ fhandler_console::set_cursor_maybe ()
 /* Workaround for a bug of windows xterm compatible mode. */
 /* The horizontal tab positions are broken after resize. */
 void
-fhandler_console::fix_tab_position (HANDLE h, pid_t owner)
+fhandler_console::fix_tab_position (HANDLE h, DWORD owner)
 {
   /* Re-setting ENABLE_VIRTUAL_TERMINAL_PROCESSING
      fixes the tab position. */
@@ -1107,12 +1111,12 @@ fhandler_console::bg_check (int sig, bool dontsignal)
   /* Setting-up console mode for cygwin app. This is necessary if the
      cygwin app and other non-cygwin apps are started simultaneously
      in the same process group. */
-  if (sig == SIGTTIN)
+  if (sig == SIGTTIN && con.curr_input_mode != tty::cygwin)
     {
       set_input_mode (tty::cygwin, &tc ()->ti, get_handle_set ());
       set_disable_master_thread (false, this);
     }
-  if (sig == SIGTTOU)
+  if (sig == SIGTTOU && con.curr_output_mode != tty::cygwin)
     set_output_mode (tty::cygwin, &tc ()->ti, get_handle_set ());
 
   return fhandler_termios::bg_check (sig, dontsignal);
@@ -1125,10 +1129,14 @@ fhandler_console::read (void *pv, size_t& buflen)
 
   push_process_state process_state (PID_TTYIN);
 
-  int copied_chars = 0;
+  size_t copied_chars = 0;
 
-  DWORD timeout = is_nonblocking () ? 0 : INFINITE;
+  DWORD timeout = is_nonblocking () ? 0 :
+    (get_ttyp ()->ti.c_lflag & ICANON ? INFINITE :
+     (get_ttyp ()->ti.c_cc[VMIN] == 0 ? 0 :
+      (get_ttyp ()->ti.c_cc[VTIME]*100 ? : INFINITE)));
 
+read_more:
   while (!input_ready && !get_cons_readahead_valid ())
     {
       int bgres;
@@ -1151,6 +1159,11 @@ wait_retry:
 	  pthread::static_cancel_self ();
 	  /*NOTREACHED*/
 	case WAIT_TIMEOUT:
+	  if (copied_chars)
+	    {
+	      buflen = copied_chars;
+	      return;
+	    }
 	  set_sig_errno (EAGAIN);
 	  buflen = (size_t) -1;
 	  return;
@@ -1198,18 +1211,19 @@ wait_retry:
     }
 
   /* Check console read-ahead buffer filled from terminal requests */
-  while (con.cons_rapoi && *con.cons_rapoi && buflen)
-    {
-      buf[copied_chars++] = *con.cons_rapoi++;
-      buflen --;
-    }
+  while (con.cons_rapoi && *con.cons_rapoi && buflen > copied_chars)
+    buf[copied_chars++] = *con.cons_rapoi++;
 
   copied_chars +=
-    get_readahead_into_buffer (buf + copied_chars, buflen);
+    get_readahead_into_buffer (buf + copied_chars, buflen - copied_chars);
 
   if (!con_ra.ralen)
     input_ready = false;
   release_input_mutex ();
+
+  if (buflen > copied_chars && !(get_ttyp ()->ti.c_lflag & ICANON)
+      && copied_chars < get_ttyp ()->ti.c_cc[VMIN])
+    goto read_more;
 
 #undef buf
 
@@ -1756,11 +1770,18 @@ fhandler_console::open (int flags, mode_t)
   set_handle (NULL);
   set_output_handle (NULL);
 
+  setup_io_mutex ();
+  acquire_output_mutex (mutex_timeout);
+
+  if (!process_alive (con.owner))
+    con.owner = GetCurrentProcessId ();
+
   /* Open the input handle as handle_ */
   bool err = false;
   DWORD resume_pid = attach_console (con.owner, &err);
   if (err)
     {
+      release_output_mutex ();
       set_errno (EACCES);
       return 0;
     }
@@ -1771,6 +1792,7 @@ fhandler_console::open (int flags, mode_t)
 
   if (h == INVALID_HANDLE_VALUE)
     {
+      release_output_mutex ();
       __seterrno ();
       return 0;
     }
@@ -1780,6 +1802,7 @@ fhandler_console::open (int flags, mode_t)
   resume_pid = attach_console (con.owner, &err);
   if (err)
     {
+      release_output_mutex ();
       set_errno (EACCES);
       return 0;
     }
@@ -1790,14 +1813,16 @@ fhandler_console::open (int flags, mode_t)
 
   if (h == INVALID_HANDLE_VALUE)
     {
+      release_output_mutex ();
       __seterrno ();
       return 0;
     }
   set_output_handle (h);
   handle_set.output_handle = h;
+  release_output_mutex ();
+
   wpbuf.init ();
 
-  setup_io_mutex ();
   handle_set.input_mutex = input_mutex;
   handle_set.output_mutex = output_mutex;
 
@@ -1813,7 +1838,7 @@ fhandler_console::open (int flags, mode_t)
 
   set_open_status ();
 
-  if (myself->pid == con.owner && wincap.has_con_24bit_colors ())
+  if (GetCurrentProcessId () == con.owner && wincap.has_con_24bit_colors ())
     {
       bool is_legacy = false;
       DWORD dwMode;
@@ -1844,18 +1869,70 @@ fhandler_console::open (int flags, mode_t)
   debug_printf ("opened conin$ %p, conout$ %p", get_handle (),
 		get_output_handle ());
 
-  if (myself->pid == con.owner)
+  if (GetCurrentProcessId () == con.owner)
     {
       if (GetModuleHandle ("ConEmuHk64.dll"))
 	hook_conemu_cygwin_connector ();
       char name[MAX_PATH];
       shared_name (name, CONS_THREAD_SYNC, get_minor ());
       thread_sync_event = CreateEvent(NULL, FALSE, FALSE, name);
-      new cygthread (::cons_master_thread, this, "consm");
-      WaitForSingleObject (thread_sync_event, INFINITE);
-      CloseHandle (thread_sync_event);
+      if (thread_sync_event)
+	{
+	  new cygthread (::cons_master_thread, this, "consm");
+	  WaitForSingleObject (thread_sync_event, INFINITE);
+	  CloseHandle (thread_sync_event);
+	}
+      else
+	debug_printf ("Failed to create thread_sync_event %08x",
+		      GetLastError ());
     }
   return 1;
+}
+
+void
+fhandler_console::setup_pcon_hand_over ()
+{
+  /* Prepare for pcon hand over */
+  if (!inside_pcon_checked)
+    for (int i = 0; i < NTTYS; i++)
+      {
+	if (!cygwin_shared->tty[i]->pcon_activated)
+	  continue;
+	DWORD owner = cygwin_shared->tty[i]->nat_pipe_owner_pid;
+	if (get_console_process_id (owner, true, false, false, false))
+	  {
+	    inside_pcon = true;
+	    atexit (fhandler_console::pcon_hand_over_proc);
+	    parent_pty = i;
+	    break;
+	  }
+      }
+  inside_pcon_checked = true;
+}
+
+void
+fhandler_console::pcon_hand_over_proc (void)
+{
+  if (!inside_pcon)
+    return;
+  tty *ttyp = cygwin_shared->tty[parent_pty];
+  char buf[MAX_PATH];
+  shared_name (buf, PIPE_SW_MUTEX, parent_pty);
+  HANDLE mtx = OpenMutex (MAXIMUM_ALLOWED, FALSE, buf);
+  WaitForSingleObject (mtx, INFINITE);
+  ReleaseMutex (mtx);
+  DWORD res = WaitForSingleObject (mtx, INFINITE);
+  if (res == WAIT_OBJECT_0 || res == WAIT_ABANDONED)
+    {
+      DWORD owner = ttyp->nat_pipe_owner_pid;
+      if (owner == GetCurrentProcessId ()
+	  || owner == (myself->exec_dwProcessId ?: myself->dwProcessId))
+	fhandler_pty_slave::close_pseudoconsole (ttyp, 0);
+    }
+  else
+    system_printf("Acquiring pcon_ho_mutex failed.");
+  /* Do not release the mutex.
+     Hold onto the mutex until this process completes. */
 }
 
 bool
@@ -1863,7 +1940,17 @@ fhandler_console::open_setup (int flags)
 {
   set_flags ((flags & ~O_TEXT) | O_BINARY);
   if (myself->set_ctty (this, flags) && !myself->cygstarted)
-    init_console_handler (true);
+    {
+      init_console_handler (true);
+      setup_pcon_hand_over ();
+
+      /* Initialize handle_set */
+      handle_set.input_handle = get_handle ();
+      handle_set.output_handle = get_output_handle ();
+      handle_set.input_mutex = input_mutex;
+      handle_set.output_mutex = output_mutex;
+      handle_set.unit = unit;
+    }
   return fhandler_base::open_setup (flags);
 }
 
@@ -1889,16 +1976,25 @@ fhandler_console::close ()
 
   acquire_output_mutex (mutex_timeout);
 
-  if (shared_console_info[unit])
+  if (shared_console_info[unit] && !myself->cygstarted
+      && (dev_t) myself->ctty == get_device ())
     {
       /* Restore console mode if this is the last closure. */
       OBJECT_BASIC_INFORMATION obi;
       NTSTATUS status;
       status = NtQueryObject (get_handle (), ObjectBasicInformation,
 			      &obi, sizeof obi, NULL);
-      if ((NT_SUCCESS (status) && obi.HandleCount == 1
-	   && (dev_t) myself->ctty == get_device ())
-	  || myself->pid == con.owner)
+      /* If the process is not myself->cygstarted and is the console owner,
+	 the process is the last process on this console device. The console
+	 owner has two console handles, i.e. one is io_handle and the other
+	 is the dupplicated handle for cons_master_thread.
+	 If myself->cygstarted is false and the process is not console owner,
+	 the process is supposed to be started by the exec command in the
+	 owner shell. In this case, the owner process is still alive in the
+	 background and waiting for this process. So the handle count is
+	 three (two in the owner process, one is mine). */
+      if (NT_SUCCESS (status)
+	  && obi.HandleCount == (con.owner == GetCurrentProcessId () ? 2 : 3))
 	{
 	  /* Cleaning-up console mode for cygwin apps. */
 	  set_output_mode (tty::restore, &get_ttyp ()->ti, &handle_set);
@@ -1907,24 +2003,25 @@ fhandler_console::close ()
 	}
     }
 
-  release_output_mutex ();
-
-  if (shared_console_info[unit] && con.owner == myself->pid
-      && master_thread_started)
+  if (shared_console_info[unit] && con.owner == GetCurrentProcessId ())
     {
-      char name[MAX_PATH];
-      shared_name (name, CONS_THREAD_SYNC, get_minor ());
-      thread_sync_event = OpenEvent (MAXIMUM_ALLOWED, FALSE, name);
-      con.owner = MAX_PID + 1;
-      WaitForSingleObject (thread_sync_event, INFINITE);
-      CloseHandle (thread_sync_event);
+      if (master_thread_started)
+	{
+	  char name[MAX_PATH];
+	  shared_name (name, CONS_THREAD_SYNC, get_minor ());
+	  thread_sync_event = OpenEvent (MAXIMUM_ALLOWED, FALSE, name);
+	  if (thread_sync_event)
+	    {
+	      con.owner = (DWORD) -1;
+	      WaitForSingleObject (thread_sync_event, INFINITE);
+	      CloseHandle (thread_sync_event);
+	    }
+	  else
+	    debug_printf ("Failed to open thread_sync_event %08x",
+			  GetLastError ());
+	}
       con.owner = 0;
     }
-
-  CloseHandle (input_mutex);
-  input_mutex = NULL;
-  CloseHandle (output_mutex);
-  output_mutex = NULL;
 
   CloseHandle (get_handle ());
   CloseHandle (get_output_handle ());
@@ -1936,11 +2033,38 @@ fhandler_console::close ()
   if (!have_execed && !invisible_console
       && (!CTTY_IS_VALID (myself->ctty)
 	  || get_device () == (dev_t) myself->ctty))
-    free_console ();
+    {
+      /* ConEmu hack. Detach from ConEmu to unhook console APIs. */
+      HMODULE h = GetModuleHandle ("ConEmuHk64.dll");
+      if (h)
+	{
+	  MODULEINFO mi;
+	  if (GetModuleInformation (GetCurrentProcess (), h, &mi, sizeof (mi)))
+	    {
+	      BOOL (*DllMain)(HINSTANCE, DWORD, LPVOID) =
+		(BOOL (*)(HINSTANCE, DWORD, LPVOID)) mi.EntryPoint;
+	      DllMain (h, DLL_PROCESS_DETACH, NULL);
+	    }
+	}
 
-  if (shared_console_info[unit])
-    UnmapViewOfFile ((void *) shared_console_info[unit]);
-  shared_console_info[unit] = NULL;
+      /* Freeing console to detach the process from the console. */
+      free_console ();
+    }
+
+  release_output_mutex ();
+
+  CloseHandle (input_mutex);
+  input_mutex = NULL;
+  CloseHandle (output_mutex);
+  output_mutex = NULL;
+
+  WaitForSingleObject (shared_info_mutex, INFINITE);
+  if (--shared_info_state[unit] == 0 && shared_console_info[unit])
+    {
+      UnmapViewOfFile ((void *) shared_console_info[unit]);
+      shared_console_info[unit] = NULL;
+    }
+  ReleaseMutex (shared_info_mutex);
 
   return 0;
 }
@@ -2859,6 +2983,8 @@ fhandler_console::char_command (char c)
 		    }
 		  if (con.args[i] == 1) /* DECCKM */
 		    con.cursor_key_app_mode = (c == 'h');
+		  if (con.args[i] == 9001) /* win32-input-mode (https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md) */
+		    set_disable_master_thread (c == 'h', this);
 		}
 	      /* Call fix_tab_position() if screen has been alternated. */
 	      if (need_fix_tab_position)
@@ -3375,7 +3501,7 @@ enum_proc (const LOGFONTW *lf, const TEXTMETRICW *tm,
 }
 
 static void
-check_font (HANDLE hdl, pid_t owner)
+check_font (HANDLE hdl, DWORD owner)
 {
   CONSOLE_FONT_INFOEX cfi;
   LOGFONTW lf;
@@ -3898,6 +4024,11 @@ fhandler_console::write (const void *vsrc, size_t len)
 	case gotcommand:
 	  if (con.nargs < MAXARGS)
 	    con.nargs++;
+	  if (*src == '%' && con.nargs == 1 && con.args[0] == 0)
+	    { /* Ignore intermediate byte in CSI sequence used by vim. */
+	      src++;
+	      break;
+	    }
 	  char_command (*src++);
 	  con.state = normal;
 	  wpbuf.empty();
@@ -4261,6 +4392,7 @@ fhandler_console::fixup_after_fork_exec (bool execing)
       cygheap->ctty = NULL;
       return;
     }
+  setup_pcon_hand_over ();
 
   if (!execing)
     return;
@@ -4537,9 +4669,6 @@ fhandler_console::need_console_handler ()
 void
 fhandler_console::set_disable_master_thread (bool x, fhandler_console *cons)
 {
-  const _minor_t unit = cons->get_minor ();
-  if (con.disable_master_thread == x)
-    return;
   if (cons == NULL)
     {
       if (cygheap->ctty && cygheap->ctty->get_major () == DEV_CONS_MAJOR)
@@ -4547,6 +4676,7 @@ fhandler_console::set_disable_master_thread (bool x, fhandler_console *cons)
       else
 	return;
     }
+  const _minor_t unit = cons->get_minor ();
   cons->acquire_input_mutex (mutex_timeout);
   con.disable_master_thread = x;
   cons->release_input_mutex ();

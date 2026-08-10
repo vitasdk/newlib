@@ -74,58 +74,6 @@ void release_attach_mutex (void)
   ReleaseMutex (attach_mutex);
 }
 
-inline static bool process_alive (DWORD pid);
-
-/* This functions looks for a process which attached to the same console
-   with current process and is matched to given conditions:
-     match: If true, return given pid if the process pid attaches to the
-	    same console, otherwise, return 0. If false, return pid except
-	    for given pid.
-     cygwin: return only process's pid which has cygwin pid.
-     stub_only: return only stub process's pid of non-cygwin process. */
-DWORD
-fhandler_pty_common::get_console_process_id (DWORD pid, bool match,
-					     bool cygwin, bool stub_only,
-					     bool nat)
-{
-  tmp_pathbuf tp;
-  DWORD *list = (DWORD *) tp.c_get ();
-  const DWORD buf_size = NT_MAX_PATH / sizeof (DWORD);
-
-  DWORD num = GetConsoleProcessList (list, buf_size);
-  if (num == 0 || num > buf_size)
-    return 0;
-
-  DWORD res_pri = 0, res = 0;
-  /* Last one is the oldest. */
-  /* https://github.com/microsoft/terminal/issues/95 */
-  for (int i = (int) num - 1; i >= 0; i--)
-    if ((match && list[i] == pid) || (!match && list[i] != pid))
-      {
-	if (!cygwin)
-	  {
-	    res_pri = list[i];
-	    break;
-	  }
-	else
-	  {
-	    pinfo p (cygwin_pid (list[i]));
-	    if (nat && !!p && !ISSTATE(p, PID_NOTCYGWIN))
-	      continue;
-	    if (!!p && p->exec_dwProcessId)
-	      {
-		res_pri = stub_only ? p->exec_dwProcessId : list[i];
-		break;
-	      }
-	    if (!p && !res && process_alive (list[i]) && stub_only)
-	      res = list[i];
-	    if (!!p && !res && !stub_only)
-	      res = list[i];
-	  }
-      }
-  return res_pri ?: res;
-}
-
 static bool isHybrid; /* Set true if the active pipe is set to nat pipe
 			 owned by myself even though the current process
 			 is a cygwin process. */
@@ -936,6 +884,8 @@ fhandler_pty_slave::open (int flags, mode_t)
 	  errmsg = "can't call master, %E";
 	  goto err;
 	}
+      CloseHandle (repl.to_slave_nat); /* not used. */
+      CloseHandle (repl.to_slave); /* not used. */
       from_master_nat_local = repl.from_master_nat;
       from_master_local = repl.from_master;
       to_master_nat_local = repl.to_master_nat;
@@ -968,7 +918,7 @@ fhandler_pty_slave::open (int flags, mode_t)
   set_output_handle (to_master_local);
 
   if (_major (myself->ctty) == DEV_CONS_MAJOR
-      && !(!pinfo (myself->ppid) && getenv ("ConEmuPID")))
+      && !(!pinfo (myself->ppid) && GetModuleHandle ("ConEmuHk64.dll")))
     /* This process is supposed to be a master process which is
        running on console. Invisible console will be created in
        primary slave process to prevent overriding code page
@@ -1047,6 +997,8 @@ fhandler_pty_slave::close ()
   fhandler_pty_common::close ();
   if (!ForceCloseHandle (output_mutex))
     termios_printf ("CloseHandle (output_mutex<%p>), %E", output_mutex);
+  if (!get_ttyp ()->invisible_console_pid && myself->ctty == CTTY_RELEASED)
+    FreeConsole();
   if (get_ttyp ()->invisible_console_pid
       && !pinfo (get_ttyp ()->invisible_console_pid))
     get_ttyp ()->invisible_console_pid = 0;
@@ -1109,27 +1061,10 @@ fhandler_pty_slave::set_switch_to_nat_pipe (void)
 }
 
 inline static bool
-process_alive (DWORD pid)
-{
-  /* This function is very similar to _pinfo::alive(), however, this
-     can be used for non-cygwin process which is started from non-cygwin
-     shell. In addition, this checks exit code as well. */
-  if (pid == 0)
-    return false;
-  HANDLE h = OpenProcess (PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-  if (h == NULL)
-    return false;
-  DWORD exit_code;
-  BOOL r = GetExitCodeProcess (h, &exit_code);
-  CloseHandle (h);
-  if (r && exit_code == STILL_ACTIVE)
-    return true;
-  return false;
-}
-
-inline static bool
 nat_pipe_owner_self (DWORD pid)
 {
+  if (pid == GetCurrentProcessId ())
+    return true;
   return (pid == (myself->exec_dwProcessId ?: myself->dwProcessId));
 }
 
@@ -1210,6 +1145,10 @@ fhandler_pty_slave::reset_switch_to_nat_pipe (void)
 		      if (!CallNamedPipe (pipe, &req, sizeof req,
 					  &repl, sizeof repl, &len, 500))
 			return; /* What can we do? */
+		      CloseHandle (repl.from_master); /* not used. */
+		      CloseHandle (repl.to_master); /* not used. */
+		      CloseHandle (repl.to_slave_nat); /* not used. */
+		      CloseHandle (repl.to_slave); /* not used. */
 		      CloseHandle (get_handle_nat ());
 		      set_handle_nat (repl.from_master_nat);
 		      CloseHandle (get_output_handle_nat ());
@@ -3110,8 +3049,22 @@ fhandler_pty_common::process_opost_output (HANDLE h, const void *ptr,
     return res; /* Discard write data */
   while (towrite)
     {
+      ssize_t space = towrite;
       if (!is_echo)
 	{
+	  IO_STATUS_BLOCK iosb = {{0}, 0};
+	  FILE_PIPE_LOCAL_INFORMATION fpli = {0};
+	  NTSTATUS status;
+
+	  status = NtQueryInformationFile (h, &iosb, &fpli, sizeof (fpli),
+					   FilePipeLocalInformation);
+	  if (!NT_SUCCESS (status))
+	    {
+	      if (towrite < len)
+		break;
+	      len = -1;
+	      return FALSE;
+	    }
 	  if (ttyp->output_stopped && is_nonblocking)
 	    {
 	      if (towrite < len)
@@ -3123,13 +3076,18 @@ fhandler_pty_common::process_opost_output (HANDLE h, const void *ptr,
 		  return TRUE;
 		}
 	    }
-	  while (ttyp->output_stopped)
-	    cygwait (10);
+	  if (ttyp->output_stopped || fpli.WriteQuotaAvailable == 0)
+	    {
+	      cygwait (1);
+	      continue;
+	    }
+	  space = fpli.WriteQuotaAvailable;
 	}
 
       if (!(ttyp->ti.c_oflag & OPOST))	// raw output mode
 	{
 	  DWORD n = MIN (OUT_BUFFER_SIZE, towrite);
+	  n = MIN (n, space);
 	  res = WriteFile (h, ptr, n, &n, NULL);
 	  if (!res)
 	    break;
@@ -3142,7 +3100,7 @@ fhandler_pty_common::process_opost_output (HANDLE h, const void *ptr,
 	  char *buf = (char *)ptr;
 	  DWORD n = 0;
 	  ssize_t rc = 0;
-	  while (n < OUT_BUFFER_SIZE && rc < towrite)
+	  while (n < OUT_BUFFER_SIZE && n < space && rc < towrite)
 	    {
 	      switch (buf[rc])
 		{
@@ -3514,11 +3472,16 @@ fhandler_pty_slave::get_winpid_to_hand_over (tty *ttyp,
     {
       /* Search another native process which attaches to the same console */
       DWORD current_pid = myself->exec_dwProcessId ?: myself->dwProcessId;
+      if (ttyp->nat_pipe_owner_pid == GetCurrentProcessId ())
+	current_pid = GetCurrentProcessId ();
       switch_to = get_console_process_id (current_pid,
 					  false, true, true, true);
       if (!switch_to)
 	switch_to = get_console_process_id (current_pid,
 					    false, true, false, true);
+      if (!switch_to)
+	switch_to = get_console_process_id (current_pid,
+					    false, false, false, false);
     }
   return switch_to;
 }
@@ -3546,13 +3509,13 @@ fhandler_pty_slave::hand_over_only (tty *ttyp, DWORD force_switch_to)
 void
 fhandler_pty_slave::close_pseudoconsole (tty *ttyp, DWORD force_switch_to)
 {
-  DWORD switch_to = get_winpid_to_hand_over (ttyp, force_switch_to);
   acquire_attach_mutex (mutex_timeout);
   ttyp->previous_code_page = GetConsoleCP ();
   ttyp->previous_output_code_page = GetConsoleOutputCP ();
   release_attach_mutex ();
   if (nat_pipe_owner_self (ttyp->nat_pipe_owner_pid))
     { /* I am owner of the nat pipe. */
+      DWORD switch_to = get_winpid_to_hand_over (ttyp, force_switch_to);
       if (switch_to)
 	{
 	  /* Change pseudo console owner to another process (switch_to). */
@@ -3861,10 +3824,20 @@ fhandler_pty_slave::transfer_input (tty::xfer_dir dir, HANDLE from, tty *ttyp,
       if (!CallNamedPipe (pipe, &req, sizeof req,
 			  &repl, sizeof repl, &len, 500))
 	return; /* What can we do? */
+      CloseHandle (repl.from_master_nat); /* not used. */
+      CloseHandle (repl.from_master); /* not used. */
+      CloseHandle (repl.to_master_nat); /* not used. */
+      CloseHandle (repl.to_master); /* not used. */
       if (dir == tty::to_nat)
-	to = repl.to_slave_nat;
+	{
+	  CloseHandle (repl.to_slave); /* not used. */
+	  to = repl.to_slave_nat;
+	}
       else
-	to = repl.to_slave;
+	{
+	  CloseHandle (repl.to_slave_nat); /* not used. */
+	  to = repl.to_slave;
+	}
     }
 
   UINT cp_from = 0, cp_to = 0;
@@ -3995,6 +3968,7 @@ fhandler_pty_slave::transfer_input (tty::xfer_dir dir, HANDLE from, tty *ttyp,
 	    transfered = true;;
 	}
     }
+  CloseHandle (to);
 
   /* Fix input_available_event which indicates availability in cyg pipe. */
   if (dir == tty::to_nat) /* all data is transfered to nat pipe,
@@ -4084,13 +4058,8 @@ fhandler_pty_slave::cleanup_for_non_cygwin_app (handle_set_t *p, tty *ttyp,
 						DWORD force_switch_to)
 {
   ttyp->wait_fwd ();
-  DWORD current_pid = myself->exec_dwProcessId ?: myself->dwProcessId;
-  DWORD switch_to = force_switch_to;
   WaitForSingleObject (p->pipe_sw_mutex, INFINITE);
-  if (!switch_to)
-    switch_to = get_console_process_id (current_pid, false, true, true);
-  if (!switch_to)
-    switch_to = get_console_process_id (current_pid, false, true, false);
+  DWORD switch_to = get_winpid_to_hand_over (ttyp, force_switch_to);
   if ((!switch_to && (ttyp->pcon_activated || stdin_is_ptys))
       && ttyp->pty_input_state_eq (tty::to_nat))
     {

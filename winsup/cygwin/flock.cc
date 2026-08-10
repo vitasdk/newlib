@@ -297,6 +297,7 @@ class inode_t
     HANDLE		 i_dir;
     HANDLE		 i_mtx;
     uint32_t		 i_cnt;    /* # of threads referencing this instance. */
+    uint32_t		 i_lock_cnt; /* # of locks for this file */
 
   public:
     inode_t (dev_t dev, ino_t ino);
@@ -321,6 +322,8 @@ class inode_t
     void unlock_and_remove_if_unused ();
 
     lockf_t *get_all_locks_list ();
+    uint32_t get_lock_count () /* needs get_all_locks_list() */
+    { return i_lock_cnt; }
 
     bool del_my_locks (long long id, HANDLE fhdl);
 };
@@ -503,7 +506,8 @@ inode_t::get (dev_t dev, ino_t ino, bool create_if_missing, bool lock)
 }
 
 inode_t::inode_t (dev_t dev, ino_t ino)
-: i_lockf (NULL), i_all_lf (NULL), i_dev (dev), i_ino (ino), i_cnt (0L)
+: i_lockf (NULL), i_all_lf (NULL), i_dev (dev), i_ino (ino), i_cnt (0L),
+  i_lock_cnt (0)
 {
   HANDLE parent_dir;
   WCHAR name[48];
@@ -610,17 +614,16 @@ inode_t::get_all_locks_list ()
 	  dbi->ObjectName.Buffer[LOCK_OBJ_NAME_LEN] = L'\0';
 	  if (!newlock.from_obj_name (this, &i_all_lf, dbi->ObjectName.Buffer))
 	    continue;
-	  if (lock - i_all_lf >= MAX_LOCKF_CNT)
-	    {
-	      system_printf ("Warning, can't handle more than %d locks per file.",
-			     MAX_LOCKF_CNT);
-	      break;
-	    }
+	  /* This should not be happen. The number of locks is limitted
+	     in lf_setlock() and lf_clearlock() so that it does not
+	     exceed MAX_LOCKF_CNT. */
+	  assert (lock - i_all_lf < MAX_LOCKF_CNT);
 	  if (lock > i_all_lf)
 	    lock[-1].lf_next = lock;
 	  new (lock++) lockf_t (newlock);
 	}
     }
+  i_lock_cnt = lock - i_all_lf;
   /* If no lock has been found, return NULL. */
   if (lock == i_all_lf)
     return NULL;
@@ -1190,6 +1193,12 @@ restart:	/* Entry point after a restartable signal came in. */
   return -1;
 }
 
+/* The total number of locks shall not exceed MAX_LOCKF_CNT.
+   If once it exceeds, lf_fildoverlap() cannot work correctly.
+   Therefore, lf_setlock() and lf_clearlock() control the
+   total number of locks not to exceed MAX_LOCKF_CNT. When
+   they detect that the operation will cause excess, they
+   return ENOCLK. */
 /*
  * Set a byte-range lock.
  */
@@ -1346,14 +1355,31 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
    *
    * Handle any locks that overlap.
    */
+  node->get_all_locks_list (); /* Update lock count */
+  uint32_t lock_cnt = node->get_lock_count ();
+  /* lf_clearlock() sometimes increases the number of locks. Without
+     this room, the unlocking will never succeed in some situation. */
+  const uint32_t room_for_clearlock = 2;
+  const int incr[] = {1, 1, 2, 2, 3, 2};
+  int decr = 0;
+
   prev = head;
   block = *head;
   needtolink = 1;
   for (;;)
     {
       ovcase = lf_findoverlap (block, lock, SELF, &prev, &overlap);
+      /* Estimate the maximum increase in number of the locks that
+	 can occur here. If this possibly exceeds the MAX_LOCKF_CNT,
+	 return ENOLCK. */
       if (ovcase)
-	block = overlap->lf_next;
+	{
+	  block = overlap->lf_next;
+	  HANDLE ov_obj = overlap->lf_obj;
+	  decr = (ov_obj && get_obj_handle_count (ov_obj) == 1) ? 1 : 0;
+	}
+      if (needtolink)
+	lock_cnt += incr[ovcase] - decr;
       /*
        * Six cases:
        *  0) no overlap
@@ -1368,6 +1394,8 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	case 0: /* no overlap */
 	  if (needtolink)
 	    {
+	      if (lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+		return ENOLCK;
 	      *prev = lock;
 	      lock->lf_next = overlap;
 	      lock->create_lock_obj ();
@@ -1380,12 +1408,18 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	   * able to acquire it.
 	   * Cygwin: Always wake lock.
 	   */
+	  if (lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+	    return ENOLCK;
+	  /* Do not create a lock here. It should be done after all
+	     overlaps have been removed. */
 	  lf_wakelock (overlap, fhdl);
-	  overlap->lf_type = lock->lf_type;
-	  overlap->create_lock_obj ();
-	  lock->lf_next = *clean;
-	  *clean = lock;
-	  break;
+	  *prev = overlap->lf_next;
+	  overlap->lf_next = *clean;
+	  *clean = overlap;
+	  /* We may have multiple versions (lf_ver) having same lock range.
+	     Therefore, we need to find overlap repeatedly. (originally,
+	     just 'break' here. */
+	  continue;
 
 	case 2: /* overlap contains lock */
 	  /*
@@ -1397,6 +1431,11 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	      *clean = lock;
 	      break;
 	    }
+	  if (overlap->lf_start < lock->lf_start
+	      && overlap->lf_end > lock->lf_end)
+	    lock_cnt++;
+	  if (lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+	    return ENOLCK;
 	  if (overlap->lf_start == lock->lf_start)
 	    {
 	      *prev = lock;
@@ -1413,6 +1452,8 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	  break;
 
 	case 3: /* lock contains overlap */
+	  if (needtolink && lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+	    return ENOLCK;
 	  /*
 	   * If downgrading lock, others may be able to
 	   * acquire it, otherwise take the list.
@@ -1440,6 +1481,8 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	  /*
 	   * Add lock after overlap on the list.
 	   */
+	  if (lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+	    return ENOLCK;
 	  lock->lf_next = overlap->lf_next;
 	  overlap->lf_next = lock;
 	  overlap->lf_end = lock->lf_start - 1;
@@ -1454,13 +1497,16 @@ lf_setlock (lockf_t *lock, inode_t *node, lockf_t **clean, HANDLE fhdl)
 	  /*
 	   * Add the new lock before overlap.
 	   */
-	  if (needtolink) {
+	  if (needtolink)
+	    {
+	      if (lock_cnt > MAX_LOCKF_CNT - room_for_clearlock)
+		return ENOLCK;
 	      *prev = lock;
 	      lock->lf_next = overlap;
-	  }
+	      lock->create_lock_obj ();
+	    }
 	  overlap->lf_start = lock->lf_end + 1;
 	  lf_wakelock (overlap, fhdl);
-	  lock->create_lock_obj ();
 	  overlap->create_lock_obj ();
 	  break;
 	}
@@ -1485,9 +1531,34 @@ lf_clearlock (lockf_t *unlock, lockf_t **clean, HANDLE fhdl)
 
   if (lf == NOLOCKF)
     return 0;
+
+  inode_t *node = lf->lf_inode;
+  tmp_pathbuf tp;
+  node->i_all_lf = (lockf_t *) tp.w_get ();
+  node->get_all_locks_list (); /* Update lock count */
+  uint32_t lock_cnt = node->get_lock_count ();
+  bool first_loop = true;
+
   prev = head;
   while ((ovcase = lf_findoverlap (lf, unlock, SELF, &prev, &overlap)))
     {
+      /* Estimate the maximum increase in number of the locks that
+	 can occur here. If this possibly exceeds the MAX_LOCKF_CNT,
+	 return ENOLCK. */
+      HANDLE ov_obj = overlap->lf_obj;
+      if (first_loop)
+	{
+	  const int incr[] = {0, 0, 1, 1, 2, 1};
+	  int decr = (ov_obj && get_obj_handle_count (ov_obj) == 1) ? 1 : 0;
+	  lock_cnt += incr[ovcase] - decr;
+	  if (ovcase == 2
+	      && overlap->lf_start < unlock->lf_start
+	      && overlap->lf_end > unlock->lf_end)
+	    lock_cnt++;
+	  if (lock_cnt > MAX_LOCKF_CNT)
+	    return ENOLCK;
+	}
+
       /*
        * Wakeup the list of locks to be retried.
        */
@@ -1496,10 +1567,16 @@ lf_clearlock (lockf_t *unlock, lockf_t **clean, HANDLE fhdl)
       switch (ovcase)
 	{
 	case 1: /* overlap == lock */
+	case 3: /* lock contains overlap */
 	  *prev = overlap->lf_next;
+	  lf = overlap->lf_next;
 	  overlap->lf_next = *clean;
 	  *clean = overlap;
-	  break;
+	  first_loop = false;
+	  /* We may have multiple versions (lf_ver) having same lock range.
+	     Therefore, we need to find overlap repeatedly. (originally,
+	     just 'break' here. */
+	  continue;
 
 	case 2: /* overlap contains lock: split it */
 	  if (overlap->lf_start == unlock->lf_start)
@@ -1515,18 +1592,15 @@ lf_clearlock (lockf_t *unlock, lockf_t **clean, HANDLE fhdl)
 	    overlap->lf_next->create_lock_obj ();
 	  break;
 
-	case 3: /* lock contains overlap */
-	  *prev = overlap->lf_next;
-	  lf = overlap->lf_next;
-	  overlap->lf_next = *clean;
-	  *clean = overlap;
-	  continue;
+	/* case 3: */ /* lock contains overlap */
+	  /* Merged into case 1 */
 
 	case 4: /* overlap starts before lock */
 	    overlap->lf_end = unlock->lf_start - 1;
 	    prev = &overlap->lf_next;
 	    lf = overlap->lf_next;
 	    overlap->create_lock_obj ();
+	    first_loop = false;
 	    continue;
 
 	case 5: /* overlap ends after lock */

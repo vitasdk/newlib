@@ -85,6 +85,48 @@ close_all_files (bool norelease)
   cygheap->fdtab.unlock ();
 }
 
+/* Close or set the close-on-exec flag for all open file descriptors
+   from firstfd to lastfd.  CLOSE_RANGE_UNSHARE is not supported.
+   Available on FreeBSD since 13 and Linux since 5.9 */
+extern "C" int
+close_range (unsigned int firstfd, unsigned int lastfd, int flags)
+{
+  pthread_testcancel ();
+
+  if (!(firstfd <= lastfd && !(flags & ~CLOSE_RANGE_CLOEXEC)))
+    {
+      set_errno (EINVAL);
+      return -1;
+    }
+
+  cygheap->fdtab.lock ();
+
+  unsigned int size = (lastfd < cygheap->fdtab.size ? lastfd + 1 :
+		      cygheap->fdtab.size);
+
+  for (unsigned int i = firstfd; i < size; i++)
+    {
+      cygheap_fdget cfd ((int) i, false, false);
+      if (cfd < 0)
+	continue;
+
+      if (flags & CLOSE_RANGE_CLOEXEC)
+	{
+	  syscall_printf ("set FD_CLOEXEC on fd %u", i);
+	  cfd->fcntl (F_SETFD, FD_CLOEXEC);
+	}
+      else
+	{
+	  syscall_printf ("closing fd %u", i);
+	  cfd->close_with_arch ();
+	  cfd.release ();
+	}
+    }
+
+  cygheap->fdtab.unlock ();
+  return 0;
+}
+
 extern "C" int
 dup (int fd)
 {
@@ -298,14 +340,14 @@ try_to_bin (path_conv &pc, HANDLE &fh, ACCESS_MASK access, ULONG flags)
   else
     {
       /* Create unique filename.  Start with a dot, followed by "cyg"
-	 transposed into the Unicode low surrogate area (U+dc00) on file
-	 systems supporting Unicode (except Samba), followed by the inode
-	 number in hex, followed by a path hash in hex.  The combination
-	 allows to remove multiple hardlinks to the same file. */
+	 transposed to the Unicode private use area in the U+f700 area
+	 on file systems supporting Unicode (except Samba), followed by
+	 the inode number in hex, followed by a path hash in hex.  The
+	 combination allows to remove multiple hardlinks to the same file. */
       RtlAppendUnicodeToString (&recycler,
 				(pc.fs_flags () & FILE_UNICODE_ON_DISK
 				 && !pc.fs_is_samba ())
-				? L".\xdc63\xdc79\xdc67" : L".cyg");
+				? L".\xf763\xf779\xf767" : L".cyg");
       pfii = (PFILE_INTERNAL_INFORMATION) infobuf;
       status = NtQueryInformationFile (fh, &io, pfii, sizeof *pfii,
 				       FileInternalInformation);
@@ -575,9 +617,10 @@ check_dir_not_empty (HANDLE dir, path_conv &pc)
   IO_STATUS_BLOCK io;
   const ULONG bufsiz = 3 * sizeof (FILE_NAMES_INFORMATION)
 		       + 3 * NAME_MAX * sizeof (WCHAR);
-  PFILE_NAMES_INFORMATION pfni = (PFILE_NAMES_INFORMATION)
-				 alloca (bufsiz);
-  NTSTATUS status = NtQueryDirectoryFile (dir, NULL, NULL, 0, &io, pfni,
+  PFILE_NAMES_INFORMATION pfni_buf = (PFILE_NAMES_INFORMATION)
+				     alloca (bufsiz);
+  PFILE_NAMES_INFORMATION pfni;
+  NTSTATUS status = NtQueryDirectoryFile (dir, NULL, NULL, 0, &io, pfni_buf,
 					  bufsiz, FileNamesInformation,
 					  FALSE, NULL, TRUE);
   if (!NT_SUCCESS (status))
@@ -589,6 +632,7 @@ check_dir_not_empty (HANDLE dir, path_conv &pc)
   int cnt = 1;
   do
     {
+      pfni = pfni_buf;
       while (pfni->NextEntryOffset)
 	{
 	  if (++cnt > 2)
@@ -635,7 +679,7 @@ check_dir_not_empty (HANDLE dir, path_conv &pc)
 	  pfni = (PFILE_NAMES_INFORMATION) ((caddr_t) pfni + pfni->NextEntryOffset);
 	}
     }
-  while (NT_SUCCESS (NtQueryDirectoryFile (dir, NULL, NULL, 0, &io, pfni,
+  while (NT_SUCCESS (NtQueryDirectoryFile (dir, NULL, NULL, 0, &io, pfni_buf,
 					   bufsiz, FileNamesInformation,
 					   FALSE, NULL, FALSE)));
   return STATUS_SUCCESS;
@@ -1240,8 +1284,6 @@ read (int fd, void *ptr, size_t len)
   return (ssize_t) res;
 }
 
-EXPORT_ALIAS (read, _read)
-
 extern "C" ssize_t
 readv (int fd, const struct iovec *const iov, const int iovcnt)
 {
@@ -1337,8 +1379,6 @@ write (int fd, const void *ptr, size_t len)
   syscall_printf ("%lR = write(%d, %p, %d)", res, fd, ptr, len);
   return res;
 }
-
-EXPORT_ALIAS (write, _write)
 
 extern "C" ssize_t
 writev (const int fd, const struct iovec *const iov, const int iovcnt)
@@ -1552,7 +1592,65 @@ open (const char *unix_path, int flags, ...)
   return res;
 }
 
-EXPORT_ALIAS (open, _open )
+static int
+posix_getdents_lseek (cygheap_fdget &cfd, off_t pos, int dir)
+{
+  long cur = cfd->telldir (cfd->getdents_dir ());
+  long abs_pos;
+
+  switch (dir)
+    {
+    case SEEK_CUR:
+      abs_pos = cur + pos;
+      break;
+    case SEEK_SET:
+    case SEEK_DATA:
+      abs_pos = pos;
+      break;
+    case SEEK_END:
+    case SEEK_HOLE:
+      /* First read full dir to learn end-of-dir position. */
+      while (::readdir (cfd->getdents_dir ()))
+	;
+      long eod = cfd->telldir (cfd->getdents_dir ());
+      /* Seek back so it looks like nothing happend in error case */
+      cfd->seekdir (cfd->getdents_dir (), cur);
+      if (dir == SEEK_HOLE)
+	{
+	  if (pos > eod)
+	    {
+	      set_errno (ENXIO);
+	      return -1;
+	    }
+	  abs_pos = eod;
+	}
+      else
+	abs_pos = eod + pos;
+      break;
+    }
+  if (abs_pos < 0)
+    {
+      set_errno (EINVAL);
+      return -1;
+    }
+  if (abs_pos != cur)
+    {
+      cfd->seekdir (cfd->getdents_dir (), abs_pos);
+      /* In SEEK_DATA case, check that we didn't seek beyond EOF */
+      if (dir == SEEK_DATA || dir == SEEK_HOLE)
+	{
+	  pos = cfd->telldir (cfd->getdents_dir ());
+	  if (pos < abs_pos)
+	    {
+	      /* Seek back so it looks like nothing happend */
+	      cfd->seekdir (cfd->getdents_dir (), cur);
+	      set_errno (ENXIO);
+	      return -1;
+	    }
+	}
+    }
+  return abs_pos;
+}
 
 extern "C" off_t
 lseek (int fd, off_t pos, int dir)
@@ -1567,10 +1665,12 @@ lseek (int fd, off_t pos, int dir)
   else
     {
       cygheap_fdget cfd (fd);
-      if (cfd >= 0)
-	res = cfd->lseek (pos, dir);
-      else
+      if (cfd < 0)
 	res = -1;
+      else if (cfd->getdents_dir ())
+	res = posix_getdents_lseek (cfd, pos, dir);
+      else
+	res = cfd->lseek (pos, dir);
     }
   /* Can't use %R/%lR here since res is always 8 bytes */
   syscall_printf (res == -1 ? "%D = lseek(%d, %D, %d), errno %d"
@@ -1579,8 +1679,6 @@ lseek (int fd, off_t pos, int dir)
 
   return res;
 }
-
-EXPORT_ALIAS (lseek, _lseek)
 
 extern "C" int
 close (int fd)
@@ -1605,8 +1703,6 @@ close (int fd)
   return res;
 }
 
-EXPORT_ALIAS (close, _close)
-
 extern "C" int
 isatty (int fd)
 {
@@ -1620,7 +1716,6 @@ isatty (int fd)
   syscall_printf ("%R = isatty(%d)", res, fd);
   return res;
 }
-EXPORT_ALIAS (isatty, _isatty)
 
 extern "C" int
 link (const char *oldpath, const char *newpath)
@@ -1872,8 +1967,6 @@ fsync (int fd)
     }
   return cfd->fsync ();
 }
-
-EXPORT_ALIAS (fsync, fdatasync)
 
 static void
 sync_worker (HANDLE dir, USHORT len, LPCWSTR vol)
@@ -3723,9 +3816,6 @@ vhangup ()
 extern "C" int
 setpriority (int which, id_t who, int value)
 {
-  DWORD prio = nice_to_winprio (value);
-  int error = 0;
-
   switch (which)
     {
     case PRIO_PROCESS:
@@ -3733,7 +3823,11 @@ setpriority (int which, id_t who, int value)
 	who = myself->pid;
       if ((pid_t) who == myself->pid)
 	{
-	  if (!SetPriorityClass (GetCurrentProcess (), prio))
+	  /* If realtime policy is set, keep prio but check its validity. */
+	  bool batch = (myself->sched_policy == SCHED_BATCH);
+	  DWORD prio = nice_to_winprio (value, batch);
+	  if (!set_and_check_winprio (GetCurrentProcess (), prio,
+	      (myself->sched_policy == SCHED_OTHER || batch)))
 	    {
 	      set_errno (EACCES);
 	      return -1;
@@ -3755,6 +3849,8 @@ setpriority (int which, id_t who, int value)
       set_errno (EINVAL);
       return -1;
     }
+
+  int error = 0;
   winpids pids ((DWORD) PID_MAP_RW);
   for (DWORD i = 0; i < pids.npids; ++i)
     {
@@ -3776,13 +3872,18 @@ setpriority (int which, id_t who, int value)
 		continue;
 	      break;
 	    }
-	  HANDLE proc_h = OpenProcess (PROCESS_SET_INFORMATION, FALSE,
-				       p->dwProcessId);
+	  HANDLE proc_h = OpenProcess (PROCESS_SET_INFORMATION |
+				       PROCESS_QUERY_LIMITED_INFORMATION,
+				       FALSE, p->dwProcessId);
 	  if (!proc_h)
 	    error = EPERM;
 	  else
 	    {
-	      if (!SetPriorityClass (proc_h, prio))
+	      bool batch = (p->sched_policy == SCHED_BATCH);
+	      DWORD prio = nice_to_winprio (value, batch);
+	      /* If realtime policy is set, keep prio but check its validity. */
+	      if (!set_and_check_winprio (proc_h, prio,
+		  (p->sched_policy == SCHED_OTHER || batch)))
 		error = EACCES;
 	      else
 		p->nice = value;
@@ -3811,10 +3912,14 @@ getpriority (int which, id_t who)
 	who = myself->pid;
       if ((pid_t) who == myself->pid)
         {
-          DWORD winprio = GetPriorityClass(GetCurrentProcess());
-          if (winprio != nice_to_winprio(myself->nice))
-            myself->nice = winprio_to_nice(winprio);
-          return myself->nice;
+	  bool batch = (myself->sched_policy == SCHED_BATCH);
+	  if (myself->sched_policy == SCHED_OTHER || batch)
+	    {
+	      DWORD winprio = GetPriorityClass (GetCurrentProcess());
+	      if (winprio != nice_to_winprio (myself->nice, batch))
+		myself->nice = winprio_to_nice (winprio, batch);
+	    }
+	  return myself->nice;
         }
       break;
     case PRIO_PGRP:
@@ -3866,7 +3971,16 @@ out:
 extern "C" int
 nice (int incr)
 {
-  return setpriority (PRIO_PROCESS, myself->pid, myself->nice + incr);
+  if (setpriority (PRIO_PROCESS, myself->pid, myself->nice + incr))
+    {
+      /* POSIX: EPERM instead of EACCES. */
+      set_errno (EPERM);
+      return -1;
+    }
+
+  /* POSIX: return the new nice value.  Linux glibc >= 2.2.4 provides
+     conformance with POSIX (FreeBSD returns 0). */
+  return myself->nice;
 }
 
 static void
@@ -3966,8 +4080,6 @@ utmpname (const char *file)
   debug_printf ("Setting UTMP file failed");
   return -1;
 }
-
-EXPORT_ALIAS (utmpname, utmpxname)
 
 /* Note: do not make NO_COPY */
 static struct utmp utmp_data_buf[16];
@@ -5024,3 +5136,12 @@ tmpfile (void)
   set_errno (e);
   return fp;
 }
+
+EXPORT_ALIAS (close, _close)
+EXPORT_ALIAS (fsync, fdatasync)
+EXPORT_ALIAS (isatty, _isatty)
+EXPORT_ALIAS (lseek, _lseek)
+EXPORT_ALIAS (open, _open)
+EXPORT_ALIAS (read, _read)
+EXPORT_ALIAS (utmpname, utmpxname)
+EXPORT_ALIAS (write, _write)

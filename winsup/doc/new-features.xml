@@ -13,9 +13,9 @@ Drop support for Windows 7, Windows 8, Server 2008 R2 and Server 2012.
 </para></listitem>
 
 <listitem><para>
-The console device gets accessible from other terminals such as other
-consoles and ptys. Thanks to this new feature, GNU screen and tmux now
-work in the console.
+Console devices (/dev/consN) are now accessible by processes attached to other
+consoles or ptys. Thanks to this new feature, GNU screen and tmux now work in
+the console.
 </para></listitem>
 
 <listitem><para>
@@ -75,6 +75,10 @@ New API calls: c8rtomb, c16rtomb, c32rtomb, mbrtoc8, mbrtoc16, mbrtoc32.
 </para></listitem>
 
 <listitem><para>
+New API call: close_range (available on FreeBSD and Linux).
+</para></listitem>
+
+<listitem><para>
 New API call: fallocate (Linux-specific).
 </para></listitem>
 
@@ -85,12 +89,24 @@ https://www.austingroupbugs.net/view.php?id=1674
 </para></listitem>
 
 <listitem><para>
-FIFOs now also work over NFS.
+FIFOs now also work on NFS filesystems.
 </para></listitem>
 
 <listitem><para>
 Enable automatic sparsifying of files on SSDs, independent of the
 "sparse" mount mode.
+</para></listitem>
+
+<listitem><para>
+When RLIMIT_CORE is more than 1MB, a core dump file which can be loaded by gdb
+is now written on a fatal error. Otherwise, if it's greater than zero, a text
+format .stackdump file is written, as previously.
+</para></listitem>
+
+<listitem><para>
+The default RLIMIT_CORE is now 0, disabling the generation of core dump or
+stackdump files. Use e.g. <code>ulimit -c unlimited</code> or <code>ulimit -c
+1024</code> to enable them again.
 </para></listitem>
 
 </itemizedlist>

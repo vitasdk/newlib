@@ -10,7 +10,7 @@ details. */
    the Cygwin shared library".  This version is used to track important
    changes to the DLL and is mainly informative in nature. */
 
-#define CYGWIN_VERSION_DLL_MAJOR 3005
+#define CYGWIN_VERSION_DLL_MAJOR 3006
 #define CYGWIN_VERSION_DLL_MINOR 0
 
 /* CYGWIN_VERSION_DLL_COMBINED gives us a single number representing the
@@ -484,12 +484,18 @@ details. */
   347: Add c16rtomb, c32rtomb, mbrtoc16, mbrtoc32.
   348: Add c8rtomb, mbrtoc.
   349: Add fallocate.
+  350: Add close_range.
+  351: Add getlocalename_l.
+  352: Implement dirent.d_reclen.
+  353: Implement fdclosedir.
+  354: Implement posix_getdents.
+  355: Implement setproctitle.
 
   Note that we forgot to bump the api for ualarm, strtoll, strtoull,
   sigaltstack, sethostname. */
 
 #define CYGWIN_VERSION_API_MAJOR 0
-#define CYGWIN_VERSION_API_MINOR 349
+#define CYGWIN_VERSION_API_MINOR 355
 
 /* There is also a compatibity version number associated with the shared memory
    regions.  It is incremented when incompatible changes are made to the shared
@@ -529,9 +535,9 @@ details. */
 
    The mkvers.sh script at the top level produces a .cc file which initializes
    a cygwin_version structure based on the above version information and
-   creates a string table for grepping via "fgrep '%%%' cygwinwhatever.dll"
+   creates a string table for grepping via "grep -F '%%%' cygwinwhatever.dll"
    if you are using GNU grep.  Otherwise you may want to do a
-   "strings cygwinwhatever.dll | fgrep '%%%'" instead.
+   "strings cygwinwhatever.dll | grep -F '%%%'" instead.
 
    This will produce output such as:
 

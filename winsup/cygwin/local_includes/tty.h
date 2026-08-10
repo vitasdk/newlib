@@ -178,6 +178,7 @@ public:
   friend class fhandler_pty_master;
   friend class fhandler_pty_slave;
   friend class tty_min;
+  friend class fhandler_console;
 };
 
 class tty_list
@@ -211,4 +212,9 @@ public:
 };
 
 extern "C" int ttyslot (void);
+
+/* Console stuff */
+#define MAX_CONS_DEV 128
+#define CONS_SCAN_UNUSED (-1)
+
 #endif /*_TTY_H*/

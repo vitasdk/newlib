@@ -23,6 +23,14 @@ has_attribute (DWORD attributes, DWORD attribs_to_test)
 	 && (attributes & attribs_to_test);
 }
 
+extern inline bool
+isoffline (DWORD attributes)
+{
+  return has_attribute (attributes, FILE_ATTRIBUTE_OFFLINE
+				    | FILE_ATTRIBUTE_RECALL_ON_OPEN
+				    | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS);
+}
+
 enum executable_states
 {
   is_executable,
@@ -34,8 +42,7 @@ enum executable_states
 struct suffix_info
 {
   const char *name;
-  int addon;
-  suffix_info (const char *s, int addit = 0): name (s), addon (addit) {}
+  suffix_info (const char *s): name (s) {}
 };
 
 extern suffix_info stat_suffixes[];
@@ -154,6 +161,12 @@ class path_conv
   const char *suffix;
   const char *posix_path;
   path_conv_handle conv_handle;
+  /* virt_fileid is used by and unique within each fhandler_virtual class.
+     We need it here to avoid calling the exists() method too often, in
+     case the derived class has a costly exists() operation.
+     virt_fileid is evaluated by the fhandler_virtual::exists() call in
+     path_conv::check and propageted to the caller's path_conv. */
+  int _virt_fileid;
 
   void add_ext_from_sym (symlink_info&);
   char *modifiable_path () {return (char *) path;}
@@ -161,6 +174,8 @@ class path_conv
  public:
   int error;
   device dev;
+
+  int &virt_fileid() { return _virt_fileid; }
 
   void *serialize (HANDLE, unsigned int &) const;
   HANDLE deserialize (void *);
@@ -236,6 +251,12 @@ class path_conv
   bool exists () const {return fileattr != INVALID_FILE_ATTRIBUTES;}
   bool has_attribute (DWORD x) const {return exists () && (fileattr & x);}
   int isdir () const {return has_attribute (FILE_ATTRIBUTE_DIRECTORY);}
+  bool isoffline () const
+  {
+    return has_attribute (FILE_ATTRIBUTE_OFFLINE
+			  | FILE_ATTRIBUTE_RECALL_ON_OPEN
+			  | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS);
+  }
   executable_states exec_state ()
   {
     extern int _check_for_executable;
@@ -243,7 +264,7 @@ class path_conv
       return is_executable;
     if (mount_flags & MOUNT_NOTEXEC)
       return not_executable;
-    if (!_check_for_executable)
+    if (isoffline () || !_check_for_executable)
       return dont_care_if_executable;
     return dont_know_if_executable;
   }
@@ -302,7 +323,7 @@ class path_conv
   }
   inline POBJECT_ATTRIBUTES init_reopen_attr (OBJECT_ATTRIBUTES &attr, HANDLE h)
   {
-    if (has_buggy_reopen ())
+    if (!h || has_buggy_reopen ())
       InitializeObjectAttributes (&attr, get_nt_native_path (),
 				  objcaseinsensitive (), NULL, NULL)
     else

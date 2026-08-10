@@ -72,8 +72,7 @@ bool reset_com;
 bool wincmdln;
 winsym_t allow_winsymlinks = WSYM_default;
 bool disable_pcon;
-
-bool NO_COPY in_forkee;
+bool winjitdebug = false;
 
 /* Taken from BSD libc:
    This variable is zero until a process has created a pthread.  It is used
@@ -85,6 +84,8 @@ int NO_COPY __isthreaded = 0;
 int __argc_safe;
 int __argc;
 char **__argv;
+/* Set via setproctitle */
+char *__argv0_orig;
 
 _cygtls NO_COPY *_main_tls /* !globals.h */;
 
@@ -151,10 +152,10 @@ extern "C" {
   #undef _ROU
 
   char **environ;
-  /* __progname used in getopt error message */
-  char *__progname;
-  char *program_invocation_name;
+  /* __progname used in getopt error message is an alias of
+     program_invocation_short_name. */
   char *program_invocation_short_name;
+  char *program_invocation_name;
   static MTinterface _mtinterf;
   struct per_process __cygwin_user_data =
   {/* initial_sp */ 0, /* magic_biscuit */ 0,
@@ -183,6 +184,19 @@ extern "C" {
    /* impure_ptr */ _GLOBAL_REENT,
   };
   int _check_for_executable = true;
+
+  /* This was a bool initially, just indicating if we're in the forked
+     child during fork(2).  However, we need an indicator accessible from
+     plain C we can ask if we're in a forked child even after fork(2)
+     finished.  Therefore redefined how we use this variable. */
+  enum {
+    NOT_FORKED	= 0,
+    FORKING	= 1,
+    FORKED	= 2
+  };
+  int NO_COPY __in_forkee;
 };
 
 int NO_COPY __api_fatal_exit_val = 1;
+
+EXPORT_ALIAS (program_invocation_short_name, __progname)

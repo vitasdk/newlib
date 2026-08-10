@@ -51,32 +51,30 @@ case "${target}" in
 	config_aarch64=true
 	config_testsuite=true
 	;;
-  arc*-*-*)
+  arc-*-* | arceb-*-*)
 	config_arc=true
+	;;
+  arc[[6432]]*-*-*)
+	config_arc64=true
 	;;
   csky*-*-*)
 	config_csky=true
 	;;
   epiphany-*-*)
-	AC_CONFIG_FILES([epiphany/Makefile])
-	subdirs="$subdirs epiphany"
-	config_testsuite=true
+	config_epiphany=true
 	;;
   i[[3456]]86-*-elf* | i[[3456]]86-*-coff*)
-	AC_CONFIG_FILES([i386/Makefile])
-	subdirs="$subdirs i386"
+	config_i386=true
 	;;
   m32r-*-*)
-	AC_CONFIG_FILES([m32r/Makefile])
-	subdirs="$subdirs m32r"
+	config_m32r=true
 	;;
   m68hc11-*-* | m6811-*-* | m68hc12-*-* | m6812-*-*)
 	AC_CONFIG_FILES([m68hc11/Makefile])
 	subdirs="$subdirs m68hc11"
 	;;
   nds32*-*-*)
-	AC_CONFIG_FILES([nds32/Makefile])
-	subdirs="$subdirs nds32"
+	config_nds32=true
 	;;
   fido-*-* | m68*-*-*)
 	AC_CONFIG_FILES([m68k/Makefile])
@@ -87,16 +85,13 @@ case "${target}" in
 	subdirs="$subdirs pa"
 	;;
   i960-*-coff)
-	AC_CONFIG_FILES([i960/Makefile])
-	subdirs="$subdirs i960"
+	config_i960=true
 	;;
   sparc-*leon*-elf* | sparc-*leon*-none*)
-	AC_CONFIG_FILES([sparc_leon/Makefile])
-	subdirs="$subdirs sparc_leon"
+	config_sparc_leon=true
 	;;
   sparclet-*-aout* | sparc-*-elf* | sparc64-*-elf* | sparc86x-*-* | sparclite-*-*)
-	AC_CONFIG_FILES([sparc/Makefile])
-	subdirs="$subdirs sparc"
+	config_sparc=true
 	;;
   sh*-*-pe | mips*-*-pe | *arm*-wince-pe)
 	config_wince=true
@@ -115,21 +110,16 @@ case "${target}" in
 	host_makefile_frag=${srcdir}/config/ppc.mh
 	;;
   mn10200-*-*)
-	AC_CONFIG_FILES([mn10200/Makefile])
-	subdirs="$subdirs mn10200"
-	target_makefile_frag=${srcdir}/config/mn10200.mt
+	config_mn10200=true
 	;;
   mn10300-*-*)
-	AC_CONFIG_FILES([mn10300/Makefile])
-	subdirs="$subdirs mn10300"
-	target_makefile_frag=${srcdir}/config/mn10300.mt
+	config_mn10300=true
 	;;
   bfin-*-*)
 	config_bfin=true
 	;;
   cr16-*-*)
-	AC_CONFIG_FILES([cr16/Makefile])
-	subdirs="$subdirs cr16"
+	config_cr16=true
 	;;
   cris-*-* | crisv32-*-*)
 	AC_CONFIG_FILES([cris/Makefile])
@@ -143,57 +133,43 @@ case "${target}" in
 	config_d30v=true
 	;;
   fr30-*-*)
-	AC_CONFIG_FILES([fr30/Makefile])
-	subdirs="$subdirs fr30"
+	config_fr30=true
 	;;
   frv*-*-*)
-	AC_CONFIG_FILES([frv/Makefile])
-	subdirs="$subdirs frv"
+	config_frv=true
 	;;
   ft32*-*-*)
-	AC_CONFIG_FILES([ft32/Makefile])
-	subdirs="$subdirs ft32"
+	config_ft32=true
 	;;
   lm32*-*-*)
 	config_lm32=true
 	;;
   mcore-*-*)
-	AC_CONFIG_FILES([mcore/Makefile])
-	subdirs="$subdirs mcore"
+	config_mcore=true
 	;;
   mep-*-*)
 	AC_CONFIG_FILES([mep/Makefile])
 	subdirs="$subdirs mep"
 	;;
   moxie-*-*)
-	AC_CONFIG_FILES([moxie/Makefile])
-	subdirs="$subdirs moxie"
+	config_moxie=true
 	;;
   microblaze*-*-*)
-	AC_CONFIG_FILES([microblaze/Makefile])
-	subdirs="$subdirs microblaze"
+	config_microblaze=true
 	;;
   mt-*-*)
 	AC_CONFIG_FILES([mt/Makefile])
 	subdirs="$subdirs mt"
 	;;
   v850*-*-*)
-	AC_CONFIG_FILES([v850/Makefile])
-	subdirs="$subdirs v850"
+	config_v850=true
 	;;
   visium-*-*)
-	AC_CONFIG_FILES([visium/Makefile])
-	subdirs="$subdirs visium"
+	config_visium=true
 	config_testsuite=false
 	;;
-  xc16x-*-*)
-	AC_CONFIG_FILES([xc16x/Makefile])
-	subdirs="$subdirs xc16x"
-	target_makefile_frag=${srcdir}/config/xc16x.mt
-	;;
   xstormy16-*-*)
-	AC_CONFIG_FILES([xstormy16/Makefile])
-	subdirs="$subdirs xstormy16"
+	config_xstormy16=true
 	;;
   xtensa-*-*)
 	config_xtensa=true
@@ -203,17 +179,14 @@ case "${target}" in
 	subdirs="$subdirs m32c"
 	;;
   msp430-*-elf*)
-	AC_CONFIG_FILES([msp430/Makefile])
-	subdirs="$subdirs msp430"
+	config_msp430=true
 	config_libnosys=false
 	;;
   rl78*-*-elf)
-	AC_CONFIG_FILES([rl78/Makefile])
-	subdirs="$subdirs rl78"
+	config_rl78=true
 	;;
   rx*-*-elf)
-	AC_CONFIG_FILES([rx/Makefile])
-	subdirs="$subdirs rx"
+	config_rx=true
 	;;
   arm*-*-elf | arm*-*-coff | arm*-*-*)
 	config_arm=true
@@ -226,20 +199,17 @@ case "${target}" in
 	config_libnosys=false
 	;;
   tic6x-*-*)
-	AC_CONFIG_FILES([tic6x/Makefile])
-	subdirs="$subdirs tic6x"
+	config_tic6x=true
 	config_testsuite=false
 	;;
   iq2000-*-*)
 	config_iq2000=true
 	;;
   or1k-*-* | or1knd-*-* )
-	AC_CONFIG_FILES([or1k/Makefile])
-	subdirs="$subdirs or1k"
+	config_or1k=true
 	;;
   pru-*-*)
-	AC_CONFIG_FILES([pru/Makefile])
-	subdirs="$subdirs pru"
+	config_pru=true
 	;;
   nios2-*-*)
 	config_nios2=true
@@ -250,7 +220,11 @@ AC_SUBST(subdirs)
 dnl These subdirs have converted to non-recursive make.  Hopefully someday all
 dnl the ports above will too!
 m4_foreach_w([SUBDIR], [
-  aarch64 arc arm bfin csky d30v iq2000 libnosys lm32 nios2 riscv wince xtensa
+  aarch64 arc arc64 arm bfin cr16 csky d30v epiphany fr30 frv ft32 i386 i960 iq2000
+  libnosys lm32
+  m32r mcore microblaze mn10200 mn10300 moxie msp430
+  nds32 nios2 or1k pru riscv rl78 rx sparc sparc_leon tic6x v850 visium
+  wince xstormy16 xtensa
 ], [dnl
   AM_CONDITIONAL([CONFIG_]m4_toupper(SUBDIR), [test x$config_]SUBDIR = xtrue)
 ])
@@ -267,6 +241,8 @@ AM_PROG_AR
 LD=${LD-ld}
 AC_SUBST(LD)
 AC_PROG_RANLIB
+AC_CHECK_TOOL(OBJCOPY, objcopy, :)
+AC_CHECK_TOOL(OBJDUMP, objdump, :)
 
 AC_DEFINE(HAVE_GNU_LD, 1, [Using GNU LD])
 

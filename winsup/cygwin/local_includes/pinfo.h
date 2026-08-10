@@ -92,7 +92,10 @@ public:
   long start_time;
   struct rusage rusage_self;
   struct rusage rusage_children;
-  int nice;
+
+  int nice;          /* nice value for SCHED_OTHER and SCHED_BATCH. */
+  int sched_policy;  /* SCHED_OTHER/BATCH/IDLE/FIFO/RR */
+  bool sched_reset_on_fork;  /* true if SCHED_RESET_ON_FORK flag was set. */
 
   /* Non-zero if process was stopped by a signal. */
   char stopsig;
@@ -220,7 +223,7 @@ private:
   DWORD status_exit (DWORD);
 };
 
-#define MAX_PID 65536
+#define MAX_PID 4194304
 
 #define ISSTATE(p, f)	(!!((p)->process_state & f))
 #define NOTSTATE(p, f)	(!((p)->process_state & f))

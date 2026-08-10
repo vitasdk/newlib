@@ -451,9 +451,9 @@ sigaction_worker (int sig, const struct sigaction *newact,
 	      if (!(gs.sa_flags & SA_NODEFER))
 		gs.sa_mask |= SIGTOMASK(sig);
 	      if (gs.sa_handler == SIG_IGN)
-		sig_clear (sig);
+		sig_clear (sig, true);
 	      if (gs.sa_handler == SIG_DFL && sig == SIGCHLD)
-		sig_clear (sig);
+		sig_clear (sig, true);
 	      if (sig == SIGCHLD)
 		{
 		  myself->process_state &= ~PID_NOCLDSTOP;
@@ -615,6 +615,7 @@ sigwait_common (const sigset_t *set, siginfo_t *info, PLARGE_INTEGER waittime)
       set_signal_mask (_my_tls.sigwait_mask, *set);
       sig_dispatch_pending (true);
 
+do_wait:
       switch (cygwait (NULL, waittime,
 		       cw_sig_eintr | cw_cancel | cw_cancel_self))
 	{
@@ -633,13 +634,24 @@ sigwait_common (const sigset_t *set, siginfo_t *info, PLARGE_INTEGER waittime)
 	      if (info)
 		*info = _my_tls.infodata;
 	      res = _my_tls.infodata.si_signo;
-	      _my_tls.sig = 0;
+	      _my_tls.current_sig = 0;
 	      if (_my_tls.retaddr () == (__tlsstack_t) sigdelayed)
 		_my_tls.pop ();
 	      _my_tls.unlock ();
 	    }
 	  break;
 	case WAIT_TIMEOUT:
+	  _my_tls.lock ();
+	  if (_my_tls.sigwait_mask == 0)
+	    {
+	      /* sigpacket::process() already started.
+	         Will surely be signalled soon. */
+	      waittime = cw_infinite;
+	      _my_tls.unlock ();
+	      goto do_wait;
+	    }
+	  _my_tls.sigwait_mask = 0;
+	  _my_tls.unlock ();
 	  set_errno (EAGAIN);
 	  break;
 	default:

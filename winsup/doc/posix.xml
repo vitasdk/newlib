@@ -601,7 +601,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     nexttowardf
     nexttowardl
     nftw
-    nice
+    nice			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     nl_langinfo
     nl_langinfo_l
     nrand48
@@ -818,8 +818,8 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     sched_getparam
     sched_getscheduler
     sched_rr_get_interval
-    sched_setparam
-    sched_setscheduler
+    sched_setparam		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
+    sched_setscheduler		(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     sched_yield
     seed48
     seekdir
@@ -854,7 +854,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     setlogmask
     setpgid
     setpgrp
-    setpriority
+    setpriority			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     setprotoent
     setpwent
     setregid
@@ -1143,6 +1143,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     cfmakeraw
     cfsetspeed
     clearerr_unlocked
+    close_range
     daemon
     dn_comp
     dn_expand
@@ -1297,6 +1298,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     clog10
     clog10f
     clog10l
+    close_range			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     crypt_r			(available in external "crypt" library)
     dladdr			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     dremf
@@ -1314,6 +1316,7 @@ also IEEE Std 1003.1-2017 (POSIX.1-2017).</para>
     exp10
     exp10f
     exp10l
+    fallocate			(see <xref linkend="std-notes">chapter "Implementation Notes"</xref>)
     fcloseall
     fcloseall_r
     fedisableexcept
@@ -1655,6 +1658,9 @@ CLOCK_REALTIME and CLOCK_MONOTONIC.  <function>clock_setres</function>,
 <function>clock_settime</function>, and <function>timer_create</function>
 currently support only CLOCK_REALTIME.</para>
 
+<para><function>close_range</function> does not support the Linux-specific
+flag CLOSE_RANGE_UNSHARE.</para>
+
 <para>POSIX file locks via <function>fcntl</function> or
 <function>lockf</function>, as well as BSD <function>flock</function> locks
 are advisory locks.  They don't interact with Windows mandatory locks, nor
@@ -1754,6 +1760,47 @@ otherwise returns the result from <function>setdtablesize</function>.
 RLIMIT_CORE and RLIMIT_STACK return the current values and set the requested
 values.
 All other resource arguments return -1 and set EINVAL.</para>
+
+<para><function>fallocate</function> has a few Windows quirks: The
+FALLOC_FL_ZERO_RANGE operation is NOT atomic.  With flags set to 0 and
+FALLOC_FL_KEEP_SIZE, sparse blocks in the given range are re-allocated
+as per the POSIX requirements.  This re-allocation operation isn't
+atomic either.  Over-allocation with FALLOC_FL_KEEP_SIZE is only
+temporary on Windows until the last handle to the file is closed.
+Over-allocation on sparse files is entirely ignored on Windows.</para>
+
+<para><function>sched_setpolicy</function> only emulates API behavior
+because Windows does not offer alternative scheduling policies.
+If <literal>SCHED_OTHER</literal> or <literal>SCHED_BATCH</literal> is
+selected, the Windows priority is set according to the nice value.
+If <literal>SCHED_IDLE</literal> is selected, the Windows priority is
+set to <literal>IDLE_PRIORITY_CLASS</literal>.
+If <literal>SCHED_FIFO</literal> or <literal>SCHED_RR</literal> is
+selected, the nice value is preserved and the Windows priority is set
+according to the <literal>sched_priority</literal> value.
+If the <literal>SCHED_RESET_ON_FORK</literal> flag is set, realtime
+policies and negative nice values are dropped on
+<function>fork</function>.</para>
+
+<para><function>nice</function>, <function>setpriority</function>,
+<function>sched_setparam</function> and <function>sched_setpolicy</function>
+map the nice value (<literal>SCHED_OTHER</literal>,
+<literal>SCHED_BATCH</literal>) or the <literal>sched_priority</literal>
+(<literal>SCHED_FIFO</literal>, <literal>SCHED_RR</literal>) to Windows
+priority classes as follows:</para>
+<screen>
+    SCHED_OTHER  SCHED_BATCH  SCHED_FIFO/RR
+    nice value   nice value   sched_priority   Windows priority class
+     12...19       4...19      1....6          IDLE_PRIORITY_CLASS
+      4...11      -4....3      7...12          BELOW_NORMAL_PRIORITY_CLASS
+     -4....3     -12...-5     13...18          NORMAL_PRIORITY_CLASS
+    -12...-5     -13..-19     19...24          ABOVE_NORMAL_PRIORITY_CLASS
+    -13..-19          -20     25...30          HIGH_PRIORITY_CLASS
+         -20            -     31...32          REALTIME_PRIORITY_CLASS
+</screen>
+The use of values which are mapped to the
+<literal>REALTIME_PRIORITY_CLASS</literal> require administrative
+privileges.
 
 </sect1>
 

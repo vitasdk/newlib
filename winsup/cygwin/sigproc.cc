@@ -106,12 +106,16 @@ class pending_signals
 {
   sigpacket sigs[_NSIG + 1];
   sigpacket start;
+  SRWLOCK queue_lock;
   bool retry;
+  void lock () { AcquireSRWLockExclusive (&queue_lock); }
+  void unlock () { ReleaseSRWLockExclusive (&queue_lock); }
 
 public:
+  pending_signals (): queue_lock (SRWLOCK_INIT) {}
   void add (sigpacket&);
-  bool pending () {retry = true; return !!start.next;}
-  void clear (int sig) {sigs[sig].si.si_signo = 0;}
+  bool pending () {retry = !!start.next; return retry;}
+  void clear (int sig, bool need_lock);
   void clear (_cygtls *tls);
   friend void sig_dispatch_pending (bool);
   friend void wait_sig (VOID *arg);
@@ -427,9 +431,27 @@ proc_terminate ()
 
 /* Clear pending signal */
 void
-sig_clear (int sig)
+sig_clear (int sig, bool need_lock)
 {
-  sigq.clear (sig);
+  sigq.clear (sig, need_lock);
+}
+
+/* Clear pending signals of specific si_signo.
+   Called from sigpacket::process(). */
+void
+pending_signals::clear (int sig, bool need_lock)
+{
+  sigpacket *q = sigs + sig;
+  if (!sig || !q->si.si_signo)
+    return;
+  if (need_lock)
+    lock ();
+  q->si.si_signo = 0;
+  q->prev->next = q->next;
+  if (q->next)
+    q->next->prev = q->prev;
+  if (need_lock)
+    unlock ();
 }
 
 /* Clear pending signals of specific thread.  Called under TLS lock from
@@ -437,16 +459,18 @@ sig_clear (int sig)
 void
 pending_signals::clear (_cygtls *tls)
 {
-  sigpacket *q = &start, *qnext;
+  sigpacket *q = &start;
 
-  while ((qnext = q->next))
-    if (qnext->sigtls == tls)
+  lock ();
+  while ((q = q->next))
+    if (q->sigtls == tls)
       {
-	qnext->si.si_signo = 0;
-	q->next = qnext->next;
+	q->si.si_signo = 0;
+	q->prev->next = q->next;
+	if (q->next)
+	  q->next->prev = q->prev;
       }
-    else
-      q = qnext;
+  unlock ();
 }
 
 /* Clear pending signals of specific thread.  Called from _cygtls::remove */
@@ -727,7 +751,8 @@ sig_send (_pinfo *p, siginfo_t& si, _cygtls *tls)
       res = WriteFile (sendsig, leader, packsize, &nb, NULL);
       if (!res || packsize == nb)
 	break;
-      Sleep (10);
+      if (cygwait (NULL, 10, cw_sig_eintr) == WAIT_SIGNALED)
+	_my_tls.call_signal_handler ();
       res = 0;
     }
 
@@ -760,7 +785,7 @@ sig_send (_pinfo *p, siginfo_t& si, _cygtls *tls)
   if (wait_for_completion)
     {
       sigproc_printf ("Waiting for pack.wakeup %p", pack.wakeup);
-      rc = WaitForSingleObject (pack.wakeup, WSSC);
+      rc = cygwait (pack.wakeup, WSSC);
       ForceCloseHandle (pack.wakeup);
     }
   else
@@ -1082,7 +1107,7 @@ child_info::proc_retry (HANDLE h)
   if (!exit_code)
     return EXITCODE_OK;
   sigproc_printf ("exit_code %y", exit_code);
-  switch (exit_code)
+  switch ((NTSTATUS) exit_code)
     {
     case STILL_ACTIVE:	/* shouldn't happen */
       sigproc_printf ("STILL_ACTIVE?  How'd we get here?");
@@ -1298,8 +1323,13 @@ pending_signals::add (sigpacket& pack)
   if (se->si.si_signo)
     return;
   *se = pack;
+  lock ();
   se->next = start.next;
-  start.next = se;
+  se->prev = &start;
+  se->prev->next = se;
+  if (se->next)
+    se->next->prev = se;
+  unlock ();
 }
 
 /* Process signals by waiting for signal data to arrive in a pipe.
@@ -1315,12 +1345,24 @@ wait_sig (VOID *)
 
   hntdll = GetModuleHandle ("ntdll.dll");
 
+  /* GetTickCount() here is enough because GetTickCount() - t0 does
+     not overflow until 49 days psss. Even if GetTickCount() overflows,
+     GetTickCount() - t0 returns correct value, since underflow in
+     unsigned wraps correctly. Pending a signal for more than 49
+     days makes no sense. */
+  DWORD t0 = GetTickCount ();
   for (;;)
     {
       DWORD nb;
       sigpacket pack = {};
       if (sigq.retry)
 	pack.si.si_signo = __SIGFLUSH;
+      else if (sigq.start.next
+	       && PeekNamedPipe (my_readsig, NULL, 0, NULL, &nb, NULL) && !nb)
+	{
+	  Sleep (GetTickCount () - t0 > 10 ? 1 : 0);
+	  pack.si.si_signo = __SIGFLUSH;
+	}
       else if (!ReadFile (my_readsig, &pack, sizeof (pack), &nb, NULL))
 	Sleep (INFINITE);	/* Assume were exiting.  Never exit this thread */
       else if (nb != sizeof (pack) || !pack.si.si_signo)
@@ -1328,6 +1370,8 @@ wait_sig (VOID *)
 	  system_printf ("garbled signal pipe data nb %u, sig %d", nb, pack.si.si_signo);
 	  continue;
 	}
+      if (pack.si.si_signo != __SIGFLUSH)
+	t0 = GetTickCount ();
 
       sigq.retry = false;
       /* Don't process signals when we start exiting */
@@ -1373,6 +1417,7 @@ wait_sig (VOID *)
 	    bool issig_wait;
 
 	    *pack.mask = 0;
+	    sigq.lock ();
 	    while ((q = q->next))
 	      {
 		_cygtls *sigtls = q->sigtls ?: _main_tls;
@@ -1386,6 +1431,7 @@ wait_sig (VOID *)
 		      }
 		  }
 	      }
+	    sigq.unlock ();
 	  }
 	  break;
 	case __SIGPENDING:
@@ -1394,6 +1440,7 @@ wait_sig (VOID *)
 
 	    *pack.mask = 0;
 	    tl_entry = cygheap->find_tls (pack.sigtls);
+	    sigq.lock ();
 	    while ((q = q->next))
 	      {
 		/* Skip thread-specific signals for other threads. */
@@ -1402,6 +1449,7 @@ wait_sig (VOID *)
 		if (pack.sigtls->sigmask & (bit = SIGTOMASK (q->si.si_signo)))
 		  *pack.mask |= bit;
 	      }
+	    sigq.unlock ();
 	    cygheap->unlock_tls (tl_entry);
 	  }
 	  break;
@@ -1436,7 +1484,7 @@ wait_sig (VOID *)
 	  break;
 	default:	/* Normal (positive) signal */
 	  if (pack.si.si_signo < 0)
-	    sig_clear (-pack.si.si_signo);
+	    sig_clear (-pack.si.si_signo, true);
 	  else
 	    sigq.add (pack);
 	  fallthrough;
@@ -1447,19 +1495,20 @@ wait_sig (VOID *)
 	case __SIGFLUSHFAST:
 	  if (!sig_held)
 	    {
-	      sigpacket *qnext;
 	      /* Check the queue for signals.  There will always be at least one
 		 thing on the queue if this was a valid signal.  */
-	      while ((qnext = q->next))
+	      sigq.lock ();
+	      while ((q = q->next))
 		{
-		  if (qnext->si.si_signo && qnext->process () <= 0)
-		    q = qnext;
-		  else
+		  if (q->si.si_signo && q->process () > 0)
 		    {
-		      q->next = qnext->next;
-		      qnext->si.si_signo = 0;
+		      q->si.si_signo = 0;
+		      q->prev->next = q->next;
+		      if (q->next)
+			q->next->prev = q->prev;
 		    }
 		}
+	      sigq.unlock ();
 	      /* At least one signal still queued?  The event is used in select
 		 only, and only to decide if WFMO should wake up in case a
 		 signalfd is waiting via select/poll for being ready to read a
@@ -1473,16 +1522,6 @@ wait_sig (VOID *)
 	      if (pack.si.si_signo == SIGCHLD)
 		clearwait = true;
 	    }
-	  break;
-	case __SIGNONCYGCHLD:
-	  cygheap_fdenum cfd (false);
-	  while (cfd.next () >= 0)
-	    if (cfd->get_dev () == FH_PIPEW)
-	      {
-		fhandler_pipe *pipe = (fhandler_pipe *)(fhandler_base *) cfd;
-		if (pipe->need_close_query_hdl ())
-		  pipe->close_query_handle ();
-	      }
 	  break;
 	}
       if (clearwait && !have_execed)

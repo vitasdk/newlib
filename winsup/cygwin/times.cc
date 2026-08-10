@@ -24,7 +24,6 @@ details. */
 #include "thread.h"
 #include "cygtls.h"
 #include "ntdll.h"
-#include "spinlock.h"
 
 static inline void __attribute__ ((always_inline))
 get_system_time (PLARGE_INTEGER systime)
@@ -90,8 +89,6 @@ times (struct tms *buf)
   syscall_printf ("%D = times(%p)", tc, buf);
   return tc;
 }
-
-EXPORT_ALIAS (times, _times)
 
 /* settimeofday: BSD */
 extern "C" int
@@ -172,10 +169,13 @@ gettimeofday (struct timeval *__restrict tv, void *__restrict tzvp)
   static bool tzflag;
   LONGLONG now = get_clock (CLOCK_REALTIME)->usecs ();
 
-  tv->tv_sec = now / USPERSEC;
-  tv->tv_usec = now % USPERSEC;
+  if (tv)
+    {
+      tv->tv_sec = now / USPERSEC;
+      tv->tv_usec = now % USPERSEC;
+    }
 
-  if (tz != NULL)
+  if (tz)
     {
       if (!tzflag)
 	{
@@ -188,8 +188,6 @@ gettimeofday (struct timeval *__restrict tv, void *__restrict tzvp)
 
   return 0;
 }
-
-EXPORT_ALIAS (gettimeofday, _gettimeofday)
 
 /* Cygwin internal */
 void
@@ -559,3 +557,15 @@ clock_getcpuclockid (pid_t pid, clockid_t *clk_id)
   *clk_id = (clockid_t) PID_TO_CLOCKID (pid);
   return 0;
 }
+
+extern "C" int
+timespec_get (struct timespec *ts, int base)
+{
+  if (base != TIME_UTC)
+    return 0;
+  clock_gettime (CLOCK_REALTIME, ts);
+  return base;
+}
+
+EXPORT_ALIAS (gettimeofday, _gettimeofday)
+EXPORT_ALIAS (times, _times)

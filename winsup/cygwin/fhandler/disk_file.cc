@@ -148,14 +148,9 @@ path_conv::isgood_inode (ino_t ino) const
      are to be trusted. */
   if (ino > UINT32_MAX || !isremote ())
     return true;
-  /* The inode numbers returned from a remote NT4 NTFS are ephemeral
-     32 bit numbers. */
-  if (fs_is_ntfs ())
-    return false;
   /* Starting with version 3.5.4, Samba returns the real inode numbers, if
      the file is on the same device as the root of the share (Samba function
-     get_FileIndex).  32 bit inode numbers returned by older versions (likely
-     < 3.0) are ephemeral. */
+     get_FileIndex). */
   if (fs_is_samba () && fs.samba_version () < 0x03050400)
     return false;
   /* Otherwise, trust the inode numbers unless proved otherwise. */
@@ -176,7 +171,9 @@ readdir_check_reparse_point (POBJECT_ATTRIBUTES attr, bool remote)
   bool ret = false;
 
   status = NtOpenFile (&reph, READ_CONTROL, attr, &io, FILE_SHARE_VALID_FLAGS,
-		       FILE_OPEN_FOR_BACKUP_INTENT | FILE_OPEN_REPARSE_POINT);
+		       FILE_OPEN_NO_RECALL
+		       | FILE_OPEN_FOR_BACKUP_INTENT
+		       | FILE_OPEN_REPARSE_POINT);
   if (NT_SUCCESS (status))
     {
       PREPARSE_DATA_BUFFER rp = (PREPARSE_DATA_BUFFER) tp.c_get ();
@@ -331,8 +328,7 @@ fhandler_base::fstat_by_name (struct stat *buf)
 			   | FILE_OPEN_FOR_BACKUP_INTENT
 			   | FILE_DIRECTORY_FILE);
       if (!NT_SUCCESS (status))
-	debug_printf ("%y = NtOpenFile(%S)", status,
-		      pc.get_nt_native_path ());
+	debug_printf ("%y = NtOpenFile(%S)", status, &dirname);
       else
 	{
 	  status = NtQueryDirectoryFile (dir, NULL, NULL, NULL, &io,
@@ -341,8 +337,7 @@ fhandler_base::fstat_by_name (struct stat *buf)
 					 TRUE, &basename, TRUE);
 	  NtClose (dir);
 	  if (!NT_SUCCESS (status))
-	    debug_printf ("%y = NtQueryDirectoryFile(%S)", status,
-			  pc.get_nt_native_path ());
+	    debug_printf ("%y = NtQueryDirectoryFile(%S)", status, &dirname);
 	  else
 	    ino = fdi_buf.fdi.FileId.QuadPart;
 	}
@@ -616,7 +611,8 @@ fhandler_disk_file::fstatvfs (struct statvfs *sfs)
       opened = NT_SUCCESS (NtOpenFile (&fh, READ_CONTROL,
 				       pc.get_object_attr (attr, sec_none_nih),
 				       &io, FILE_SHARE_VALID_FLAGS,
-				       FILE_OPEN_FOR_BACKUP_INTENT));
+				       FILE_OPEN_NO_RECALL
+				       | FILE_OPEN_FOR_BACKUP_INTENT));
       if (!opened)
 	{
 	  /* Can't open file.  Try again with parent dir. */
@@ -625,7 +621,8 @@ fhandler_disk_file::fstatvfs (struct statvfs *sfs)
 	  attr.ObjectName = &dirname;
 	  opened = NT_SUCCESS (NtOpenFile (&fh, READ_CONTROL, &attr, &io,
 					   FILE_SHARE_VALID_FLAGS,
-					   FILE_OPEN_FOR_BACKUP_INTENT));
+					   FILE_OPEN_NO_RECALL
+					   | FILE_OPEN_FOR_BACKUP_INTENT));
 	  if (!opened)
 	    goto out;
 	}
@@ -1806,6 +1803,9 @@ fhandler_disk_file::prw_open (bool write, void *aio)
       return -1;
     }
 
+  /* prw_handle is invalid after fork. */
+  need_fork_fixup (true);
+
   /* record prw_handle's asyncness for subsequent pread/pwrite operations */
   prw_handle_isasync = !!aio;
   return 0;
@@ -2156,9 +2156,7 @@ fhandler_disk_file::opendir (int fd)
   DIR *dir;
   DIR *res = NULL;
 
-  if (!pc.isdir ())
-    set_errno (ENOTDIR);
-  else if ((dir = (DIR *) malloc (sizeof (DIR))) == NULL)
+  if ((dir = (DIR *) malloc (sizeof (DIR))) == NULL)
     set_errno (ENOMEM);
   else if ((dir->__d_dirname = (char *) malloc ( sizeof (struct __DIR_cache)))
 	   == NULL)
@@ -2323,7 +2321,8 @@ readdir_get_ino (const char *path, bool dot_dot)
 	   || NT_SUCCESS (NtOpenFile (&hdl, READ_CONTROL,
 				      pc.get_object_attr (attr, sec_none_nih),
 				      &io, FILE_SHARE_VALID_FLAGS,
-				      FILE_OPEN_FOR_BACKUP_INTENT
+				      FILE_OPEN_NO_RECALL
+				      | FILE_OPEN_FOR_BACKUP_INTENT
 				      | (pc.is_known_reparse_point ()
 				      ? FILE_OPEN_REPARSE_POINT : 0)))
 	  )
@@ -2372,8 +2371,9 @@ fhandler_disk_file::readdir_helper (DIR *dir, dirent *de, DWORD w32_err,
      Mountpoints and unknown or unhandled reparse points will be treated
      as normal file/directory/unknown. In all cases, returning the INO of
      the reparse point (not of the target) matches behavior of posix systems.
+     Unless the file is OFFLINE. *.
      */
-  if (attr & FILE_ATTRIBUTE_REPARSE_POINT)
+  if ((attr & FILE_ATTRIBUTE_REPARSE_POINT) && !isoffline (attr))
     {
       OBJECT_ATTRIBUTES oattr;
 
@@ -2463,66 +2463,16 @@ fhandler_disk_file::readdir (DIR *dir, dirent *de)
 					 d_cache (dir), DIR_BUF_SIZE,
 					 FileIdBothDirectoryInformation,
 					 FALSE, NULL, dir->__d_position == 0);
-	  /* FileIdBothDirectoryInformation isn't supported for remote drives
-	     on NT4 and 2K systems.  There are also hacked versions of
-	     Samba 3.0.x out there (Debian-based it seems), which return
-	     STATUS_NOT_SUPPORTED rather than handling this info class.
-	     We just fall back to using a standard directory query in
-	     this case and note this case using the dirent_get_d_ino flag. */
-	  if (!NT_SUCCESS (status) && status != STATUS_NO_MORE_FILES
+	  /* FileIdBothDirectoryInformation isn't supported on some
+	     remote drives, but we don't know every system out there.
+	     Check various status codes indicating this. */
+	  if (!NT_SUCCESS (status)
 	      && (status == STATUS_INVALID_LEVEL
 		  || status == STATUS_NOT_SUPPORTED
 		  || status == STATUS_INVALID_PARAMETER
 		  || status == STATUS_INVALID_NETWORK_RESPONSE
 		  || status == STATUS_INVALID_INFO_CLASS))
 	    dir->__flags &= ~dirent_get_d_ino;
-	  /* Something weird happens on Samba up to version 3.0.21c, which is
-	     fixed in 3.0.22.  FileIdBothDirectoryInformation seems to work
-	     nicely, but only up to the 128th entry in the directory.  After
-	     reaching this entry, the next call to NtQueryDirectoryFile
-	     (FileIdBothDirectoryInformation) returns STATUS_INVALID_LEVEL.
-	     Why should we care, we can just switch to
-	     FileBothDirectoryInformation, isn't it?  Nope!  The next call to
-	     NtQueryDirectoryFile(FileBothDirectoryInformation) actually
-	     returns STATUS_NO_MORE_FILES, regardless how many files are left
-	     unread in the directory.  This does not happen when using
-	     FileBothDirectoryInformation right from the start, but since
-	     we can't decide whether the server we're talking with has this
-	     bug or not, we end up serving Samba shares always in the slow
-	     mode using FileBothDirectoryInformation.  So, what we do here is
-	     to implement the solution suggested by Andrew Tridgell,  we just
-	     reread all entries up to dir->d_position using
-	     FileBothDirectoryInformation.
-	     However, We do *not* mark this server as broken and fall back to
-	     using FileBothDirectoryInformation further on.  This would slow
-	     down every access to such a server, even for directories under
-	     128 entries.  Also, bigger dirs only suffer from one additional
-	     call per full directory scan, which shouldn't be too big a hit.
-	     This can easily be changed if necessary. */
-	  if (status == STATUS_INVALID_LEVEL && dir->__d_position)
-	    {
-	      d_cachepos (dir) = 0;
-	      for (int cnt = 0; cnt < dir->__d_position; ++cnt)
-		{
-		  if (d_cachepos (dir) == 0)
-		    {
-		      status = NtQueryDirectoryFile (get_handle (), NULL, NULL,
-					   NULL, &io, d_cache (dir),
-					   DIR_BUF_SIZE,
-					   FileBothDirectoryInformation,
-					   FALSE, NULL, cnt == 0);
-		      if (!NT_SUCCESS (status))
-			goto go_ahead;
-		    }
-		  buf = (PFILE_ID_BOTH_DIR_INFORMATION) (d_cache (dir)
-							 + d_cachepos (dir));
-		  if (buf->NextEntryOffset == 0)
-		    d_cachepos (dir) = 0;
-		  else
-		    d_cachepos (dir) += buf->NextEntryOffset;
-		}
-	      goto go_ahead;
-	    }
 	}
       /* NFS must use FileNamesInformation!  Any other information class
 	 skips all symlinks. */
@@ -2534,8 +2484,6 @@ fhandler_disk_file::readdir (DIR *dir, dirent *de)
 				       : FileBothDirectoryInformation,
 				       FALSE, NULL, dir->__d_position == 0);
     }
-
-go_ahead:
 
   if (status == STATUS_NO_MORE_FILES)
     /*nothing*/;
@@ -2618,7 +2566,8 @@ go_ahead:
 					 &nfs_aol_ffei, sizeof nfs_aol_ffei)
 			 : NtOpenFile (&hdl, READ_CONTROL, &attr, &io,
 				       FILE_SHARE_VALID_FLAGS,
-				       FILE_OPEN_FOR_BACKUP_INTENT
+				       FILE_OPEN_NO_RECALL
+				       | FILE_OPEN_FOR_BACKUP_INTENT
 				       | FILE_OPEN_REPARSE_POINT);
 	      if (NT_SUCCESS (f_status))
 		{
@@ -2755,7 +2704,9 @@ fhandler_disk_file::fs_ioc_getflags ()
 				 | FS_SYSTEM_FL \
 				 | FS_ARCHIVE_FL \
 				 | FS_TEMP_FL \
-				 | FS_NOTINDEXED_FL)
+				 | FS_NOTINDEXED_FL\
+				 | FS_PINNED_FL \
+				 | FS_UNPINNED_FL)
 
 int
 fhandler_disk_file::fs_ioc_setflags (uint64_t flags)

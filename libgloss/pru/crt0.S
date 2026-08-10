@@ -39,7 +39,6 @@ _start:
 
 	/* DATA and BSS are handled by the loader, so nothing to do here. */
 
-#if !defined(MINRT)
 	.extern _do_global_dtors
 	/* Ensure destructors get called.  Call is per GNU ABI (i.e. 32-bit
 	   function pointers).  But it is also compatible with the TI ABI
@@ -60,27 +59,22 @@ ctors_loop:
 	add	r5, r5, 2
 	jmp	ctors_loop
 ctors_done:
-#endif
 
 	/* Just in case main() tries to access argc, argv[] and envp. */
 	zero	r14, 3 * 4
 
-#if !defined(MINRT)
 	.weak __c_args__
 	ldi32	r5, __c_args__
 	qbeq	__skip_c_args, r5, 0
 	lbbo	r14, r5, 0, 4	/* argc */
 	add	r15, r5, 4	/* argv */
 __skip_c_args:
-#endif
 
 	/* Call main */
 	call	main
 
-#if !defined(MINRT)
 	/* Call exit */
 	call	exit
-#endif
 
 	/* We should never reach here. */
 _crt_exit:

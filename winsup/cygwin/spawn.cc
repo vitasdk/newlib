@@ -30,13 +30,6 @@ details. */
 #include "ntdll.h"
 #include "shared_info.h"
 
-static const suffix_info exe_suffixes[] =
-{
-  suffix_info ("", 1),
-  suffix_info (".exe", 1),
-  suffix_info (NULL)
-};
-
 /* Add .exe to PROG if not already present and see if that exists.
    If not, return PROG (converted from posix to win32 rules if necessary).
    The result is always BUF.
@@ -50,8 +43,7 @@ perhaps_suffix (const char *prog, path_conv& buf, int& err, unsigned opt)
 
   err = 0;
   debug_printf ("prog '%s'", prog);
-  buf.check (prog, PC_SYM_FOLLOW | PC_NULLEMPTY | PC_POSIX,
-	     (opt & FE_DLL) ? stat_suffixes : exe_suffixes);
+  buf.check (prog, PC_SYM_FOLLOW | PC_NULLEMPTY | PC_POSIX, stat_suffixes);
 
   if (buf.isdir ())
     {
@@ -413,7 +405,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	 get the default error mode instead of inheriting the mode Cygwin
 	 uses.  This allows things like Windows Error Reporting/JIT debugging
 	 to work with processes launched from a Cygwin shell. */
-      if (!real_path.iscygexec ())
+      if (winjitdebug && !real_path.iscygexec ())
 	c_flags |= CREATE_DEFAULT_ERROR_MODE;
 
       /* We're adding the CREATE_BREAKAWAY_FROM_JOB flag here to workaround
@@ -586,40 +578,6 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       int fileno_stdin = in__stdin < 0 ? 0 : in__stdin;
       int fileno_stdout = in__stdout < 0 ? 1 : in__stdout;
       int fileno_stderr = 2;
-
-      if (!iscygwin ())
-	{
-	  bool need_send_sig = false;
-	  int fd;
-	  cygheap_fdenum cfd (false);
-	  while ((fd = cfd.next ()) >= 0)
-	    if (cfd->get_dev () == FH_PIPEW
-		     && (fd == fileno_stdout || fd == fileno_stderr))
-	      {
-		fhandler_pipe *pipe = (fhandler_pipe *)(fhandler_base *) cfd;
-		pipe->set_pipe_non_blocking (false);
-		if (pipe->request_close_query_hdl ())
-		  need_send_sig = true;
-	      }
-	    else if (cfd->get_dev () == FH_PIPER && fd == fileno_stdin)
-	      {
-		fhandler_pipe *pipe = (fhandler_pipe *)(fhandler_base *) cfd;
-		pipe->set_pipe_non_blocking (false);
-	      }
-
-	  if (need_send_sig)
-	    {
-	      tty_min dummy_tty;
-	      dummy_tty.ntty = (fh_devices) myself->ctty;
-	      dummy_tty.pgid = myself->pgid;
-	      tty_min *t = cygwin_shared->tty.get_cttyp ();
-	      if (!t) /* If tty is not allocated, use dummy_tty instead. */
-		t = &dummy_tty;
-	      /* Emit __SIGNONCYGCHLD to let all processes in the
-		 process group close query_hdl. */
-	      t->kill_pgrp (__SIGNONCYGCHLD);
-	    }
-	}
 
       bool no_pcon = mode != _P_OVERLAY && mode != _P_WAIT;
       term_spawn_worker.setup (iscygwin (), handle (fileno_stdin, false),
@@ -841,6 +799,8 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	    }
 	  child->start_time = time (NULL); /* Register child's starting time. */
 	  child->nice = myself->nice;
+	  child->sched_policy = myself->sched_policy;
+	  child->sched_reset_on_fork = false;
 	  postfork (child);
 	  if (mode != _P_DETACH
 	      && (!child.remember () || !child.attach ()))
@@ -918,6 +878,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 	     ctrl_c_handler(). This insures that setting sigExeced
 	     on Ctrl-C key has been completed. */
 	  init_console_handler (false);
+	  fhandler_termios::atexit_func ();
 	  myself.exit (EXITCODE_NOSET);
 	  break;
 	case _P_WAIT:

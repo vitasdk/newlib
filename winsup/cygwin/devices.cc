@@ -69,21 +69,6 @@ exists_ntdev_silent (const device& dev)
   return exists_ntdev (dev) ? -1 : false;
 }
 
-static BOOL CALLBACK
-enum_cons_dev (HWND hw, LPARAM lp)
-{
-  unsigned long *bitmask = (unsigned long *) lp;
-  HANDLE h = NULL;
-  fhandler_console::console_state *cs;
-  if ((cs = fhandler_console::open_shared_console (hw, h)))
-    {
-      *bitmask |= (1UL << cs->tty_min_state.getntty ());
-      UnmapViewOfFile ((void *) cs);
-      CloseHandle (h);
-    }
-  return TRUE;
-}
-
 static int
 exists_console (const device& dev)
 {
@@ -98,9 +83,8 @@ exists_console (const device& dev)
     default:
       if (dev.get_minor () < MAX_CONS_DEV)
 	{
-	  unsigned long bitmask = 0;
-	  EnumWindows (enum_cons_dev, (LPARAM) &bitmask);
-	  return bitmask & (1UL << dev.get_minor ());
+	  int n = fhandler_console::console_unit (dev.get_minor ());
+	  return (n == dev.get_minor ());
 	}
       return false;
     }

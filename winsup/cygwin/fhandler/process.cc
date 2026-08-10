@@ -95,7 +95,10 @@ fhandler_process::exists ()
   while (*path != 0 && !isdirsep (*path))
     path++;
   if (*path == 0)
-    return virt_rootdir;
+    {
+      fileid () = 0;
+      return virt_rootdir;
+    }
 
   virt_tab_t *entry = virt_tab_search (path + 1, true, process_tab,
 				       PROCESS_LINK_COUNT);
@@ -103,12 +106,12 @@ fhandler_process::exists ()
     {
       if (!path[entry->name_len + 1])
 	{
-	  fileid = entry - process_tab;
+	  fileid () = entry - process_tab;
 	  return entry->type;
 	}
       if (entry->type == virt_directory)	/* fd subdir only */
 	{
-	  fileid = entry - process_tab;
+	  fileid () = entry - process_tab;
 	  if (fill_filebuf ())
 	    return fd_type;
 	  /* Check for nameless device entries. */
@@ -122,6 +125,7 @@ fhandler_process::exists ()
 	    }
 	}
     }
+  fileid () = -1;
   return virt_none;
 }
 
@@ -200,7 +204,7 @@ DIR *
 fhandler_process::opendir (int fd)
 {
   DIR *dir = fhandler_virtual::opendir (fd);
-  if (dir && process_tab[fileid].fhandler == FH_PROCESSFD)
+  if (dir && process_tab[fileid ()].fhandler == FH_PROCESSFD)
     fill_filebuf ();
   return dir;
 }
@@ -215,14 +219,14 @@ int
 fhandler_process::readdir (DIR *dir, dirent *de)
 {
   int res = ENMFILE;
-  if (process_tab[fileid].fhandler == FH_PROCESSFD)
+  if (process_tab[fileid ()].fhandler == FH_PROCESSFD)
     {
       if ((size_t) dir->__d_position >= 2 + filesize / sizeof (int))
 	goto out;
     }
   else if (dir->__d_position >= PROCESS_LINK_COUNT)
     goto out;
-  if (process_tab[fileid].fhandler == FH_PROCESSFD && dir->__d_position > 1)
+  if (process_tab[fileid ()].fhandler == FH_PROCESSFD && dir->__d_position > 1)
     {
       int *p = (int *) filebuf;
       __small_sprintf (de->d_name, "%d", p[dir->__d_position++ - 2]);
@@ -297,7 +301,7 @@ fhandler_process::open (int flags, mode_t mode)
       goto out;
     }
 
-  fileid = entry - process_tab;
+  fileid () = entry - process_tab;
   if (!fill_filebuf ())
 	{
 	  res = 0;
@@ -343,15 +347,15 @@ fhandler_process::fill_filebuf ()
       return false;
     }
 
-  if (process_tab[fileid].format_func)
+  if (process_tab[fileid ()].format_func)
     {
-      if (process_tab[fileid].fhandler == FH_PROCESSFD)
+      if (process_tab[fileid ()].fhandler == FH_PROCESSFD)
 	{
 	  process_fd_t fd = { path, p , &fd_type };
-	  filesize = process_tab[fileid].format_func (&fd, filebuf);
+	  filesize = process_tab[fileid ()].format_func (&fd, filebuf);
 	}
       else
-	filesize = process_tab[fileid].format_func (p, filebuf);
+	filesize = process_tab[fileid ()].format_func (p, filebuf);
       return filesize < 0 ? false : true;
     }
   return false;
@@ -1094,7 +1098,6 @@ format_process_stat (void *data, char *&destbuf)
   unsigned long fault_count = 0UL,
 		vmsize = 0UL, vmrss = 0UL, vmmaxrss = 0UL;
   uint64_t utime = 0ULL, stime = 0ULL, start_time = 0ULL;
-  int nice = 0;
 /* ctty maj is 31:16, min is 15:0; tty_nr s/b maj 15:8, min 31:20, 7:0;
    maj is 31:16 >> 16 & fff << 8; min is 15:0 >> 8 & ff << 20 | & ff */
   int tty_nr = 0;
@@ -1126,6 +1129,8 @@ format_process_stat (void *data, char *&destbuf)
     state = 'T';
   else
     state = get_process_state (p->dwProcessId);
+
+  int nice = 0, prio = 0;
 
   NTSTATUS status;
   HANDLE hProcess;
@@ -1164,7 +1169,26 @@ format_process_stat (void *data, char *&destbuf)
       if (!NT_SUCCESS (status))
 	debug_printf ("NtQueryInformationProcess(ProcessQuotaLimits): "
 		      "status %y", status);
-      nice = winprio_to_nice (GetPriorityClass (hProcess));
+
+      nice = p->nice;
+      DWORD winprio = GetPriorityClass (hProcess);
+      if (p->sched_policy == SCHED_FIFO || p->sched_policy == SCHED_RR)
+	/* Linux proc_pid_stat(5): (18) priority - For processes running a
+	   real-time scheduling policy ..., this is the negated scheduling
+	   priority, minus one. */
+	prio = - winprio_to_schedprio (winprio) - 1; /* -33(high)...-2(low) */
+      else if (p->sched_policy == SCHED_IDLE)
+	/* Return the lowest priority unless no longer consistent. */
+	prio = NZERO + (winprio == IDLE_PRIORITY_CLASS ? NZERO - 1 :
+			winprio_to_nice (winprio));
+      else
+	{
+	  /* Use originally requested nice value unless no longer consistent. */
+	  bool batch = (p->sched_policy == SCHED_BATCH);
+	  if (winprio != nice_to_winprio (nice, batch))
+	    nice = winprio_to_nice (winprio, batch);
+	  prio = NZERO + nice; /* 0(high)...39(low) */
+	}
       CloseHandle (hProcess);
     }
   status = NtQuerySystemInformation (SystemTimeOfDayInformation,
@@ -1197,7 +1221,7 @@ format_process_stat (void *data, char *&destbuf)
 			  p->ppid, p->pgid, p->sid, tty_nr,
 			  -1, 0, fault_count, fault_count, 0, 0,
 			  utime, stime, utime, stime,
-			  NZERO + nice, nice, 0, 0,
+			  prio, nice, 0, 0,
 			  start_time,
 			  vmsize, vmrss, vmmaxrss
 			  );

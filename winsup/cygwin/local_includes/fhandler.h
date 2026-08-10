@@ -214,6 +214,9 @@ class fhandler_base
 
   struct rabuf_t ra;
 
+  /* Used for posix_getdents () */
+  DIR *_getdents_dir;
+
   /* Used for advisory file locking.  See flock.cc.  */
   int64_t unique_id;
   void del_my_locks (del_lock_called_from);
@@ -526,6 +529,17 @@ public:
   }
 
   HANDLE get_select_sem () { return select_sem; }
+
+  DIR *getdents_dir () const { return _getdents_dir; }
+  DIR *getdents_dir (DIR *_nd) { return _getdents_dir = _nd; }
+  void clear_getdents ()
+  {
+    if (getdents_dir ())
+      {
+	fdclosedir (getdents_dir ());
+	getdents_dir (NULL);
+      }
+  }
 };
 
 struct wsa_event
@@ -1183,6 +1197,7 @@ class fhandler_pipe_fifo: public fhandler_base
 {
  protected:
   size_t pipe_buf_size;
+  HANDLE pipe_mtx; /* Used only in the pipe case */
   virtual void release_select_sem (const char *) {};
 
  public:
@@ -1195,18 +1210,8 @@ class fhandler_pipe_fifo: public fhandler_base
 class fhandler_pipe: public fhandler_pipe_fifo
 {
 private:
-  HANDLE read_mtx;
   pid_t popen_pid;
-  HANDLE query_hdl;
-  HANDLE hdl_cnt_mtx;
-  HANDLE query_hdl_proc;
-  HANDLE query_hdl_value;
-  HANDLE query_hdl_close_req_evt;
-  uint64_t pipename_key;
-  DWORD pipename_pid;
-  LONG pipename_id;
   void release_select_sem (const char *);
-  HANDLE get_query_hdl_per_process (WCHAR *, OBJECT_NAME_INFORMATION *);
 public:
   fhandler_pipe ();
 
@@ -1228,7 +1233,6 @@ public:
   int close ();
   void raw_read (void *ptr, size_t& len);
   int ioctl (unsigned int cmd, void *);
-  int fcntl (int cmd, intptr_t);
   int fstat (struct stat *buf);
   int fstatvfs (struct statvfs *buf);
   int fadvise (off_t, off_t, int);
@@ -1253,37 +1257,7 @@ public:
     fh->copy_from (this);
     return fh;
   }
-  void set_pipe_non_blocking (bool nonblocking);
-  HANDLE get_query_handle () const { return query_hdl; }
-  void close_query_handle ()
-  {
-    if (query_hdl)
-      {
-	CloseHandle (query_hdl);
-	query_hdl = NULL;
-      }
-    if (query_hdl_close_req_evt)
-      {
-	CloseHandle (query_hdl_close_req_evt);
-	query_hdl_close_req_evt = NULL;
-      }
-  }
-  bool reader_closed ();
-  HANDLE temporary_query_hdl ();
-  bool need_close_query_hdl ()
-    {
-      return query_hdl_close_req_evt ?
-	IsEventSignalled (query_hdl_close_req_evt) : false;
-    }
-  bool request_close_query_hdl ()
-    {
-      if (query_hdl_close_req_evt)
-	{
-	  SetEvent (query_hdl_close_req_evt);
-	  return true;
-	}
-      return false;
-    }
+  NTSTATUS set_pipe_non_blocking (bool nonblocking);
 };
 
 #define CYGWIN_FIFO_PIPE_NAME_LEN     47
@@ -1964,6 +1938,11 @@ class fhandler_termios: public fhandler_base
     done_with_debugger /* The key was processed (CTRL_C_EVENT was sent)
 			  for inferior of GDB. */
   };
+  static bool process_alive (DWORD pid);
+  static DWORD get_console_process_id (DWORD pid, bool match,
+				       bool cygwin = false,
+				       bool stub_only = false,
+				       bool nat = false);
 
  public:
   virtual pid_t tc_getpgid () { return 0; };
@@ -2016,6 +1995,7 @@ class fhandler_termios: public fhandler_base
   virtual void setpgid_aux (pid_t pid) {}
   virtual bool need_console_handler () { return false; }
   virtual bool need_send_ctrl_c_event () { return true; }
+  static void atexit_func ();
 
   struct ptys_handle_set_t
   {
@@ -2086,7 +2066,7 @@ enum cltype
 
 class dev_console
 {
-  pid_t owner;
+  DWORD owner;
   bool is_legacy;
   bool orig_virtual_terminal_processing_mode;
 
@@ -2157,6 +2137,8 @@ class dev_console
   char *cons_rapoi;
   bool cursor_key_app_mode;
   bool disable_master_thread;
+  tty::cons_mode curr_input_mode;
+  tty::cons_mode curr_output_mode;
   bool master_thread_suspended;
   int num_processed; /* Number of input events in the current input buffer
 			already processed by cons_master_thread(). */
@@ -2176,8 +2158,6 @@ class dev_console
 
   friend class fhandler_console;
 };
-
-#define MAX_CONS_DEV (sizeof (unsigned long) * 8)
 
 /* This is a input and output console handle */
 class fhandler_console: public fhandler_termios
@@ -2236,7 +2216,7 @@ private:
   void set_cursor_maybe ();
   static bool create_invisible_console_workaround (bool force);
   static console_state *open_shared_console (HWND, HANDLE&, bool&);
-  static void fix_tab_position (HANDLE h, pid_t owner);
+  static void fix_tab_position (HANDLE h, DWORD owner);
 
 /* console mode calls */
   const handle_set_t *get_handle_set (void) {return &handle_set;}
@@ -2244,6 +2224,8 @@ private:
 			      const handle_set_t *p);
   static void set_output_mode (tty::cons_mode m, const termios *t,
 			       const handle_set_t *p);
+
+  static BOOL CALLBACK enum_windows (HWND hw, LPARAM lp);
 
  public:
   pid_t tc_getpgid ()
@@ -2359,12 +2341,24 @@ private:
   static void set_console_mode_to_native ();
   bool need_console_handler ();
   static void set_disable_master_thread (bool x, fhandler_console *cons = NULL);
-  static DWORD attach_console (pid_t, bool *err = NULL);
-  static void detach_console (DWORD, pid_t);
-  pid_t get_owner ();
+  static DWORD attach_console (DWORD, bool *err = NULL);
+  static void detach_console (DWORD, DWORD);
+  DWORD get_owner ();
   void wpbuf_put (char c);
   void wpbuf_send ();
   int fstat (struct stat *buf);
+
+  class console_unit
+  {
+    int n;
+  public:
+    operator console_state * () const;
+    operator int () const { return n; }
+    console_unit (int, HANDLE *input_mutex = NULL);
+  };
+
+  void setup_pcon_hand_over ();
+  static void pcon_hand_over_proc ();
 
   friend tty_min * tty_list::get_cttyp ();
 };
@@ -2413,10 +2407,6 @@ class fhandler_pty_common: public fhandler_termios
   }
 
   void resize_pseudo_console (struct winsize *);
-  static DWORD get_console_process_id (DWORD pid, bool match,
-				       bool cygwin = false,
-				       bool stub_only = false,
-				       bool nat = false);
   bool to_be_read_from_nat_pipe (void);
   static DWORD attach_console_temporarily (DWORD target_pid);
   static void resume_from_temporarily_attach (DWORD resume_pid);
@@ -2851,11 +2841,12 @@ class fhandler_dev_dsp: public fhandler_base
   int close ();
   void fixup_after_fork (HANDLE);
   void fixup_after_exec ();
+  bool open_setup (int);
 
  private:
-  ssize_t _write (const void *, size_t);
-  void _read (void *, size_t&);
-  int _ioctl (unsigned int, void *);
+  ssize_t _write (const void *, size_t, fhandler_dev_dsp *);
+  void _read (void *, size_t&, fhandler_dev_dsp *);
+  int _ioctl (unsigned int, void *, fhandler_dev_dsp *);
   int _fcntl (int cmd, intptr_t);
   void _fixup_after_fork (HANDLE);
   void _fixup_after_exec ();
@@ -2902,8 +2893,8 @@ class fhandler_virtual : public fhandler_base
   char *filebuf;
   off_t filesize;
   off_t position;
-  int fileid; // unique within each class
   bool diropen;
+
  public:
 
   fhandler_virtual ();
@@ -2930,6 +2921,8 @@ class fhandler_virtual : public fhandler_base
   void fixup_after_exec ();
 
   fhandler_virtual (void *) {}
+
+  int &fileid () { return pc.virt_fileid (); }
 
   virtual void copy_from (fhandler_base *x)
   {
@@ -3049,6 +3042,7 @@ class fhandler_netdrive: public fhandler_virtual
  public:
   fhandler_netdrive ();
   virtual_ftype_t exists();
+  DIR *opendir (int);
   int readdir (DIR *, dirent *);
   void seekdir (DIR *, long);
   void rewinddir (DIR *);

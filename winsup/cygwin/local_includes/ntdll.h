@@ -23,7 +23,7 @@ extern GUID __cygwin_socket_guid;
 /* Custom Cygwin-only status codes. */
 #define STATUS_THREAD_SIGNALED	((NTSTATUS)0xe0000001)
 #define STATUS_THREAD_CANCELED	((NTSTATUS)0xe0000002)
-#define STATUS_ILLEGAL_DLL_PSEUDO_RELOCATION ((DWORD) 0xe0000269)
+#define STATUS_ILLEGAL_DLL_PSEUDO_RELOCATION ((NTSTATUS) 0xe0000269)
 
 /* Simplify checking for a transactional error code. */
 #define NT_TRANSACTIONAL_ERROR(s)	\
@@ -168,6 +168,13 @@ extern GUID __cygwin_socket_guid;
 #define FILE_VC_QUOTAS_INCOMPLETE       0x00000100
 #define FILE_VC_QUOTAS_REBUILDING       0x00000200
 #define FILE_VC_VALID_MASK              0x000003ff
+
+#define PHCM_APPLICATION_DEFAULT	 0
+#define PHCM_DISGUISE_PLACEHOLDER	 1
+#define PHCM_EXPOSE_PLACEHOLDERS	 2
+#define PHCM_MAX			 2
+#define PHCM_ERROR_INVALID_PARAMETER	-1
+#define PHCM_ERROR_NO_TEB		-2
 
 /* IOCTL code to impersonate client of named pipe. */
 
@@ -1639,6 +1646,7 @@ extern "C"
 					 BOOLEAN);
   NTSTATUS RtlSetGroupSecurityDescriptor (PSECURITY_DESCRIPTOR, PSID, BOOLEAN);
   NTSTATUS RtlSetOwnerSecurityDescriptor (PSECURITY_DESCRIPTOR, PSID, BOOLEAN);
+  CHAR RtlSetProcessPlaceholderCompatibilityMode (CHAR);
   PUCHAR RtlSubAuthorityCountSid (PSID);
   PULONG RtlSubAuthoritySid (PSID, ULONG);
   ULONG RtlUnicodeStringToAnsiSize (PUNICODE_STRING);
