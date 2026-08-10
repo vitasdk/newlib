@@ -645,7 +645,7 @@ scan_console (HWND hw, LPARAM lp)
        {
 	 *p->shared_console_info = cs;
 	 CloseHandle (h);
-	 return TRUE;
+	 return FALSE;
        }
       UnmapViewOfFile ((void *) cs);
       CloseHandle (h);
@@ -665,12 +665,13 @@ fhandler_console::set_unit ()
     this_unit == FH_CONSOLE || this_unit == FH_CONIN || this_unit == FH_CONOUT;
   if (!generic_console && this_unit != FH_TTY)
     unit = get_minor ();
-  else if (myself->ctty != -1)
+  else if (myself->ctty != CTTY_UNINITIALIZED)
     unit = device::minor (myself->ctty);
 
   if (shared_console_info[unit])
     ; /* Do nothing */
-  else if (generic_console && myself->ctty != -1 && !iscons_dev (myself->ctty))
+  else if (generic_console
+	   && myself->ctty != CTTY_UNINITIALIZED && !iscons_dev (myself->ctty))
     devset = FH_ERROR;
   else
     {
@@ -723,6 +724,7 @@ fhandler_console::set_unit ()
     pc.file_attributes (FILE_ATTRIBUTE_NORMAL);
   else
     {
+      _tc = NULL;
       set_handle (NULL);
       set_output_handle (NULL);
       created = false;
@@ -1731,7 +1733,7 @@ int
 fhandler_console::dup (fhandler_base *child, int flags)
 {
   /* See comments in fhandler_pty_slave::dup */
-  if (myself->ctty != -2)
+  if (myself->ctty != CTTY_RELEASED)
     myself->set_ctty (this, flags);
   return 0;
 }
@@ -1932,7 +1934,8 @@ fhandler_console::close ()
   memset (&con_ra, 0, sizeof (con_ra));
 
   if (!have_execed && !invisible_console
-      && (myself->ctty <= 0 || get_device () == (dev_t) myself->ctty))
+      && (!CTTY_IS_VALID (myself->ctty)
+	  || get_device () == (dev_t) myself->ctty))
     free_console ();
 
   if (shared_console_info[unit])
@@ -2107,6 +2110,7 @@ fhandler_console::fhandler_console (fh_devices devunit) :
   fhandler_termios (), input_ready (false), thread_sync_event (NULL),
   input_mutex (NULL), output_mutex (NULL), unit (MAX_CONS_DEV)
 {
+  dev_referred_via = (dev_t) devunit;
   if (devunit > 0)
     dev ().parse (devunit);
   setup ();
@@ -4251,6 +4255,12 @@ fhandler_console::fixup_after_fork_exec (bool execing)
   set_unit ();
   setup_io_mutex ();
   wpbuf.init ();
+  if (cygheap->ctty == this && !get_handle () && !get_output_handle ())
+    {
+      close_with_arch ();
+      cygheap->ctty = NULL;
+      return;
+    }
 
   if (!execing)
     return;
@@ -4545,7 +4555,16 @@ fhandler_console::set_disable_master_thread (bool x, fhandler_console *cons)
 int
 fhandler_console::fstat (struct stat *st)
 {
-  fhandler_base::fstat (st);
+  /* When stat() is called, fh_alloc() in dtable.cc omits to initialize
+     the console instance. Due to this, get_ttyp() returns NULL here.
+     So, calling set_unit() is necessary to access getsid(). */
+  if (!get_ttyp ())
+    {
+      dev_referred_via = get_device ();
+      set_unit ();
+    }
+
+  fhandler_termios::fstat (st);
   st->st_mode = S_IFCHR | S_IRUSR | S_IWUSR;
   pinfo p (get_ttyp ()->getsid ());
   if (p)

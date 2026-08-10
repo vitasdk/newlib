@@ -13,7 +13,14 @@ extern "C" {
 
 extern const int __collate_load_error;
 
-extern int __collate_range_cmp (int c1, int c2);
+extern int __wcollate_range_cmp (wint_t, wint_t);
+extern int __wscollate_range_cmp (wint_t *, wint_t *, size_t, size_t);
+
+int is_unicode_equiv (wint_t, wint_t);
+
+int is_unicode_coll_elem (const wint_t *);
+
+size_t next_unicode_char (wint_t *);
 
 #ifdef __cplusplus
 };

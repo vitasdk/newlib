@@ -1167,7 +1167,7 @@ and on non-AD machines.
 </para>
 
 <para>
-Four schemata are predefined, two schemata are variable.  The predefined
+Five schemata are predefined, two schemata are variable.  The predefined
 schemata are the following:
 </para>
 
@@ -1202,6 +1202,13 @@ schemata are the following:
 	      Supported for AD and SAM accounts.
 	      See <xref linkend="ntsec-mapping-nsswitch-desc"></xref>
 	      for a more detailed description.</listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><literal>env</literal></term>
+    <listitem>Utilizes the user's environment.  This schema is only supported
+	      for setting the home directory yet.
+	      See <xref linkend="ntsec-mapping-nsswitch-home"></xref> for
+	      the description.</listitem>
   </varlistentry>
 </variablelist>
 
@@ -1334,6 +1341,17 @@ of each schema when used with <literal>db_home:</literal>
 	      <literal>description</literal> attribute in SAM or AD.
 	      See <xref linkend="ntsec-mapping-nsswitch-desc"></xref>
 	      for a detailed description.</listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><literal>env</literal></term>
+    <listitem>Derives the home directory of the current user from the
+	      environment variable <literal>HOME</literal> (falling back to
+	      <literal>HOMEDRIVE\HOMEPATH</literal> and
+	      <literal>USERPROFILE</literal>, in that order).  This is faster
+	      than the <literal>windows</literal> schema at the
+	      expense of determining only the current user's home directory
+	      correctly.  This schema is skipped for any other account.
+	      </listitem>
   </varlistentry>
   <varlistentry>
     <term><literal>@ad_attribute</literal></term>

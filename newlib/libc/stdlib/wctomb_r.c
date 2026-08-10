@@ -29,11 +29,7 @@ __ascii_wctomb (struct _reent *r,
   if (s == NULL)
     return 0;
  
-#ifdef __CYGWIN__
-  if ((size_t)wchar >= 0x80)
-#else
   if ((size_t)wchar >= 0x100)
-#endif
     {
       _REENT_ERRNO(r) = EILSEQ;
       return -1;
@@ -611,7 +607,13 @@ __cp_102_wctomb (struct _reent *r, char *s, wchar_t _wchar, mbstate_t *state)
   return ___cp_wctomb (r, s, _wchar, 25, state);
 }
 
-static wctomb_p __cp_xxx_wctomb[26] = {
+static int
+__cp_103_wctomb (struct _reent *r, char *s, wchar_t _wchar, mbstate_t *state)
+{
+  return ___cp_wctomb (r, s, _wchar, 26, state);
+}
+
+static wctomb_p __cp_xxx_wctomb[27] = {
   __cp_437_wctomb,
   __cp_720_wctomb,
   __cp_737_wctomb,
@@ -637,7 +639,8 @@ static wctomb_p __cp_xxx_wctomb[26] = {
   __cp_20866_wctomb,
   __cp_21866_wctomb,
   __cp_101_wctomb,
-  __cp_102_wctomb
+  __cp_102_wctomb,
+  __cp_103_wctomb,
 };
 
 /* val *MUST* be valid!  All checks for validity are supposed to be

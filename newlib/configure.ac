@@ -8,8 +8,11 @@ dnl Since we can't control what defines autoheader picks up (various autoconf
 dnl macros will add their own), filter out all the ones w/out a _ prefix.  All
 dnl the ones we want to export use a _ prefix, and all the rest we don't want
 dnl to export as it'll pollute the namespace of newlib users.
+dnl We also filter out version defines that we want in _newlib_version.h.
 dnl NB: newlib.h must be the first AC_CONFIG_HEADERS call for autoheader.
-AC_CONFIG_HEADERS([newlib.h:newlib.hin], [sed -i.tmp -e '/^#define [^_]/d' -e '/^\/\* #undef [^_]/d' newlib.h && rm -f newlib.h.tmp])
+AC_CONFIG_HEADERS(
+  [newlib.h:newlib.hin],
+  [sed -i.tmp -E -e '/^#define [^_]/d' -e '/^\/\* #undef [^_]/d' -e '/_NEWLIB_VERSION|__NEWLIB_(MINOR|PATCHLEVEL)__|__NEWLIB__/d' newlib.h && rm -f newlib.h.tmp])
 AH_TOP([/* NB: The contents are filtered before being installed. */
 
 #ifndef __NEWLIB_H__
@@ -410,10 +413,10 @@ EOF
 fi
 AC_SUBST(EXEEXT_FOR_BUILD)
 
-AC_DEFINE(_NEWLIB_VERSION,"NEWLIB_VERSION","The newlib version in string format.")
-AC_DEFINE(__NEWLIB__,NEWLIB_MAJOR_VERSION,"The newlib major version number.")
-AC_DEFINE(__NEWLIB_MINOR__,NEWLIB_MINOR_VERSION,"The newlib minor version number.")
-AC_DEFINE(__NEWLIB_PATCHLEVEL__,NEWLIB_PATCHLEVEL_VERSION,"The newlib patch level.")
+AC_DEFINE(_NEWLIB_VERSION, "NEWLIB_VERSION", [The newlib version in string format.])
+AC_DEFINE(__NEWLIB__, NEWLIB_MAJOR_VERSION, [The newlib major version number.])
+AC_DEFINE(__NEWLIB_MINOR__, NEWLIB_MINOR_VERSION, [The newlib minor version number.])
+AC_DEFINE(__NEWLIB_PATCHLEVEL__, NEWLIB_PATCHLEVEL_VERSION, [The newlib patch level.])
 
 if test "${newlib_elix_level}" -gt "0"; then
   AC_DEFINE_UNQUOTED(_ELIX_LEVEL, ${newlib_elix_level}, [EL/IX level])

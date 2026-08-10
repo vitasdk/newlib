@@ -14,7 +14,10 @@
  */
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdlib.h>
 #include "glue.h"
+
+extern int _write (int, char *, int);
 
 caddr_t
 _sbrk (size_t incr)

@@ -2005,7 +2005,7 @@ symlink_worker (const char *oldpath, path_conv &win32_newpath, bool isdevice)
 	 variable.  Device files are always shortcuts. */
       wsym_type = isdevice ? WSYM_lnk : allow_winsymlinks;
       /* NFS has its own, dedicated way to create symlinks. */
-      if (win32_newpath.fs_is_nfs ())
+      if (win32_newpath.fs_is_nfs () && !isdevice)
 	wsym_type = WSYM_nfs;
       /* MVFS doesn't handle the SYSTEM DOS attribute, but it handles the R/O
 	 attribute. Therefore we create symlinks on MVFS always as shortcuts. */
@@ -3259,7 +3259,7 @@ restart:
 	{
 	  status = conv_hdl.get_finfo (h, fs.is_nfs ());
 	  if (NT_SUCCESS (status))
-	    fileattr = conv_hdl.get_dosattr (fs.is_nfs ());
+	    fileattr = conv_hdl.get_dosattr (h, fs.is_nfs ());
 	}
       if (!NT_SUCCESS (status))
 	{
@@ -3477,6 +3477,16 @@ restart:
 	  else if (contents[0] != ':' || contents[1] != '\\'
 		   || !parse_device (contents))
 	    break;
+	  if (fs.is_nfs () && major == _major (FH_FIFO))
+	    {
+	      conv_hdl.nfsattr ()->type = NF3FIFO;
+	      conv_hdl.nfsattr ()->mode = mode;
+	      conv_hdl.nfsattr ()->size = 0;
+	      /* Marker for fhandler_base::fstat_by_nfs_ea not to override
+		 the cached fattr3 data with fresh data from the filesystem,
+		 even if the handle is used for other purposes than stat. */
+	      conv_hdl.nfsattr ()->filler1 = NF3FIFO;
+	    }
 	}
 
       /* If searching for `foo' and then finding a `foo.lnk' which is
@@ -3513,11 +3523,26 @@ restart:
 	}
 
       /* If the file is on an NFS share and could be opened with extended
-	 attributes, check if it's a symlink.  Only files can be symlinks
-	 (which can be symlinks to directories). */
-      else if (fs.is_nfs () && (conv_hdl.nfsattr ()->type & 7) == NF3LNK)
+	 attributes, check if it's a symlink or FIFO. */
+      else if (fs.is_nfs ())
 	{
-	  res = check_nfs_symlink (h);
+	  /* Make sure filler1 is 0, so we can use it safely as a marker. */
+	  conv_hdl.nfsattr ()->filler1 = 0;
+	  switch (conv_hdl.nfsattr ()->type & 7)
+	    {
+	    case NF3LNK:
+	      res = check_nfs_symlink (h);
+	      break;
+	    case NF3FIFO:
+	      /* Enable real FIFOs recognized as such. */
+	      major = _major (FH_FIFO);
+	      minor = _minor (FH_FIFO);
+	      mode = S_IFIFO | (conv_hdl.nfsattr ()->mode & ~S_IFMT);
+	      isdevice = true;
+	      break;
+	    default:
+	      break;
+	    }
 	  if (res)
 	    break;
 	}
@@ -4511,13 +4536,27 @@ find_fast_cwd_pointer ()
       if (!lock)
 	{
 	  /* Windows 8.1 Preview calls `lea rel(rip),%r12' then some unrelated
-	     or, then `mov %r12,%rcx', then `callq RtlEnterCriticalSection'. */
+	     ops, then `mov %r12,%rcx', then `callq RtlEnterCriticalSection'. */
 	  lock = (const uint8_t *) memmem ((const char *) use_cwd, 80,
 					   "\x4c\x8d\x25", 3);
-	  if (!lock)
-	    return NULL;
 	  call_rtl_offset = 14;
 	}
+
+      if (!lock)
+	{
+	  /* A recent Windows 11 Preview calls `lea rel(rip),%r13' then
+	     some unrelated instructions, then `callq RtlEnterCriticalSection'.
+	     */
+	  lock = (const uint8_t *) memmem ((const char *) use_cwd, 80,
+					   "\x4c\x8d\x2d", 3);
+	  call_rtl_offset = 24;
+	}
+
+      if (!lock)
+	{
+	  return NULL;
+	}
+
       PRTL_CRITICAL_SECTION lockaddr =
         (PRTL_CRITICAL_SECTION) (lock + 7 + peek32 (lock + 3));
       /* Test if lock address is FastPebLock. */
@@ -4829,10 +4868,9 @@ cwdstuff::set (path_conv *nat_cwd, const char *posix_cwd)
 			peb.ProcessParameters->CurrentDirectoryHandle,
 			GetCurrentProcess (), &h, 0, TRUE, 0))
 	    {
-	      release_write ();
 	      if (peb.ProcessParameters->CurrentDirectoryHandle)
 		debug_printf ("...and DuplicateHandle failed with %E.");
-	      dir = NULL;
+	      h = NULL;
 	    }
 	}
     }
@@ -5120,7 +5158,7 @@ dirname (char *path)
     return strcpy (buf, ".");
   if (isalpha (path[0]) && path[1] == ':')
     bs += 2;
-  else if (strspn (path, "/\\") > 1)
+  else if (strspn (path, "/\\") == 2)
     ++bs;
   c = strrchr (bs, '/');
   if ((d = strrchr (c ?: bs, '\\')) > c)

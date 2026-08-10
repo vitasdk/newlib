@@ -262,6 +262,7 @@ void *  _sbrk (ptrdiff_t __incr);
 int     _unlink (const char *__path);
 _READ_WRITE_RETURN_TYPE _write (int __fd, const void *__buf, size_t __nbyte);
 int     _execve (const char *__path, char * const __argv[], char * const __envp[]);
+int     _getentropy (void *, size_t);
 #endif
 
 #if !defined(__INSIDE_CYGWIN__)
@@ -315,6 +316,10 @@ int	unlinkat (int, const char *, int);
 # define	SEEK_SET	0
 # define	SEEK_CUR	1
 # define	SEEK_END	2
+#if __GNU_VISIBLE
+# define	SEEK_DATA	3
+# define	SEEK_HOLE	4
+#endif
 
 #include <sys/features.h>
 

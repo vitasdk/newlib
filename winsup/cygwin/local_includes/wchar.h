@@ -13,6 +13,7 @@ details. */
 
 /* Internal headers from newlib */
 #include "../locale/setlocale.h"
+#include <uchar.h>
 
 #define ENCODING_LEN 31
 
@@ -38,6 +39,127 @@ extern wctomb_f __ascii_wctomb;
 extern wctomb_f __utf8_wctomb;
 
 #define __WCTOMB (__get_current_locale ()->wctomb)
+
+/* convert wint_t string to wchar_t string.  Make sure dest
+   has room for at least twice as much characters to account
+   for surrogate pairs, plus a wchar_t NUL. */
+void wcintowcs (wchar_t *, wint_t *, size_t);
+
+/* replacement function for wcrtomb, converting a UTF-32 char to a
+   multibyte string. */
+static inline size_t
+wirtomb (char *s, wint_t wc, mbstate_t *ps)
+{
+  return c32rtomb (s,(char32_t) wc, ps);
+}
+
+/* replacement function for mbrtowc, returning a wint_t representing
+   a UTF-32 value. */
+static inline size_t
+mbrtowi (wint_t *pwc, const char *s, size_t n, mbstate_t *ps)
+{
+  return mbrtoc32 ((char32_t *) pwc, s, n, ps);
+}
+
+/* replacement function for mbsnrtowcs, returning a wint_t representing
+   a UTF-32 value. Defined in strfuncs.cc.
+   Deviation from standard: If the input is broken, the output will be
+   broken.  I. e., we just copy the current byte over into the wint_t
+   destination and try to pick up on the next byte.  This is in line
+   with the way fnmatch works. */
+extern size_t mbsnrtowci(wint_t *, const char **, size_t, size_t, mbstate_t *);
+
+/* convert wint_t string to char string, but *only* if the string consists
+   entirely of ASCII chars */
+static inline void
+wcitoascii(char *dst, wint_t *src)
+{
+        while ((*dst++ = *src++));
+}
+
+/* like wcslen, just for wint_t */
+static inline size_t
+wcilen (const wint_t *wcs)
+{
+  size_t ret = 0;
+
+  if (wcs)
+    while (*wcs++)
+      ++ret;
+  return ret;
+}
+
+/* like wcschr, just for wint_t */
+static inline wint_t *
+wcichr (const wint_t *str, wint_t chr)
+{
+  do
+    {
+      if (*str == chr)
+	return (wint_t *) str;
+    }
+  while (*str++);
+  return NULL;
+}
+
+/* like wcscmp, just for wint_t */
+static inline int
+wcicmp (const wint_t *s1, const wint_t *s2)
+{
+  while (*s1 == *s2++)
+    if (*s1++ == 0)
+      return (0);
+  return (*s1 - *--s2);
+}
+
+/* like wcsncmp, just for wint_t */
+static inline int
+wcincmp (const wint_t *s1, const wint_t *s2, size_t n)
+{
+  if (n == 0)
+    return (0);
+  do
+    {
+      if (*s1 != *s2++)
+        {
+          return (*s1 - *--s2);
+        }
+      if (*s1++ == 0)
+        break;
+    }
+  while (--n != 0);
+  return (0);
+}
+
+/* like wcpcpy, just for wint_t */
+static inline wint_t *
+wcipcpy (wint_t *s1, const wint_t *s2)
+{
+  while ((*s1++ = *s2++))
+    ;
+  return --s1;
+}
+
+/* like wcpncpy, just for wint_t */
+static inline wint_t *
+wcipncpy (wint_t *dst, const wint_t *src, size_t count)
+{
+  wint_t *ret = NULL;
+
+  while (count > 0)
+    {
+      --count;
+      if ((*dst++ = *src++) == L'\0')
+        {
+          ret = dst - 1;
+          break;
+        }
+    }
+  while (count-- > 0)
+    *dst++ = L'\0';
+
+  return ret ? ret : dst;
+}
 
 #ifdef __cplusplus
 }

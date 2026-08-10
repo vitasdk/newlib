@@ -26,24 +26,26 @@ static struct option longopts[] =
   {"list", optional_argument, NULL, 'l'},
   {"force", no_argument, NULL, 'f'},
   {"signal", required_argument, NULL, 's'},
+  {"table", no_argument, NULL, 'L'},
   {"winpid", no_argument, NULL, 'W'},
   {"version", no_argument, NULL, 'V'},
   {NULL, 0, NULL, 0}
 };
 
-static char opts[] = "hl::fs:WV";
+static char opts[] = "hl::fs:LWV";
 
 static void __attribute__ ((__noreturn__))
 usage (FILE *where = stderr)
 {
   fprintf (where , ""
 	"Usage: %1$s [-fW] [-signal] [-s signal] pid1 [pid2 ...]\n"
-	"       %1$s -l [signal]\n"
+	"       %1$s -l [signal] | -L\n"
 	"\n"
 	"Send signals to processes\n"
 	"\n"
 	" -f, --force     force, using win32 interface if necessary\n"
 	" -l, --list      print a list of signal names\n"
+	" -L, --table     print a formatted table of signal names\n"
 	" -s, --signal    send signal (use %1$s --list for a list)\n"
 	" -W, --winpid    specified pids are windows PIDs, not Cygwin PIDs\n"
 	"                 (use with extreme caution!)\n"
@@ -65,16 +67,55 @@ print_version ()
 	  CYGWIN_VERSION_DLL_MAJOR % 1000,
 	  CYGWIN_VERSION_DLL_MINOR,
 	  strrchr (__DATE__, ' ') + 1);
+  exit (0);
 }
 
 static const char *
 strsigno (int signo)
 {
-  if (signo > 0 && signo < NSIG)
+  static char sigbuf[8];
+
+  if (signo > 0 && signo < SIGRTMIN)
     return sys_sigabbrev[signo];
+  if (signo <= SIGRTMAX)
+    {
+      snprintf (sigbuf, sizeof sigbuf, "SIGRT%d", signo - SIGRTMIN);
+      return sigbuf;
+    }
   static char buf[sizeof ("Unknown signal") + 32];
   sprintf (buf, "Unknown signal %d", signo);
   return buf;
+}
+
+static int
+strtortsig (const char *sig)
+{
+  bool neg = false;
+  char *endp = NULL;
+  int signo;
+
+  sig += 5;
+  if (!strcmp (sig, "MIN"))
+    return SIGRTMIN;
+  if (!strcmp (sig, "MAX"))
+    return SIGRTMAX;
+  if (!strncmp (sig, "MIN+", 4))
+    sig += 4;
+  else if (!strncmp (sig, "MAX-", 4))
+    {
+      sig += 4;
+      neg = true;
+    }
+  signo = strtoul (sig, &endp, 10);
+  if (!endp || *endp)
+    return 0;
+  if (neg)
+    signo = SIGRTMAX - signo;
+  else
+    signo = SIGRTMIN + signo;
+  if (signo < SIGRTMIN || signo > SIGRTMAX)
+    return 0;
+  return signo;
 }
 
 static int
@@ -91,7 +132,10 @@ getsig (const char *in_sig)
       sprintf (buf, "SIG%-.20s", in_sig);
       sig = buf;
     }
-  intsig = strtosigno (sig) ?: atoi (in_sig);
+  if (!strncmp (sig, "SIGRT", 5))
+    intsig = strtortsig (sig);
+  else
+    intsig = strtosigno (sig) ?: atoi (in_sig);
   char *p;
   if (!intsig && (strcmp (sig, "SIG0") != 0 && (strtol (in_sig, &p, 10) != 0 || *p)))
     intsig = -1;
@@ -111,21 +155,91 @@ test_for_unknown_sig (int sig, const char *sigstr)
 }
 
 static void
-listsig (const char *in_sig)
+checksig (const char *in_sig)
 {
-  int sig;
-  if (!in_sig)
-    for (sig = 1; sig < NSIG - 1; sig++)
-      printf ("%s%c", strsigno (sig) + 3, (sig < NSIG - 1) ? ' ' : '\n');
+  int sig = getsig (in_sig);
+  test_for_unknown_sig (sig, in_sig);
+  if (sig && atoi (in_sig) == sig)
+    puts (strsigno (sig) + 3);
   else
+    printf ("%d\n", sig);
+  exit (0);
+}
+
+static void
+listsig ()
+{
+  int chars = 0;
+
+  for (int sig = 1; sig < SIGRTMIN; sig++)
     {
-      sig = getsig (in_sig);
-      test_for_unknown_sig (sig, in_sig);
-      if (sig && atoi (in_sig) == sig)
-	puts (strsigno (sig) + 3);
-      else
-	printf ("%d\n", sig);
+      chars += printf ("%s ", strsigno (sig) + 3);
+      if (chars > 72)
+	{
+	  puts ("");
+	  chars = 0;
+	}
+      switch (sig)
+	{
+	case SIGABRT:
+	  chars += printf ("%s ", "IOT");
+	  break;
+	case SIGCHLD:
+	  chars += printf ("%s ", "CLD");
+	  break;
+	case SIGIO:
+	  chars += printf ("%s ", "POLL");
+	  break;
+	case SIGPWR:
+	  chars += printf ("%s ", "LOST");
+	  break;
+	}
+      if (chars > 70)
+	{
+	  puts ("");
+	  chars = 0;
+	}
     }
+  fputs ("RT<N> RTMIN+<N> RTMAX-<N>\n", stdout);
+  exit (0);
+}
+
+static void
+tablesig ()
+{
+  int chars = 0;
+
+  for (int sig = 1; sig < SIGRTMIN; sig++)
+    {
+      chars += printf ("%2d %-7s ", sig, strsigno (sig) + 3);
+      if (chars > 70)
+	{
+	  puts ("");
+	  chars = 0;
+	}
+      switch (sig)
+	{
+	case SIGABRT:
+	  chars += printf ("%2d %-7s ", sig, "IOT");
+	  break;
+	case SIGCHLD:
+	  chars += printf ("%2d %-7s ", sig, "CLD");
+	  break;
+	case SIGIO:
+	  chars += printf ("%2d %-7s ", sig, "POLL");
+	  break;
+	case SIGPWR:
+	  chars += printf ("%2d %-7s ", sig, "LOST");
+	  break;
+	}
+      if (chars > 70)
+	{
+	  puts ("");
+	  chars = 0;
+	}
+    }
+  fputs ("32 RTMIN   64 RTMAX\n", stdout);
+  exit (0);
 }
 
 static void
@@ -235,7 +349,13 @@ main (int argc, char **argv)
 	    }
 	  if (argv[optind])
 	    usage ();
-	  listsig (optarg);
+	  if (optarg)
+	    checksig (optarg);
+	  else
+	    listsig ();
+	  break;
+	case 'L':
+	  tablesig ();
 	  break;
 	case 'f':
 	  force = 1;

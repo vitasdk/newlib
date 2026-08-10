@@ -84,11 +84,13 @@ FHANDLER_FILES= \
 	fhandler/console.cc \
 	fhandler/cygdrive.cc \
 	fhandler/dev.cc \
+	fhandler/dev_disk.cc \
 	fhandler/dev_fd.cc \
 	fhandler/disk_file.cc \
 	fhandler/dsp.cc \
 	fhandler/fifo.cc \
 	fhandler/floppy.cc \
+	fhandler/mixer.cc \
 	fhandler/mqueue.cc \
 	fhandler/netdrive.cc \
 	fhandler/nodevice.cc \
@@ -430,7 +432,8 @@ uname_version.c: .FORCE
 	$(AM_V_GEN)cd $(srcdir) && \
 	echo "const char *uname_dev_version = \
 	\"$$(git rev-parse --git-dir >/dev/null 2>&1 && \
-	     git describe --dirty | sed -e 's/cygwin-//')\";" \
+	     git describe --abbrev=12 --long --match 'cygwin*' --dirty | \
+	     sed -e 's/cygwin-//')\";" \
 	     > $(abs_builddir)/uname_version-pre.c && \
 	if [ -f $(abs_builddir)/uname_version.c ] && \
 	   cmp $(abs_builddir)/uname_version.c \
@@ -570,6 +573,10 @@ toollib_DATA = \
 libgmon_a_SOURCES = $(GMON_FILES)
 libgmon_a_LIBADD =
 
+# Enable deterministic archives for reproducible builds.
+ARFLAGS = cr$${SOURCE_DATE_EPOCH:+D}
+override RANLIB := $(RANLIB)$${SOURCE_DATE_EPOCH:+ -D}
+
 # cygserver library
 cygserver_blddir = ${target_builddir}/winsup/cygserver
 LIBSERVER = $(cygserver_blddir)/libcygserver.a
@@ -587,12 +594,14 @@ $(LDSCRIPT): $(LDSCRIPT).in
 	$(AM_V_GEN)$(CC) -E - -P < $^ -o $@
 
 # cygwin dll
+# Set PE and export table header timestamps to zero for reproducible builds.
 $(NEW_DLL_NAME): $(LDSCRIPT) libdll.a $(VERSION_OFILES) $(LIBSERVER)\
 		  $(newlib_build)/libm.a $(newlib_build)/libc.a
 	$(AM_V_CXXLD)$(CXX) $(CXXFLAGS) \
 	-mno-use-libstdc-wrappers \
 	-Wl,--gc-sections -nostdlib -Wl,-T$(LDSCRIPT) \
 	-Wl,--dynamicbase -static \
+	$${SOURCE_DATE_EPOCH:+-Wl,--no-insert-timestamp} \
 	-Wl,--heap=0 -Wl,--out-implib,cygdll.a -shared -o $@ \
 	-e @DLL_ENTRY@ $(DEF_FILE) \
 	-Wl,-whole-archive libdll.a -Wl,-no-whole-archive \
@@ -601,8 +610,8 @@ $(NEW_DLL_NAME): $(LDSCRIPT) libdll.a $(VERSION_OFILES) $(LIBSERVER)\
 	$(newlib_build)/libm.a \
 	$(newlib_build)/libc.a \
 	-lgcc -lkernel32 -lntdll -Wl,-Map,cygwin.map
-	@$(MKDIR_P) ${target_builddir}/winsup/testsuite/runtime/
-	$(AM_V_at)$(INSTALL_PROGRAM) $(NEW_DLL_NAME) ${target_builddir}/winsup/testsuite/runtime/$(DLL_NAME)
+	@$(MKDIR_P) ${target_builddir}/winsup/testsuite/testinst/bin/
+	$(AM_V_at)$(INSTALL_PROGRAM) $(NEW_DLL_NAME) ${target_builddir}/winsup/testsuite/testinst/bin/$(DLL_NAME)
 
 # cygwin import library
 toolopts=--cpu=@target_cpu@ --ar=@AR@ --as=@AS@ --nm=@NM@ --objcopy=@OBJCOPY@

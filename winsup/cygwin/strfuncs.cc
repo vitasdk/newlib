@@ -10,6 +10,7 @@ details. */
 #include <stdlib.h>
 #include <sys/param.h>
 #include <wchar.h>
+#include <uchar.h>
 #include <ntdll.h>
 #include "path.h"
 #include "fhandler.h"
@@ -112,6 +113,375 @@ transform_chars_af_unix (PWCHAR out, const char *path, __socklen_t len)
   return out;
 }
 
+/* convert wint_t string to wchar_t string.  Make sure dest
+   has room for at least twice as much characters to account
+   for surrogate pairs, plus a wchar_t NUL. */
+extern "C" void
+wcintowcs (wchar_t *dest, wint_t *src, size_t len)
+{
+  while (*src && len-- > 0)
+    if (*src > 0xffff)
+      {
+	*dest++ = ((*src - 0x10000) >> 10) + 0xd800;
+	*dest++ = ((*src++ - 0x10000) & 0x3ff) + 0xdc00;
+      }
+    else
+	*dest++ = *src++;
+  *dest = '\0';
+}
+
+/* replacement function for wcrtomb, converting a UTF-32 char to a
+   multibyte string. */
+extern "C" size_t
+c32rtomb (char *s, char32_t wc, mbstate_t *ps)
+{
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(_REENT);
+      ps = &(_REENT_C32RTOMB_STATE(_REENT));
+    }
+
+    /* If s is NULL, behave as if s pointed to an internal buffer and wc
+       was a null wide character (L'').  wcrtomb will do that for us*/
+    if (wc <= 0xffff || !s)
+      return wcrtomb (s, (wchar_t) wc, ps);
+
+    wchar_t wc_arr[2];
+    const wchar_t *wcp = wc_arr;
+
+    wc -= 0x10000;
+    wc_arr[0] = (wc >> 10) + 0xd800;
+    wc_arr[1] = (wc & 0x3ff) + 0xdc00;
+    return wcsnrtombs (s, &wcp, 2, SIZE_MAX, ps);
+}
+
+extern "C" size_t
+c16rtomb (char *s, char16_t wc, mbstate_t *ps)
+{
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(_REENT);
+      ps = &(_REENT_C16RTOMB_STATE(_REENT));
+    }
+
+  return wcrtomb (s, (wchar_t) wc, ps);
+}
+
+extern "C" size_t
+c8rtomb (char *s, char8_t c8, mbstate_t *ps)
+{
+  struct _reent *reent = _REENT;
+  char32_t wc;
+
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(reent);
+      ps = &(_REENT_C8RTOMB_STATE(reent));
+    }
+
+  if (s == NULL)
+    {
+      ps->__count = 0;
+      return 1;
+    }
+  if ((ps->__count & 0xff00) != 0xc800)
+    {
+      switch (c8)
+	{
+	case 0 ... 0x7f:	/* single octet */
+	  ps->__count = 0;
+	  wc = c8;
+	  break;
+	case 0xc2 ... 0xf4:	/* valid lead byte */
+	  ps->__count = 0xc801;
+	  ps->__value.__wchb[0] = c8;
+	  return 0;
+	default:
+	  goto ilseq;
+	}
+    }
+  else
+    {
+      /* We already collected something... */
+      int idx = ps->__count & 0x3;
+      char8_t &c1 = ps->__value.__wchb[0];
+      char8_t &c2 = ps->__value.__wchb[1];
+      char8_t &c3 = ps->__value.__wchb[2];
+
+      switch (idx)
+	{
+	  case 1:
+	    /* Annoyingly complex check for validity for 2nd octet. */
+	    if (c8 <= 0x7f || c8 >= 0xc0)
+	      goto ilseq;
+	    if (c1 == 0xe0 && c8 <= 0x9f)
+	      goto ilseq;
+	    if (c1 == 0xed && c8 >= 0xa0)
+	      goto ilseq;
+	    if (c1 == 0xf0 && c8 <= 0x8f)
+	      goto ilseq;
+	    if (c1 == 0xf4 && c8 >= 0x90)
+	      goto ilseq;
+	    if (c1 >= 0xe0)
+	      {
+		ps->__count = 0xc802;
+		c2 = c8;
+		return 0;
+	      }
+	    wc =   ((c1 & 0x1f) << 6)
+		 |  (c8 & 0x3f);
+	    break;
+	  case 2:
+	    if (c8 <= 0x7f || c8 >= 0xc0)
+	      goto ilseq;
+	    if (c1 >= 0xf0)
+	      {
+		ps->__count = 0xc803;
+		c3 = c8;
+		return 0;
+	      }
+	    wc =   ((c1 & 0x0f) << 12)
+		 | ((c2 & 0x3f) <<  6)
+		 |  (c8 & 0x3f);
+	    break;
+	  case 3:
+	    if (c8 <= 0x7f || c8 >= 0xc0)
+	      goto ilseq;
+	    wc =   ((c1 & 0x07) << 18)
+		 | ((c2 & 0x3f) << 12)
+		 | ((c3 & 0x3f) <<  6)
+		 |  (c8 & 0x3f);
+	    break;
+	  default: /* Shouldn't happen */
+	    goto ilseq;
+	}
+    }
+  ps->__count = 0;
+  return c32rtomb (s, wc, ps);
+ilseq:
+  ps->__count = 0;
+  _REENT_ERRNO(reent) = EILSEQ;
+  return (size_t)(-1);
+}
+
+extern "C" size_t
+mbrtoc32 (char32_t *pwc, const char *s, size_t n, mbstate_t *ps)
+{
+  size_t len, len2;
+  wchar_t w1, w2;
+
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(_REENT);
+      ps = &(_REENT_MBRTOC32_STATE(_REENT));
+    }
+
+  len = mbrtowc (&w1, s, n, ps);
+  if (len == (size_t) -1 || len == (size_t) -2)
+    return len;
+  if (pwc && s)
+    *pwc = w1;
+  /* Convert surrogate pair to wint_t value */
+  if (len > 0 && w1 >= 0xd800 && w1 <= 0xdbff)
+    {
+      s += len;
+      n -= len;
+      len2 = mbrtowc (&w2, s, n, ps);
+      if (len2 > 0 && w2 >= 0xdc00 && w2 <= 0xdfff)
+	{
+	  len += len2;
+	  if (pwc && s)
+	    *pwc = (((w1 & 0x3ff) << 10) | (w2 & 0x3ff)) + 0x10000;
+	}
+      else
+	{
+	  len = (size_t) -1;
+	  errno = EILSEQ;
+	}
+    }
+  return len;
+}
+
+/* Like mbrtowc, but we already defined how to return a surrogate, and
+   the definition of mbrtoc16 differes from that.
+   Return the high surrogate with a return value representing the length
+   of the entire multibyte sequence, and in the next call return the low
+   surrogate with a return value of -3. */
+extern "C" size_t
+mbrtoc16 (char16_t *pwc, const char *s, size_t n, mbstate_t *ps)
+{
+  int retval = 0;
+  struct _reent *reent = _REENT;
+  wchar_t wc;
+
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(reent);
+      ps = &(_REENT_MBRTOC16_STATE(reent));
+    }
+
+  if (s == NULL)
+    retval = __MBTOWC (reent, NULL, "", 1, ps);
+  else if (ps->__count == 0xdc00)
+    {
+      /* Return stored second half of the surrogate. */
+      if (pwc)
+	*pwc = ps->__value.__wch;
+      ps->__count = 0;
+      return -3;
+    }
+  else
+    retval = __MBTOWC (reent, &wc, s, n, ps);
+
+  if (retval == -1)
+    goto ilseq;
+
+  if (pwc)
+    *pwc = wc;
+  /* Did we catch the first half of a surrogate? */
+  if (wc >= 0xd800 && wc <= 0xdbff)
+    {
+      if (n <= (size_t) retval)
+	goto ilseq;
+      int r2 = __MBTOWC (reent, &wc, s + retval, n, ps);
+      if (r2 == -1)
+	goto ilseq;
+      /* Store second half of the surrogate in state, and return the
+	 length of the entire multibyte sequence. */
+      ps->__count = 0xdc00;
+      ps->__value.__wch = wc;
+      retval += r2;
+    }
+  return (size_t)retval;
+
+ilseq:
+  ps->__count = 0;
+  _REENT_ERRNO(reent) = EILSEQ;
+  return (size_t)(-1);
+}
+
+extern "C" size_t
+mbrtoc8 (char8_t *pc8, const char *s, size_t n, mbstate_t *ps)
+{
+  struct _reent *reent = _REENT;
+  size_t len;
+  char32_t wc;
+
+  if (ps == NULL)
+    {
+      _REENT_CHECK_MISC(reent);
+      ps = &(_REENT_MBRTOC8_STATE(reent));
+    }
+
+  if (s == NULL)
+    {
+      if (ps)
+	ps->__count = 0;
+      return 1;
+    }
+  else if ((ps->__count & 0xff00) == 0xc800)
+    {
+      /* Return next utf-8 octet in line. */
+      int idx = ps->__count & 0x3;
+
+      if (pc8)
+	*pc8 = ps->__value.__wchb[--idx];
+      if (idx == 0)
+	ps->__count = 0;
+      return -3;
+    }
+  len = mbrtoc32 (&wc, s, n, ps);
+  if (len > 0)
+    {
+      /* octets stored back to front for easier indexing */
+      switch (wc)
+	{
+	case 0 ... 0x7f:
+	  ps->__value.__wchb[0] = wc;
+	  ps->__count = 0;
+	  break;
+	case 0x80 ... 0x7ff:
+	  ps->__value.__wchb[1] = 0xc0 | ((wc & 0x7c0) >> 6);
+	  ps->__value.__wchb[0] = 0x80 |  (wc &  0x3f);
+	  ps->__count = 0xc800 | 1;
+	  break;
+	case 0x800 ... 0xffff:
+	  ps->__value.__wchb[2] = 0xe0 | ((wc & 0xf000) >> 12);
+	  ps->__value.__wchb[1] = 0x80 | ((wc &  0xfc0) >> 6);
+	  ps->__value.__wchb[0] = 0x80 |  (wc &   0x3f);
+	  ps->__count = 0xc800 | 2;
+	  break;
+	case 0x10000 ... 0x10ffff:
+	  ps->__value.__wchb[3] = 0xf0 | ((wc & 0x1c0000) >> 18);
+	  ps->__value.__wchb[2] = 0x80 | ((wc &  0x3f000) >> 12);
+	  ps->__value.__wchb[1] = 0x80 | ((wc &    0xfc0) >> 6);
+	  ps->__value.__wchb[0] = 0x80 |  (wc &     0x3f);
+	  ps->__count = 0xc800 | 3;
+	  break;
+	default:
+	  ps->__count = 0;
+	  _REENT_ERRNO(reent) = EILSEQ;
+	  return (size_t)(-1);
+	}
+      if (pc8)
+	*pc8 = ps->__value.__wchb[ps->__count & 0x3];
+    }
+  return len;
+}
+
+extern "C" size_t
+mbsnrtowci(wint_t *dst, const char **src, size_t nms, size_t len, mbstate_t *ps)
+{
+  wint_t *ptr = dst;
+  const char *tmp_src;
+  size_t max;
+  size_t count = 0;
+  size_t bytes;
+
+  if (dst == NULL)
+    {
+      /* Ignore original len value and do not alter src pointer if the
+         dst pointer is NULL.  */
+      len = (size_t)-1;
+      tmp_src = *src;
+      src = &tmp_src;
+    }
+  max = len;
+  while (len > 0)
+    {
+      bytes = mbrtowi (ptr, *src, MB_CUR_MAX, ps);
+      if (bytes > 0)
+        {
+          *src += bytes;
+          nms -= bytes;
+          ++count;
+          ptr = (dst == NULL) ? NULL : ptr + 1;
+          --len;
+        }
+      else if (bytes == 0)
+        {
+          *src = NULL;
+          return count;
+        }
+      else
+        {
+	  /* Deviation from standard: If the input is broken, the output
+	     will be broken.  I. e., we just copy the current byte over
+	     into the wint_t destination and try to pick up on the next
+	     byte.  This is in line with the way fnmatch works. */
+          ps->__count = 0;
+          if (dst)
+	    {
+	      *ptr++ = (const wint_t) *(*src)++;
+	      ++count;
+	      --nms;
+	      --len;
+	    }
+        }
+    }
+  return (size_t) max;
+}
+
 /* The SJIS, JIS and eucJP conversion in newlib does not use UTF as
    wchar_t character representation.  That's unfortunate for us since
    we require UTF for the OS.  What we do here is to have our own
@@ -124,7 +494,8 @@ transform_chars_af_unix (PWCHAR out, const char *path, __socklen_t len)
    eucJP, the both most used Japanese charset encodings, this shouldn't
    be such a big problem. */
 
-/* GBK, eucKR, and Big5 conversions are not available so far in newlib. */
+/* GBK, GB18030, eucKR, and Big5 conversions are not available so far
+   in newlib. */
 
 static int
 __db_wctomb (struct _reent *r, char *s, wchar_t wchar, UINT cp)
@@ -202,6 +573,60 @@ extern "C" int
 __gbk_wctomb (struct _reent *r, char *s, wchar_t wchar, mbstate_t *state)
 {
   return __db_wctomb (r,s, wchar, 936);
+}
+
+extern "C" int
+__gb18030_wctomb (struct _reent *r, char *s, wchar_t wchar, mbstate_t *state)
+{
+  int ret;
+  wchar_t wres[2];
+
+  if (s == NULL)
+    return 0;
+
+  if (state->__count == 0)
+    {
+      if (wchar <= 0x7f)
+	{
+	  *s = (char) wchar;
+	  return 1;
+	}
+
+      if (wchar >= 0xd800 && wchar <= 0xdbff)
+	{
+	  /* First half of a surrogate pair */
+	  state->__count = 18030;
+	  state->__value.__wch = wchar;
+	  return 0;
+	}
+      ret = WideCharToMultiByte (54936, WC_ERR_INVALID_CHARS, &wchar, 1, s,
+				 4, NULL, NULL);
+      if (ret > 0)
+	return ret;
+      goto ilseq;
+    }
+  else if (state->__count == 18030 && state->__value.__wch >= 0xd800
+	   && state->__value.__wch <= 0xdbff)
+    {
+      if (wchar >= 0xdc00 && wchar <= 0xdfff)
+	{
+	  /* Create multibyte sequence from full surrogate pair. */
+	  wres[0] = state->__value.__wch;
+	  wres[1] = wchar;
+	  ret = WideCharToMultiByte (54936, WC_ERR_INVALID_CHARS, wres, 2, s, 4,
+				     NULL, NULL);
+	  if (ret > 0)
+	    {
+	      state->__count = 0;
+	      return ret;
+	    }
+	}
+ilseq:
+      _REENT_ERRNO(r) = EILSEQ;
+      return -1;
+    }
+  _REENT_ERRNO(r) = EINVAL;
+  return -1;
 }
 
 extern "C" int
@@ -359,6 +784,111 @@ __gbk_mbtowc (struct _reent *r, wchar_t *pwc, const char *s, size_t n,
 	      mbstate_t *state)
 {
   return __db_mbtowc (r, pwc, s, n, 936, state);
+}
+
+extern "C" int
+__gb18030_mbtowc (struct _reent *r, wchar_t *pwc, const char *s, size_t n,
+		  mbstate_t *state)
+{
+  wchar_t wres[2], dummy;
+  unsigned char ch;
+  int ret, len, ocount;
+  size_t ncopy;
+
+  if (state->__count < 0 || (state->__count > (int) sizeof state->__value.__wchb
+			     && state->__count != 18030))
+    {
+      errno = EINVAL;
+      return -1;
+    }
+
+  if (s == NULL)
+    {
+      s = "";
+      n = 1;
+      pwc = NULL;
+    }
+
+  if (state->__count == 18030)
+    {
+      /* Return second half of the surrogate pair */
+      *pwc = state->__value.__wch;
+      state->__count = 0;
+      return 1;
+    }
+
+  ncopy = MIN (MIN (n, MB_CUR_MAX),
+	       sizeof state->__value.__wchb - state->__count);
+  memcpy (state->__value.__wchb + state->__count, s, ncopy);
+  ocount = state->__count;
+  state->__count += ncopy;
+  s = (char *) state->__value.__wchb;
+  n = state->__count;
+
+  if (n == 0) /* Incomplete multibyte sequence */
+    return -2;
+
+  if (!pwc)
+    pwc = &dummy;
+
+  /* Check if input is a valid GB18030 char (per FreeBSD):
+   * Single byte:         [00-7f]
+   * Two byte:            [81-fe][40-7e,80-fe]
+   * Four byte:           [81-fe][30-39][81-fe][30-39]
+   */
+  ch = *(unsigned char *) s;
+  if (ch <= 0x7f)
+    {
+      *pwc = ch;
+      state->__count = 0;
+      return ch ? 1 : 0;
+    }
+  if (ch >= 0x81 && ch <= 0xfe)
+    {
+      if (n < 2)
+	return -2;
+      ch = (unsigned char) s[1];
+      if ((ch >= 0x40 && ch <= 0x7e) || (ch >= 0x80 && ch <= 0xfe))
+	len = 2;
+      else if (ch >= 0x30 && ch <= 0x39)
+	{
+	  if (n < 3)
+	    return -2;
+	  ch = (unsigned char) s[2];
+	  if (ch < 0x81 || ch > 0xfe)
+	    goto ilseq;
+	  if (n < 4)
+	    return -2;
+	  ch = (unsigned char) s[3];
+	  if (ch < 0x30 || ch > 0x39)
+	    goto ilseq;
+	  len = 4;
+	}
+      else
+	goto ilseq;
+    }
+  else
+    goto ilseq;
+  ret = MultiByteToWideChar (54936, MB_ERR_INVALID_CHARS, s, len, wres, 2);
+  if (ret)
+    {
+      *pwc = wres[0];
+      if (ret == 2)
+	{
+	  /* Surrogate pair. Store second half for later and return
+	     first half. Return real count - 1, return 1 when the second
+	     half of the pair is returned in the next run. */
+	  state->__count = 18030;
+	  state->__value.__wch = wres[1];
+	  --len;
+	}
+      else
+	state->__count = 0;
+      return len - ocount;
+    }
+ilseq:
+  _REENT_ERRNO(r) = EILSEQ;
+  return -1;
 }
 
 extern "C" int

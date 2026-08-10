@@ -4,6 +4,7 @@ libc_a_SOURCES += \
 	%D%/impure.c \
 	%D%/fcntlr.c \
 	%D%/fstatr.c \
+	%D%/getentropyr.c \
 	%D%/getreent.c \
 	%D%/gettimeofdayr.c \
 	%D%/isattyr.c \
@@ -14,7 +15,6 @@ libc_a_SOURCES += \
 	%D%/readr.c \
 	%D%/renamer.c \
 	%D%/signalr.c \
-	%D%/signgam.c \
 	%D%/sbrkr.c \
 	%D%/statr.c \
 	%D%/timesr.c \
@@ -47,6 +47,7 @@ LIBC_CHEWOUT_FILES += \
 	%D%/execr.def \
 	%D%/fcntlr.def \
 	%D%/fstatr.def \
+	%D%/getentropyr.def \
 	%D%/gettimeofdayr.def \
 	%D%/linkr.def \
 	%D%/lseekr.def \

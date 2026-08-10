@@ -69,6 +69,7 @@ class fs_info
     ULONG name_len;		/* MaximumComponentNameLength */
     fs_info_type fs_type;	/* Filesystem type */
     unsigned is_remote_drive		: 1;
+    unsigned is_ssd			: 1;
     unsigned has_acls			: 1;
     unsigned hasgood_inode		: 1;
     unsigned caseinsensitive		: 1;
@@ -93,6 +94,7 @@ class fs_info
   IMPLEMENT_STATUS_FLAG (ULONG, samba_version)
   IMPLEMENT_STATUS_FLAG (ULONG, name_len)
   IMPLEMENT_STATUS_FLAG (bool, is_remote_drive)
+  IMPLEMENT_STATUS_FLAG (bool, is_ssd)
   IMPLEMENT_STATUS_FLAG (bool, has_acls)
   IMPLEMENT_STATUS_FLAG (bool, hasgood_inode)
   IMPLEMENT_STATUS_FLAG (bool, caseinsensitive)

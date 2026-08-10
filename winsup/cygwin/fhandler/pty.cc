@@ -85,7 +85,8 @@ inline static bool process_alive (DWORD pid);
      stub_only: return only stub process's pid of non-cygwin process. */
 DWORD
 fhandler_pty_common::get_console_process_id (DWORD pid, bool match,
-					     bool cygwin, bool stub_only)
+					     bool cygwin, bool stub_only,
+					     bool nat)
 {
   tmp_pathbuf tp;
   DWORD *list = (DWORD *) tp.c_get ();
@@ -109,6 +110,8 @@ fhandler_pty_common::get_console_process_id (DWORD pid, bool match,
 	else
 	  {
 	    pinfo p (cygwin_pid (list[i]));
+	    if (nat && !!p && !ISSTATE(p, PID_NOTCYGWIN))
+	      continue;
 	    if (!!p && p->exec_dwProcessId)
 	      {
 		res_pri = stub_only ? p->exec_dwProcessId : list[i];
@@ -436,8 +439,10 @@ static int osi;
 void
 fhandler_pty_master::flush_to_slave ()
 {
+  WaitForSingleObject (input_mutex, mutex_timeout);
   if (get_readahead_valid () && !(get_ttyp ()->ti.c_lflag & ICANON))
     accept_input ();
+  ReleaseMutex (input_mutex);
 }
 
 void
@@ -522,8 +527,6 @@ fhandler_pty_master::accept_input ()
 {
   DWORD bytes_left;
   int ret = 1;
-
-  WaitForSingleObject (input_mutex, mutex_timeout);
 
   char *p = rabuf () + raixget ();
   bytes_left = eat_readahead (-1);
@@ -625,7 +628,6 @@ fhandler_pty_master::accept_input ()
   if (write_to == get_output_handle ())
     SetEvent (input_available_event); /* Set input_available_event only when
 					 the data is written to cyg pipe. */
-  ReleaseMutex (input_mutex);
   return ret;
 }
 
@@ -765,10 +767,11 @@ out:
 
 /* pty slave stuff */
 
-fhandler_pty_slave::fhandler_pty_slave (int unit)
+fhandler_pty_slave::fhandler_pty_slave (int unit, dev_t via)
   : fhandler_pty_common (), inuse (NULL), output_handle_nat (NULL),
   io_handle_nat (NULL), slave_reading (NULL), num_reader (0)
 {
+  dev_referred_via = via;
   if (unit >= 0)
     dev ().parse (DEV_PTYS_MAJOR, unit);
 }
@@ -1297,17 +1300,7 @@ fhandler_pty_slave::mask_switch_to_nat_pipe (bool mask, bool xfer)
   else if (InterlockedDecrement (&num_reader) == 0)
     CloseHandle (slave_reading);
 
-  /* This is needed when cygwin-app is started from non-cygwin app if
-     pseudo console is disabled. */
-  bool need_xfer = get_ttyp ()->nat_fg (get_ttyp ()->getpgid ())
-    && get_ttyp ()->switch_to_nat_pipe && !get_ttyp ()->pcon_activated;
-
-  /* In GDB, transfer input based on setpgid() does not work because
-     GDB may not set terminal process group properly. Therefore,
-     transfer input here if isHybrid is set. */
-  bool need_gdb_xfer =
-    isHybrid && GetStdHandle (STD_INPUT_HANDLE) == get_handle ();
-  if (!!masked != mask && xfer && (need_gdb_xfer || need_xfer))
+  if (!!masked != mask && xfer && get_ttyp ()->switch_to_nat_pipe)
     {
       if (mask && get_ttyp ()->pty_input_state_eq (tty::to_nat))
 	{
@@ -1609,12 +1602,12 @@ fhandler_pty_slave::dup (fhandler_base *child, int flags)
   /* This code was added in Oct 2001 for some undisclosed reason.
      However, setting the controlling tty on a dup causes rxvt to
      hang when the parent does a dup since the controlling pgid changes.
-     Specifically testing for -2 (ctty has been setsid'ed) works around
-     this problem.  However, it's difficult to see scenarios in which you
-     have a dup'able fd, no controlling tty, and not having run setsid.
-     So, we might want to consider getting rid of the set_ctty in tty-like dup
-     methods entirely at some point */
-  if (myself->ctty != -2)
+     Specifically testing for CTTY_RELEASED (ctty has been setsid'ed)
+     works around this problem.  However, it's difficult to see scenarios
+     in which you have a dup'able fd, no controlling tty, and not having
+     run setsid.  So, we might want to consider getting rid of the
+     set_ctty in tty-like dup methods entirely at some point */
+  if (myself->ctty != CTTY_RELEASED)
     myself->set_ctty (this, flags);
   report_tty_counts (child, "duped slave", "");
   return 0;
@@ -1779,7 +1772,7 @@ out:
 int
 fhandler_pty_slave::fstat (struct stat *st)
 {
-  fhandler_base::fstat (st);
+  fhandler_termios::fstat (st);
 
   bool to_close = false;
   if (!input_available_event)
@@ -1793,7 +1786,7 @@ fhandler_pty_slave::fstat (struct stat *st)
   st->st_mode = S_IFCHR;
   if (!input_available_event
       || get_object_attribute (input_available_event, &st->st_uid, &st->st_gid,
-			       &st->st_mode))
+			       st->st_mode))
     {
       /* If we can't access the ACL, or if the tty doesn't actually exist,
 	 then fake uid and gid to strict, system-like values. */
@@ -1839,7 +1832,7 @@ fhandler_pty_slave::facl (int cmd, int nentries, aclent_t *aclbufp)
 	if (!input_available_event
 	    || get_object_sd (input_available_event, sd))
 	  {
-	    res = get_posix_access (NULL, &attr, NULL, NULL, aclbufp, nentries);
+	    res = get_posix_access (NULL, attr, NULL, NULL, aclbufp, nentries);
 	    if (aclbufp && res == MIN_ACL_ENTRIES)
 	      {
 		aclbufp[0].a_perm = S_IROTH | S_IWOTH;
@@ -1849,9 +1842,9 @@ fhandler_pty_slave::facl (int cmd, int nentries, aclent_t *aclbufp)
 	    break;
 	  }
 	if (cmd == GETACL)
-	  res = get_posix_access (sd, &attr, NULL, NULL, aclbufp, nentries);
+	  res = get_posix_access (sd, attr, NULL, NULL, aclbufp, nentries);
 	else
-	  res = get_posix_access (sd, &attr, NULL, NULL, NULL, 0);
+	  res = get_posix_access (sd, attr, NULL, NULL, NULL, 0);
 	break;
       default:
 	set_errno (EINVAL);
@@ -1935,7 +1928,7 @@ fhandler_pty_slave::fchmod (mode_t mode)
     }
   sd.malloc (sizeof (SECURITY_DESCRIPTOR));
   RtlCreateSecurityDescriptor (sd, SECURITY_DESCRIPTOR_REVISION);
-  if (!get_object_attribute (input_available_event, &uid, &gid, &orig_mode)
+  if (!get_object_attribute (input_available_event, &uid, &gid, orig_mode)
       && !create_object_sd_from_attribute (uid, gid, S_IFCHR | mode, sd))
     ret = fch_set_sd (sd, false);
 errout:
@@ -1964,7 +1957,7 @@ fhandler_pty_slave::fchown (uid_t uid, gid_t gid)
     }
   sd.malloc (sizeof (SECURITY_DESCRIPTOR));
   RtlCreateSecurityDescriptor (sd, SECURITY_DESCRIPTOR_REVISION);
-  if (!get_object_attribute (input_available_event, &o_uid, &o_gid, &mode))
+  if (!get_object_attribute (input_available_event, &o_uid, &o_gid, mode))
     {
       if (uid == ILLEGAL_UID)
 	uid = o_uid;
@@ -1984,13 +1977,14 @@ errout:
 /*******************************************************
  fhandler_pty_master
 */
-fhandler_pty_master::fhandler_pty_master (int unit)
+fhandler_pty_master::fhandler_pty_master (int unit, dev_t via)
   : fhandler_pty_common (), pktmode (0), master_ctl (NULL),
     master_thread (NULL), from_master_nat (NULL), to_master_nat (NULL),
     from_slave_nat (NULL), to_slave_nat (NULL), echo_r (NULL), echo_w (NULL),
     dwProcessId (0), to_master (NULL), from_master (NULL),
     master_fwd_thread (NULL)
 {
+  dev_referred_via = via;
   if (unit >= 0)
     dev ().parse (DEV_PTYM_MAJOR, unit);
   set_name ("/dev/ptmx");
@@ -2238,18 +2232,14 @@ fhandler_pty_master::write (const void *ptr, size_t len)
       if (!get_ttyp ()->pcon_start)
 	{ /* Pseudo console initialization has been done in above code. */
 	  pinfo pp (get_ttyp ()->pcon_start_pid);
-	  bool pcon_fg = (pp && get_ttyp ()->getpgid () == pp->pgid);
-	  /* GDB may set WINPID rather than cygwin PID to process group
-	     when the debugged process is a non-cygwin process.*/
-	  pcon_fg |= !pinfo (get_ttyp ()->getpgid ());
-	  if (get_ttyp ()->switch_to_nat_pipe && pcon_fg
+	  if (get_ttyp ()->switch_to_nat_pipe
 	      && get_ttyp ()->pty_input_state_eq (tty::to_cyg))
 	    {
 	      /* This accept_input() call is needed in order to transfer input
 		 which is not accepted yet to non-cygwin pipe. */
+	      WaitForSingleObject (input_mutex, mutex_timeout);
 	      if (get_readahead_valid ())
 		accept_input ();
-	      WaitForSingleObject (input_mutex, mutex_timeout);
 	      acquire_attach_mutex (mutex_timeout);
 	      fhandler_pty_slave::transfer_input (tty::to_nat, from_master,
 						  get_ttyp (),
@@ -2317,9 +2307,10 @@ fhandler_pty_master::write (const void *ptr, size_t len)
 					  get_ttyp (), input_available_event);
       release_attach_mutex ();
     }
-  ReleaseMutex (input_mutex);
 
   line_edit_status status = line_edit (p, len, ti, &ret);
+  ReleaseMutex (input_mutex);
+
   if (status > line_edit_signalled && status != line_edit_pipe_full)
     ret = -1;
   return ret;
@@ -3222,6 +3213,11 @@ fhandler_pty_slave::setup_pseudoconsole ()
       return false;
     }
 
+  /* Set switch_to_nat_pipe regardless whether stdin is the pty or not
+     so that the non-cygwin app can work when it opens CONIN$. */
+  bool switch_to_nat_pipe_orig = get_ttyp ()->switch_to_nat_pipe;
+  get_ttyp ()->switch_to_nat_pipe = true;
+
   HANDLE hpConIn, hpConOut;
   if (get_ttyp ()->pcon_activated)
     { /* The pseudo console is already activated. */
@@ -3499,6 +3495,7 @@ cleanup_pseudo_console:
       CloseHandle (tmp);
     }
 fallback:
+  get_ttyp ()->switch_to_nat_pipe = switch_to_nat_pipe_orig;
   return false;
 }
 
@@ -3517,9 +3514,11 @@ fhandler_pty_slave::get_winpid_to_hand_over (tty *ttyp,
     {
       /* Search another native process which attaches to the same console */
       DWORD current_pid = myself->exec_dwProcessId ?: myself->dwProcessId;
-      switch_to = get_console_process_id (current_pid, false, true, true);
+      switch_to = get_console_process_id (current_pid,
+					  false, true, true, true);
       if (!switch_to)
-	switch_to = get_console_process_id (current_pid, false, true, false);
+	switch_to = get_console_process_id (current_pid,
+					    false, true, false, true);
     }
   return switch_to;
 }
@@ -3841,7 +3840,9 @@ fhandler_pty_slave::transfer_input (tty::xfer_dir dir, HANDLE from, tty *ttyp,
     to = ttyp->to_slave ();
 
   pinfo p (ttyp->master_pid);
-  HANDLE pty_owner = OpenProcess (PROCESS_DUP_HANDLE, FALSE, p->dwProcessId);
+  HANDLE pty_owner = NULL;
+  if (p)
+    pty_owner = OpenProcess (PROCESS_DUP_HANDLE, FALSE, p->dwProcessId);
   if (pty_owner)
     {
       DuplicateHandle (pty_owner, to, GetCurrentProcess (), &to,
@@ -4083,7 +4084,14 @@ fhandler_pty_slave::cleanup_for_non_cygwin_app (handle_set_t *p, tty *ttyp,
 						DWORD force_switch_to)
 {
   ttyp->wait_fwd ();
-  if (ttyp->getpgid () == myself->pgid && stdin_is_ptys
+  DWORD current_pid = myself->exec_dwProcessId ?: myself->dwProcessId;
+  DWORD switch_to = force_switch_to;
+  WaitForSingleObject (p->pipe_sw_mutex, INFINITE);
+  if (!switch_to)
+    switch_to = get_console_process_id (current_pid, false, true, true);
+  if (!switch_to)
+    switch_to = get_console_process_id (current_pid, false, true, false);
+  if ((!switch_to && (ttyp->pcon_activated || stdin_is_ptys))
       && ttyp->pty_input_state_eq (tty::to_nat))
     {
       WaitForSingleObject (p->input_mutex, mutex_timeout);
@@ -4093,7 +4101,6 @@ fhandler_pty_slave::cleanup_for_non_cygwin_app (handle_set_t *p, tty *ttyp,
       release_attach_mutex ();
       ReleaseMutex (p->input_mutex);
     }
-  WaitForSingleObject (p->pipe_sw_mutex, INFINITE);
   if (ttyp->pcon_activated)
     close_pseudoconsole (ttyp, force_switch_to);
   else

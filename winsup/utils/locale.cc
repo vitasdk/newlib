@@ -30,6 +30,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <wchar.h>
+#include <wctype.h>
 #include <locale.h>
 #include <langinfo.h>
 #include <limits.h>
@@ -107,17 +108,42 @@ struct option longopts[] = {
 const char *opts = "acfhikmnsuUvV";
 
 int
-getlocale (LCID lcid, char *name)
+getlocale (PWCHAR loc_name, wchar_t *iso639, wchar_t *iso3166,
+	   wchar_t *iso15924 = NULL)
 {
-  char iso639[10];
-  char iso3166[10];
+  wchar_t *cp;
 
-  iso3166[0] = '\0';
-  if (!GetLocaleInfo (lcid, LOCALE_SISO639LANGNAME, iso639, 10))
+  /* Skip language-only locales, e. g. "en" */
+  if (!(cp = wcschr (loc_name, L'-')))
     return 0;
-  GetLocaleInfo (lcid, LOCALE_SISO3166CTRYNAME, iso3166, 10);
-  sprintf (name, "%s%s%s", iso639, lcid > 0x3ff ? "_" : "",
-			   lcid > 0x3ff ? iso3166 : "");
+  ++cp;
+  /* Script inside?  Scripts are Upper/Lower, e. g. "Latn" */
+  if (iswupper (cp[0]) && iswlower (cp[1]))
+    {
+      wchar_t *cp2;
+
+      /* Skip language-Script locales, missing country  */
+      if (!(cp2 = wcschr (cp + 2, L'-')))
+	return 0;
+      /* Otherwise, store in iso15924 */
+      if (iso15924)
+	wcpcpy (wcpncpy (iso15924, cp, cp2 - cp), L";");
+    }
+  cp = wcsrchr (loc_name, L'-');
+  if (cp)
+    {
+      /* Skip numeric iso3166 country name. */
+      if (iswdigit (cp[1]))
+	return 0;
+      /* Special case postfix after iso3166 country name: ca-ES-valencia.
+	 Use the postfix thingy as script so it will become a @modifier */
+      if (iswlower (cp[1]))
+	wcpcpy (iso15924, cp + 1);
+    }
+
+  if (!GetLocaleInfoEx (loc_name, LOCALE_SISO639LANGNAME, iso639, 10))
+    return 0;
+  GetLocaleInfoEx (loc_name, LOCALE_SISO3166CTRYNAME, iso3166, 10);
   return 1;
 }
 
@@ -133,66 +159,46 @@ size_t loc_max;
 size_t loc_num;
 
 void
-print_codeset (const char *codeset)
+print_locale (int verbose, loc_t *locale)
 {
-  for (; *codeset; ++codeset)
-    if (*codeset != '-')
-      putc (tolower ((int)(unsigned char) *codeset), stdout);
-}
-
-void
-print_locale_with_codeset (int verbose, loc_t *locale, bool utf8,
-			   const char *modifier)
-{
-  static const char *sysroot;
-  char locname[32];
+  static const char *kernel32;
+  static const char *cygwin1;
 
   if (verbose
       && (!strcmp (locale->name, "C") || !strcmp (locale->name, "POSIX")))
     return;
-  if (!sysroot)
+  if (!kernel32)
     {
-      WCHAR sysbuf[PATH_MAX];
-      HMODULE k32 = GetModuleHandleW (L"kernel32.dll");
-      if (GetModuleFileNameW (k32, sysbuf, PATH_MAX))
-	sysroot = (const char *) cygwin_create_path (CCP_WIN_W_TO_POSIX,
-						     sysbuf);
-      if (!sysroot)
-      	sysroot = "kernel32.dll";
+      WCHAR dllpathbuf[PATH_MAX];
+      HMODULE dll;
+
+      dll = GetModuleHandleW (L"kernel32.dll");
+      if (GetModuleFileNameW (dll, dllpathbuf, PATH_MAX))
+	kernel32 = (const char *) cygwin_create_path (CCP_WIN_W_TO_POSIX,
+						      dllpathbuf);
+      if (!kernel32)
+	kernel32 = "kernel32.dll";
+      dll = GetModuleHandleW (L"cygwin1.dll");
+      if (GetModuleFileNameW (dll, dllpathbuf, PATH_MAX))
+	cygwin1 = (const char *) cygwin_create_path (CCP_WIN_W_TO_POSIX,
+						     dllpathbuf);
+      if (!cygwin1)
+	cygwin1 = "cygwin1.dll";
     }
-  snprintf (locname, 32, "%s%s%s%s", locale->name, utf8 ? ".utf8" : "",
-				     modifier ? "@" : "", modifier ?: "");
-  if (verbose)
-    fputs ("locale: ", stdout);
   if (verbose)
     {
-      printf ("%-15s ", locname);
+      printf ("locale: %-15s ", locale->name);
       printf ("archive: %s\n",
-      locale->alias ? LOCALE_ALIAS : sysroot);
+	      locale->alias ? LOCALE_ALIAS
+			    : !strcmp (locale->name, "C.utf8") ? cygwin1
+							       : kernel32);
       puts ("-------------------------------------------------------------------------------");
       printf (" language | %ls\n", locale->language);
       printf ("territory | %ls\n", locale->territory);
-      printf ("  codeset | %s\n\n", utf8 ? "UTF-8" : locale->codeset);
+      printf ("  codeset | %s\n\n", locale->codeset);
     }
   else
-    printf ("%s\n", locname);
-}
-
-void
-print_locale (int verbose, loc_t *locale)
-{
-  print_locale_with_codeset (verbose, locale, false, NULL);
-  char *modifier = strchr (locale->name, '@');
-  if (!locale->alias)
-    {
-      if (!modifier)
-	print_locale_with_codeset (verbose, locale, true, NULL);
-      else if (!strcmp (modifier, "@cjknarrow"))
-	{
-	  *modifier++ = '\0';
-	  print_locale_with_codeset (verbose, locale, true, modifier);
-	}
-    }
+    printf ("%s\n", locale->name);
 }
 
 int
@@ -203,17 +209,17 @@ compare_locales (const void *a, const void *b)
   return strcmp (la->name, lb->name);
 }
 
-void
-add_locale (const char *name, const wchar_t *language, const wchar_t *territory,
+size_t
+add_locale (const char *name, const char *codeset, const wchar_t *language, const wchar_t *territory,
 	    bool alias = false)
 {
-  char orig_locale[32];
+  locale_t loc;
 
   if (loc_num >= loc_max)
     {
       loc_t *tmp = (loc_t *) realloc (locale, (loc_max + 32) * sizeof (loc_t));
       if (!tmp)
-      	{
+	{
 	  fprintf (stderr, "Out of memory!\n");
 	  exit (1);
 	}
@@ -223,12 +229,11 @@ add_locale (const char *name, const wchar_t *language, const wchar_t *territory,
   locale[loc_num].name = strdup (name);
   locale[loc_num].language = wcsdup (language);
   locale[loc_num].territory = wcsdup (territory);
-  strcpy (orig_locale, setlocale (LC_CTYPE, NULL));
-  setlocale (LC_CTYPE, name);
-  locale[loc_num].codeset = strdup (nl_langinfo (CODESET));
-  setlocale (LC_CTYPE, orig_locale);
+  loc = newlocale (LC_CTYPE_MASK, name, (locale_t) 0);
+  locale[loc_num].codeset = strdup (nl_langinfo_l (CODESET, loc));
+  freelocale (loc);
   locale[loc_num].alias = alias;
-  ++loc_num;
+  return loc_num++;
 }
 
 void
@@ -239,6 +244,7 @@ add_locale_alias_locales ()
   char orig_locale[32];
   loc_t search, *loc;
   size_t orig_loc_num = loc_num;
+  locale_t sysloc;
 
   FILE *fp = fopen (LOCALE_ALIAS, "rt");
   if (!fp)
@@ -266,11 +272,18 @@ add_locale_alias_locales ()
       c = strchr (replace, '.');
       if (c)
 	*c = '\0';
+      /* Ignore "ja_JP" and "ko_KR" locales from here, they are in the Windows
+	 DB anyway. */
+      if (!strcmp (alias, "ja_JP") || !strcmp (alias, "ko_KR"))
+	continue;
       search.name = replace;
       loc = (loc_t *) bsearch (&search, locale, orig_loc_num, sizeof (loc_t),
 			       compare_locales);
-      add_locale (alias, loc ? loc->language : L"", loc ? loc->territory : L"",
-		  true);
+
+      sysloc = newlocale (LC_CTYPE_MASK, alias, (locale_t) 0);
+      add_locale (alias, nl_langinfo_l (CODESET, sysloc),
+		  loc ? loc->language : L"", loc ? loc->territory : L"", true);
+      freelocale (sysloc);
     }
   fclose (fp);
 }
@@ -278,98 +291,55 @@ add_locale_alias_locales ()
 void
 print_all_locales (int verbose)
 {
-  LCID lcid = 0;
-  char name[32];
-  DWORD cp;
+  FILE *fp = fopen ("/proc/locales", "r");
+  char line[80];
 
-  unsigned lang, sublang;
-
-  add_locale ("C", L"C", L"POSIX");
-  add_locale ("POSIX", L"C", L"POSIX", true);
-  for (lang = 1; lang <= 0xff; ++lang)
+  if (!fp)
     {
-      struct {
-	wchar_t language[256];
-	wchar_t country[256];
-	char loc[32];
-      } loc_list[32];
-      int lcnt = 0;
+      fprintf (stderr, "%s: can't open /proc/locales, old Cygwin DLL?\n",
+	       program_invocation_short_name);
+      return;
+    }
+  /* Skip header line */
+  fgets (line, 80, fp);
+  while (fgets (line, 80, fp))
+    {
+      char *posix_loc;
+      char *codeset;
+      char *win_loc;
+      char *nl;
+      wchar_t win_locale[32];
+      wchar_t language[64] = { 0 };
+      wchar_t country[64] = { 0 };
 
-      for (sublang = 1; sublang <= 0x3f; ++sublang)
+      nl = strchr (line, '\n');
+      if (nl)
+	*nl = '\0';
+      posix_loc = line;
+      codeset = strchr (posix_loc, '\t');
+      if (!codeset)
+	continue;
+      *codeset = '\0';
+      while (*++codeset == '\t')
+	;
+      win_loc = strchr (codeset, '\t');
+      if (win_loc)
 	{
-	  lcid = (sublang << 10) | lang;
-	  if (getlocale (lcid, name))
+	  *win_loc = '\0';
+	  while (*++win_loc == '\t')
+	    ;
+	  if (win_loc[0])
 	    {
-	      wchar_t language[256];
-	      wchar_t country[256];
-	      int i;
-	      char *c, loc[32];
-	      wchar_t wbuf[9];
-
-	      /* Go figure.  Even the English name of a language or
-		 locale might contain native characters. */
-	      GetLocaleInfoW (lcid, LOCALE_SENGLANGUAGE, language, 256);
-	      GetLocaleInfoW (lcid, LOCALE_SENGCOUNTRY, country, 256);
-	      /* Avoid dups */
-	      for (i = 0; i < lcnt; ++ i)
-		if (!wcscmp (loc_list[i].language, language)
-		    && !wcscmp (loc_list[i].country, country))
-		  break;
-	      if (i < lcnt)
-		continue;
-	      if (lcnt < 32)
-		{
-		  wcscpy (loc_list[lcnt].language, language);
-		  wcscpy (loc_list[lcnt].country, country);
-		}
-	      c = stpcpy (loc, name);
-	      /* Now check certain conditions to figure out if that
-		 locale requires a modifier. */
-	      if (lang == LANG_SERBIAN && !strncmp (loc, "sr_", 3)
-		  && wcsstr (language, L"(Latin)"))
-		stpcpy (c, "@latin");
-	      else if (lang == LANG_UZBEK
-		       && sublang == SUBLANG_UZBEK_CYRILLIC)
-		stpcpy (c, "@cyrillic");
-	      /* Avoid more dups */
-	      for (i = 0; i < lcnt; ++ i)
-		if (!strcmp (loc_list[i].loc, loc))
-		  {
-		    lcnt++;
-		    break;
-		  }
-	      if (i < lcnt)
-		continue;
-	      if (lcnt < 32)
-		strcpy (loc_list[lcnt++].loc, loc);
-	      /* Print */
-	      add_locale (loc, language, country);
-	      /* Check for locales which sport a modifier for
-		 changing the codeset and other stuff. */
-	      if (lang == LANG_BELARUSIAN
-		  && sublang == SUBLANG_BELARUSIAN_BELARUS)
-		stpcpy (c, "@latin");
-	      else if (lang == LANG_TATAR
-		       && sublang == SUBLANG_TATAR_RUSSIA)
-		stpcpy (c, "@iqtelif");
-	      else if (GetLocaleInfoW (lcid,
-				       LOCALE_IDEFAULTANSICODEPAGE
-				       | LOCALE_RETURN_NUMBER,
-				       (PWCHAR) &cp, sizeof cp)
-		       && cp == 1252 /* Latin1*/
-		       && GetLocaleInfoW (lcid, LOCALE_SINTLSYMBOL, wbuf, 9)
-		       && !wcsncmp (wbuf, L"EUR", 3))
-		stpcpy (c, "@euro");
-	      else if (lang == LANG_JAPANESE
-		       || lang == LANG_KOREAN
-		       || lang == LANG_CHINESE)
-		stpcpy (c, "@cjknarrow");
-	      else
-		continue;
-	      add_locale (loc, language, country);
+	      mbstowcs (win_locale, win_loc, 32);
+	      GetLocaleInfoEx (win_locale, LOCALE_SENGLISHLANGUAGENAME,
+			       language, 64);
+	      GetLocaleInfoEx (win_locale, LOCALE_SENGLISHCOUNTRYNAME,
+			       country, 64);
 	    }
 	}
+      add_locale (posix_loc, codeset, language, country);
     }
+  fclose (fp);
   /* First sort allows add_locale_alias_locales to bsearch in locales. */
   qsort (locale, loc_num, sizeof (loc_t), compare_locales);
   add_locale_alias_locales ();
@@ -381,66 +351,18 @@ print_all_locales (int verbose)
 void
 print_charmaps ()
 {
-  /* FIXME: We need a method to fetch the available charsets from Cygwin, */
-  const char *charmaps[] =
-  {
-    "ASCII",
-    "BIG5",
-    "CP1125",
-    "CP1250",
-    "CP1251",
-    "CP1252",
-    "CP1253",
-    "CP1254",
-    "CP1255",
-    "CP1256",
-    "CP1257",
-    "CP1258",
-    "CP437",
-    "CP720",
-    "CP737",
-    "CP775",
-    "CP850",
-    "CP852",
-    "CP855",
-    "CP857",
-    "CP858",
-    "CP862",
-    "CP866",
-    "CP874",
-    "CP932",
-    "EUC-CN",
-    "EUC-JP",
-    "EUC-KR",
-    "GB2312",
-    "GBK",
-    "GEORGIAN-PS",
-    "ISO-8859-1",
-    "ISO-8859-10",
-    "ISO-8859-11",
-    "ISO-8859-13",
-    "ISO-8859-14",
-    "ISO-8859-15",
-    "ISO-8859-16",
-    "ISO-8859-2",
-    "ISO-8859-3",
-    "ISO-8859-4",
-    "ISO-8859-5",
-    "ISO-8859-6",
-    "ISO-8859-7",
-    "ISO-8859-8",
-    "ISO-8859-9",
-    "KOI8-R",
-    "KOI8-U",
-    "PT154",
-    "SJIS",
-    "TIS-620",
-    "UTF-8",
-    NULL
-  };
-  const char **charmap = charmaps;
-  while (*charmap)
-    printf ("%s\n", *charmap++);
+  FILE *fp = fopen ("/proc/codesets", "r");
+  char line[80];
+
+  if (!fp)
+    {
+      fprintf (stderr, "%s: can't open /proc/codesets, old Cygwin DLL?\n",
+	       program_invocation_short_name);
+      return;
+    }
+  while (fgets (line, 80, fp))
+    fputs (line, stdout);
+  fclose (fp);
 }
 
 void
@@ -544,42 +466,42 @@ const char *fake_string[] = {
 
 lc_names_t lc_ctype_names[] =
 {
-  { "ctype-class-names", 	 is_string_fake, 0,			 0 },
-  { "ctype-map-names",   	 is_string_fake, 2,			 0 },
-  { "ctype-outdigit0_mb",	 is_string,	_NL_CTYPE_OUTDIGITS0_MB, 0 },
-  { "ctype-outdigit1_mb",	 is_string,	_NL_CTYPE_OUTDIGITS1_MB, 0 },
-  { "ctype-outdigit2_mb",	 is_string,	_NL_CTYPE_OUTDIGITS2_MB, 0 },
-  { "ctype-outdigit3_mb",	 is_string,	_NL_CTYPE_OUTDIGITS3_MB, 0 },
-  { "ctype-outdigit4_mb",	 is_string,	_NL_CTYPE_OUTDIGITS4_MB, 0 },
-  { "ctype-outdigit5_mb",	 is_string,	_NL_CTYPE_OUTDIGITS5_MB, 0 },
-  { "ctype-outdigit6_mb",	 is_string,	_NL_CTYPE_OUTDIGITS6_MB, 0 },
-  { "ctype-outdigit7_mb",	 is_string,	_NL_CTYPE_OUTDIGITS7_MB, 0 },
-  { "ctype-outdigit8_mb",	 is_string,	_NL_CTYPE_OUTDIGITS8_MB, 0 },
-  { "ctype-outdigit9_mb",	 is_string,	_NL_CTYPE_OUTDIGITS9_MB, 0 },
-  { "ctype-outdigit0_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS0_WC, 0 },
-  { "ctype-outdigit1_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS1_WC, 0 },
-  { "ctype-outdigit2_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS2_WC, 0 },
-  { "ctype-outdigit3_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS3_WC, 0 },
-  { "ctype-outdigit4_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS4_WC, 0 },
-  { "ctype-outdigit5_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS5_WC, 0 },
-  { "ctype-outdigit6_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS6_WC, 0 },
-  { "ctype-outdigit7_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS7_WC, 0 },
-  { "ctype-outdigit8_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS8_WC, 0 },
-  { "ctype-outdigit9_wc",	 is_wchar, 	_NL_CTYPE_OUTDIGITS9_WC, 0 },
+  { "ctype-class-names",	 is_string_fake, 0,			 0 },
+  { "ctype-map-names",		 is_string_fake, 2,			 0 },
+  { "ctype-outdigit0_mb",	 is_string,	_NL_CTYPE_OUTDIGIT0_MB,  0 },
+  { "ctype-outdigit1_mb",	 is_string,	_NL_CTYPE_OUTDIGIT1_MB,  0 },
+  { "ctype-outdigit2_mb",	 is_string,	_NL_CTYPE_OUTDIGIT2_MB,  0 },
+  { "ctype-outdigit3_mb",	 is_string,	_NL_CTYPE_OUTDIGIT3_MB,  0 },
+  { "ctype-outdigit4_mb",	 is_string,	_NL_CTYPE_OUTDIGIT4_MB,  0 },
+  { "ctype-outdigit5_mb",	 is_string,	_NL_CTYPE_OUTDIGIT5_MB,  0 },
+  { "ctype-outdigit6_mb",	 is_string,	_NL_CTYPE_OUTDIGIT6_MB,  0 },
+  { "ctype-outdigit7_mb",	 is_string,	_NL_CTYPE_OUTDIGIT7_MB,  0 },
+  { "ctype-outdigit8_mb",	 is_string,	_NL_CTYPE_OUTDIGIT8_MB,  0 },
+  { "ctype-outdigit9_mb",	 is_string,	_NL_CTYPE_OUTDIGIT9_MB,  0 },
+  { "ctype-outdigit0_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT0_WC,  0 },
+  { "ctype-outdigit1_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT1_WC,  0 },
+  { "ctype-outdigit2_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT2_WC,  0 },
+  { "ctype-outdigit3_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT3_WC,  0 },
+  { "ctype-outdigit4_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT4_WC,  0 },
+  { "ctype-outdigit5_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT5_WC,  0 },
+  { "ctype-outdigit6_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT6_WC,  0 },
+  { "ctype-outdigit7_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT7_WC,  0 },
+  { "ctype-outdigit8_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT8_WC,  0 },
+  { "ctype-outdigit9_wc",	 is_wchar,	_NL_CTYPE_OUTDIGIT9_WC,  0 },
   { "charmap",			 is_string,	CODESET,		 0 },
   { "ctype-mb-cur-max",		 is_int,	_NL_CTYPE_MB_CUR_MAX,	 0 },
-  { NULL, 			 is_end,	0,		 	 0 }
+  { NULL,			 is_end,	0,			 0 }
 };
 
 lc_names_t lc_numeric_names[] =
 {
   { "decimal_point",		 is_string,	RADIXCHAR,		 0 },
-  { "thousands_sep",		 is_string,	THOUSEP, 		 0 },
+  { "thousands_sep",		 is_string,	THOUSEP,		 0 },
   { "grouping",			 is_grouping,	_NL_NUMERIC_GROUPING,	 0 },
   { "numeric-decimal-point-wc",	 is_wchar,	_NL_NUMERIC_DECIMAL_POINT_WC, 0 },
   { "numeric-thousands-sep-wc",	 is_wchar,	_NL_NUMERIC_THOUSANDS_SEP_WC, 0 },
   { "numeric-codeset",		 is_string,	_NL_NUMERIC_CODESET,	 0 },
-  { NULL, 			 is_end,	0,			 0 }
+  { NULL,			 is_end,	0,			 0 }
 };
 
 lc_names_t lc_time_names[] =
@@ -600,13 +522,13 @@ lc_names_t lc_time_names[] =
   { "era_t_fmt",		 is_string,	ERA_T_FMT,		0 },
   { "date_fmt",			 is_string,	_DATE_FMT,		0 },
   { "time-codeset",		 is_string,	_NL_TIME_CODESET,	0 },
-  { NULL, 			 is_end,	0,			0 }
+  { NULL,			 is_end,	0,			0 }
 };
 
 lc_names_t lc_collate_names[] =
 {
   { "collate-codeset",		 is_string,	_NL_COLLATE_CODESET,	0 },
-  { NULL, 			 is_end,	0,			0 }
+  { NULL,			 is_end,	0,			0 }
 };
 
 lc_names_t lc_monetary_names[] =
@@ -635,7 +557,7 @@ lc_names_t lc_monetary_names[] =
   { "monetary-decimal-point-wc", is_wchar,	_NL_MONETARY_WMON_DECIMAL_POINT, 0 },
   { "monetary-thousands-sep-wc", is_wchar,	_NL_MONETARY_WMON_THOUSANDS_SEP, 0 },
   { "monetary-codeset",		 is_string,	_NL_MONETARY_CODESET,	   0 },
-  { NULL, 			 is_end,	0,			   0 }
+  { NULL,			 is_end,	0,			   0 }
 };
 
 lc_names_t lc_messages_names[] =
@@ -645,7 +567,7 @@ lc_names_t lc_messages_names[] =
   { "yesstr",			 is_string,	YESSTR,			0 },
   { "nostr",			 is_string,	NOSTR,			0 },
   { "messages-codeset",		 is_string,	_NL_MESSAGES_CODESET,	0 },
-  { NULL, 			 is_end,	0,			0 }
+  { NULL,			 is_end,	0,			0 }
 };
 
 void
@@ -739,14 +661,13 @@ int
 main (int argc, char **argv)
 {
   int opt;
-  LCID lcid = 0;
+  wchar_t loc_name[256] = { 0 };
   int all = 0;
   int cat = 0;
   int key = 0;
   int maps = 0;
   int verbose = 0;
   const char *utf = "";
-  char name[32];
 
   setlocale (LC_ALL, "");
   while ((opt = getopt_long (argc, argv, opts, longopts, NULL)) != -1)
@@ -765,19 +686,22 @@ main (int argc, char **argv)
 	maps = 1;
 	break;
       case 'i':
-	lcid = (UINT_PTR) GetKeyboardLayout (0) & 0xffff;
+	GetLocaleInfoW ((UINT_PTR) GetKeyboardLayout (0) & 0xffff, LOCALE_SNAME,
+			loc_name, 256);
 	break;
       case 's':
-	lcid = GetSystemDefaultUILanguage ();
+	GetLocaleInfoW (GetSystemDefaultUILanguage (), LOCALE_SNAME,
+			loc_name, 256);
 	break;
       case 'u':
-	lcid = GetUserDefaultUILanguage ();
+	GetLocaleInfoW (GetUserDefaultUILanguage (), LOCALE_SNAME,
+			loc_name, 256);
 	break;
       case 'f':
-	lcid = GetUserDefaultLCID ();
+	GetUserDefaultLocaleName (loc_name, 256);
 	break;
       case 'n':
-	lcid = GetSystemDefaultLCID ();
+	GetSystemDefaultLocaleName (loc_name, 256);
 	break;
       case 'U':
 	utf = ".UTF-8";
@@ -799,10 +723,13 @@ main (int argc, char **argv)
     print_all_locales (verbose);
   else if (maps)
     print_charmaps ();
-  else if (lcid)
+  else if (loc_name[0])
     {
-      if (getlocale (lcid, name))
-	printf ("%s%s\n", name, utf);
+      wchar_t iso639[10];
+      wchar_t iso3166[10];
+
+      if (getlocale (loc_name, iso639, iso3166, NULL))
+	printf ("%ls_%ls%s", iso639, iso3166, utf);
     }
   else if (optind < argc)
     while (optind < argc)

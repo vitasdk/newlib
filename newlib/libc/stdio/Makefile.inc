@@ -33,7 +33,15 @@ libc_a_SOURCES += \
 	%D%/viscanf.c \
 	%D%/vsiprintf.c \
 	%D%/vsiscanf.c \
-	%D%/vsniprintf.c
+	%D%/vsniprintf.c \
+	%D%/sfputs_r.c \
+	%D%/sfputws_r.c \
+	%D%/sprint_r.c \
+	%D%/swprint_r.c \
+	%D%/ssputs_r.c \
+	%D%/ssputws_r.c \
+	%D%/ssprint_r.c \
+	%D%/sswprint_r.c
 endif
 
 libc_a_SOURCES += \
@@ -109,6 +117,7 @@ libc_a_SOURCES += \
 	%D%/vsprintf.c \
 	%D%/vsscanf.c \
 	%D%/wbuf.c \
+	%D%/wbufw.c \
 	%D%/wsetup.c
 
 ## The following are EL/IX level 2 interfaces

@@ -11,6 +11,7 @@ details. */
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <langinfo.h>
 #include "cygerrno.h"
 #include "security.h"
 #include "path.h"
@@ -49,16 +50,20 @@ static off_t format_proc_filesystems (void *, char *&);
 static off_t format_proc_swaps (void *, char *&);
 static off_t format_proc_devices (void *, char *&);
 static off_t format_proc_misc (void *, char *&);
+static off_t format_proc_locales (void *, char *&);
+static off_t format_proc_codesets (void *, char *&);
 
 /* names of objects in /proc */
 static const virt_tab_t proc_tab[] = {
   { _VN ("."),		 FH_PROC,	virt_directory,	NULL },
   { _VN (".."),		 FH_PROC,	virt_directory,	NULL },
+  { _VN ("codesets"),	 FH_PROC,	virt_file,	format_proc_codesets },
   { _VN ("cpuinfo"),	 FH_PROC,	virt_file,	format_proc_cpuinfo },
   { _VN ("cygdrive"),	 FH_PROC,	virt_symlink,	format_proc_cygdrive },
   { _VN ("devices"),	 FH_PROC,	virt_file,	format_proc_devices },
   { _VN ("filesystems"), FH_PROC,	virt_file,	format_proc_filesystems },
   { _VN ("loadavg"),	 FH_PROC,	virt_file,	format_proc_loadavg },
+  { _VN ("locales"),	 FH_PROC,	virt_file,	format_proc_locales },
   { _VN ("meminfo"),	 FH_PROC,	virt_file,	format_proc_meminfo },
   { _VN ("misc"),	 FH_PROC,	virt_file,	format_proc_misc },
   { _VN ("mounts"),	 FH_PROC,	virt_symlink,	format_proc_mounts },
@@ -1379,8 +1384,8 @@ format_proc_cpuinfo (void *, char *&destbuf)
 
 	  ftcprint (features2,  0, "perfmon_v2"); /* Performance Monitoring Version 2 */
 	}
-      /* cpuid 0x80000008 ebx */
-      if (maxe >= 0x80000008)
+      /* AMD cpuid 0x80000008 ebx */
+      if (is_amd && maxe >= 0x80000008)
         {
 /*	  cpuid (&unused, &features1, &unused, &unused, 0x80000008, 0); */
 /*	  from above ^ */
@@ -1390,16 +1395,19 @@ format_proc_cpuinfo (void *, char *&destbuf)
 /*	  ftcprint (features1,  4, "rdpru");	*//* user level rd proc reg */
 /*	  ftcprint (features1,  6, "mba");	*//* memory BW alloc */
 /*	  ftcprint (features1,  9, "wbnoinvd"); *//* wbnoinvd instruction */
-	  ftcprint (features1, 14, "ibrs");	/* ind br restricted spec */
 	  ftcprint (features1, 12, "ibpb");	/* ind br pred barrier */
+	  ftcprint (features1, 14, "ibrs");	/* ind br restricted spec */
 	  ftcprint (features1, 15, "stibp");	/* 1 thread ind br pred */
-	  ftcprint (features1, 16, "ibrs_enhanced"); /* IBRS_ALL enhanced IBRS always on */
+	  ftcprint (features1, 16, "ibrs_enhanced"); /* ibrs_enhanced IBRS always on */
 /*	  ftcprint (features1, 17, "stibp_always_on"); */ /* stibp always on */
-/*	  ftcprint (features1, 18, "ibrs_pref");*//* IBRS_PREF IBRS preferred */
+/*	  ftcprint (features1, 18, "ibrs_pref");*//* ibrs_pref IBRS preferred */
 /*	  ftcprint (features1, 23, "amd_ppin"); *//* protected proc id no */
 /*	  ftcprint (features1, 24, "ssbd");	*//* spec store byp dis */
 /*	  ftcprint (features1, 25, "virt_ssbd");*//* vir spec store byp dis */
 /*	  ftcprint (features1, 26, "ssb_no");	*//* ssb fixed in hardware */
+/*	  ftcprint (features1, 27, "cppc");	*//* collab proc perf ctl */
+/*	  ftcprint (features1, 28, "amd_psfd"); *//* predictive store fwd dis */
+/*	  ftcprint (features1, 31, "brs");	*//* branch sampling */
         }
 
       /* cpuid 0x00000021 ebx|edx|ecx == "IntelTDX    " */
@@ -1478,6 +1486,14 @@ format_proc_cpuinfo (void *, char *&destbuf)
 
 /*	  ftcprint (features1,  6, "split_lock_detect");*//* MSR_TEST_CTRL split lock */
 
+      /* Windows [20]20H1/[20]2004/19041 user shadow stack */
+      if (maxf >= 0x00000007 && wincap.has_user_shstk ())
+        {
+	  /* cpuid 0x00000007 ecx CET shadow stack */
+	  cpuid (&unused, &unused, &features1, &unused, 0x00000007, 0);
+	  ftcprint (features1,  7, "user_shstk");	/* user shadow stack */
+	}
+
       /* cpuid 0x00000007:1 eax */
       if (maxf >= 0x00000007)
 	{
@@ -1486,6 +1502,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  4, "avx_vnni");	    /* vex enc NN vec */
 	  ftcprint (features1,  5, "avx512_bf16");  /* vec bfloat16 short */
 /*	  ftcprint (features1,  7, "cmpccxadd"); */ /* CMPccXADD instructions */
+/*	  ftcprint (features1, 18, "lkgs");	 */ /* load kernel (userspace) GS */
 /*	  ftcprint (features1, 21, "amx_fp16");	 */ /* AMX fp16 Support */
 /*	  ftcprint (features1, 23, "avx_ifma");	 */ /* Support for VPMADD52[H,L]UQ */
 	  ftcprint (features1, 26, "lam");	    /* Linear Address Masking */
@@ -1505,14 +1522,15 @@ format_proc_cpuinfo (void *, char *&destbuf)
 /*	  ftcprint (features1, 12, "ibpb" ); */	    /* ind br pred barrier */
 /*	  ftcprint (features1, 14, "ibrs" ); */	    /* ind br restricted spec */
 /*	  ftcprint (features1, 15, "stibp"); */	    /* 1 thread ind br pred */
-/*	  ftcprint (features1, 16, "ibrs_enhanced");*//* IBRS_ALL enhanced IBRS always on */
+/*	  ftcprint (features1, 16, "ibrs_enhanced"); */  /* ibrs_enhanced IBRS always on */
 /*	  ftcprint (features1, 17, "stibp_always_on"); */ /* stibp always on */
-/*	  ftcprint (features1, 18, "ibrs_pref");*//* IBRS_PREF IBRS preferred */
+/*	  ftcprint (features1, 18, "ibrs_pref"); */ /* ibrs_pref IBRS preferred */
 	  ftcprint (features1, 23, "amd_ppin");     /* protected proc id no */
 /*	  ftcprint (features1, 24, "ssbd"); */	    /* spec store byp dis */
 	  ftcprint (features1, 25, "virt_ssbd");    /* vir spec store byp dis */
 /*	  ftcprint (features1, 26, "ssb_no"); */    /* ssb fixed in hardware */
 	  ftcprint (features1, 27, "cppc");	    /* collab proc perf ctl */
+/*	  ftcprint (features1, 28, "amd_psfd"); */  /* predictive store fwd dis */
 	  ftcprint (features1, 31, "brs");	    /* branch sampling */
         }
 
@@ -1553,6 +1571,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1, 15, "v_vmsave_vmload");  /* virt vmsave vmload */
 	  ftcprint (features1, 16, "vgif");             /* virt glb int flag */
 	  ftcprint (features1, 20, "v_spec_ctrl");	/* virt spec ctrl support */
+	  ftcprint (features1, 25, "vnmi");             /* virt NMI */
 /*	  ftcprint (features1, 28, "svme_addr_chk");  *//* secure vmexit addr check */
         }
 
@@ -1567,6 +1586,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 	  ftcprint (features1,  4, "ospke");            /* OS prot keys en */
 	  ftcprint (features1,  5, "waitpkg");          /* umon/umwait/tpause */
 	  ftcprint (features1,  6, "avx512_vbmi2");     /* vec bit manip 2 */
+/*	  ftcprint (features1,  7, "shstk"); */		/* Shadow stack */
 	  ftcprint (features1,  8, "gfni");             /* Galois field instr */
 	  ftcprint (features1,  9, "vaes");             /* vector AES */
 	  ftcprint (features1, 10, "vpclmulqdq");       /* nc mul dbl quad */
@@ -1632,7 +1652,7 @@ format_proc_cpuinfo (void *, char *&destbuf)
 /*	  ftcprint (features2, 11, "sev_64b");*//* SEV 64 bit host guest only */
 /*	  ftcprint (features2, 12, "sev_rest_inj");   *//* SEV restricted injection */
 /*	  ftcprint (features2, 13, "sev_alt_inj");    *//* SEV alternate injection */
-/*	  ftcprint (features2, 14, "sev_es_dbg_swap");*//* SEV-ES debug state swap */
+	  ftcprint (features2, 14, "debug_swap");   /* SEV-ES full debug state swap */
 /*	  ftcprint (features2, 15, "no_host_ibs");    *//* host IBS unsupported */
 /*	  ftcprint (features2, 16, "vte");    *//* virtual transparent encryption */
 	}
@@ -2065,6 +2085,299 @@ format_proc_misc (void *, char *&destbuf)
 			     "%3d clipboard\n"
 			     "%3d windows\n",
 			     _minor (FH_CLIPBOARD), _minor (FH_WINDOWS));
+
+  destbuf = (char *) crealloc_abort (destbuf, bufptr - buf);
+  memcpy (destbuf, buf, bufptr - buf);
+  return bufptr - buf;
+}
+
+static char *
+add_locale (char *bufptr, const char *posix_locale, const char *codeset,
+	    bool explicit_utf8, const char *modifier, const wchar_t *win_locale)
+{
+  const char *start = bufptr;
+  bufptr = stpcpy (bufptr, posix_locale);
+  if (explicit_utf8)
+    bufptr = stpcpy (bufptr, ".utf8");
+  if (modifier && modifier[0])
+    bufptr = stpcpy (bufptr, modifier);
+  if (bufptr - start < 16)
+    {
+      if (bufptr - start < 8)
+	bufptr = stpcpy (bufptr, "\t");
+      bufptr = stpcpy (bufptr, "\t");
+    }
+  bufptr = stpcpy (bufptr, "\t");
+  start = bufptr;
+  bufptr = stpcpy (bufptr, codeset);
+  if (win_locale && win_locale[0])
+    {
+      if (bufptr - start < 16)
+	{
+	  if (bufptr - start < 8)
+	    bufptr = stpcpy (bufptr, "\t");
+	  bufptr = stpcpy (bufptr, "\t");
+	}
+      bufptr = stpcpy (bufptr, "\t");
+      bufptr += wcstombs (bufptr, win_locale, wcslen (win_locale) * 2);
+    }
+  bufptr = stpcpy (bufptr, "\n");
+  return bufptr;
+}
+
+static BOOL
+format_proc_locale_proc (LPWSTR win_locale, DWORD info, LPARAM param)
+{
+  char **bufptr_p = (char **) param;
+  wchar_t iso15924_postfix[ENCODING_LEN + 1] = { 0 };
+  wchar_t iso15924[ENCODING_LEN + 1] = { 0 };
+  wchar_t iso3166[ENCODING_LEN + 1] = { 0 };
+  wchar_t iso639[ENCODING_LEN + 1] = { 0 };
+  wchar_t currency[9] = { 0 };
+  char modifier[ENCODING_LEN + 1] = { 0 };
+  char posix_loc[ENCODING_LEN + 1];
+  char posix_loc_and_modifier[ENCODING_LEN + 1];
+  char codeset[ENCODING_LEN + 1];
+  wchar_t *cp;
+
+  /* Skip language-only locales, e. g. "en" */
+  if (!(cp = wcschr (win_locale, L'-')))
+    return TRUE;
+  ++cp;
+  /* Script inside?  Scripts are Upper/Lower, e. g. "Latn" */
+  if (iswupper (cp[0]) && iswlower (cp[1]))
+    {
+      wchar_t *cp2;
+
+      /* Skip language-Script locales, missing country  */
+      if (!(cp2 = wcschr (cp + 2, L'-')))
+        return TRUE;
+      /* Otherwise, store in iso15924 */
+      if (iso15924)
+        wcpcpy (wcpncpy (iso15924, cp, cp2 - cp), L";");
+    }
+  cp = wcsrchr (win_locale, L'-');
+  if (cp)
+    {
+      /* Skip numeric iso3166 country name. */
+      if (iswdigit (cp[1]))
+        return TRUE;
+      /* Special case postfix after iso3166 country name: ca-ES-valencia.
+         Use the postfix thingy as script so it will become a @modifier */
+      if (iswlower (cp[1]))
+        wcpcpy (iso15924_postfix, cp + 1);
+    }
+
+  if (!GetLocaleInfoEx (win_locale, LOCALE_SISO639LANGNAME, iso639, 10))
+    return TRUE;
+  GetLocaleInfoEx (win_locale, LOCALE_SISO3166CTRYNAME, iso3166, 10);
+
+  snprintf (posix_loc, sizeof posix_loc, "%.3ls_%.3ls", iso639, iso3166);
+  /* Inuktitut: equivalent @latin due to lack of info on Linux */
+  if (!wcscmp (iso639, L"iu"))
+    {
+      if (wcscmp (iso15924, L"Latn;"))
+	return TRUE;
+    }
+  /* Javanese: only use @latin locale. */
+  else if (!wcscmp (iso639, L"jv"))
+    {
+      if (wcscmp (iso15924, L"Latn;"))
+	return TRUE;
+    }
+  /* Mongolian: only use @mongolian locale. */
+  else if (!wcscmp (iso639, L"mn"))
+    {
+      if (wcscmp (iso15924, L"Mong;"))
+	return TRUE;
+    }
+  /* Serbian: Windows default is Latin, Linux default is Cyrillic.
+     We want the Linux default and attach @latin otherwise */
+  else if (!wcscmp (iso639, L"sr"))
+    {
+      snprintf (posix_loc, sizeof posix_loc, "sr_%.27ls", iso3166);
+      if (!wcscmp (iso15924, L"Latn;"))
+	stpcpy (modifier, "@latin");
+    }
+  /* Tamazight: no modifier, iso639 is "ber" on Linux.
+     "zgh-Tfng-MA" is equivalent to "ber_MA". */
+  else if (!wcscmp (iso639, L"zgh"))
+    snprintf (posix_loc, sizeof posix_loc, "ber_%.27ls", iso3166);
+  /* Tamazight: "tzm-Latn-DZ" is equivalent to "ber_DZ",
+		skip everything else. */
+  else if (!wcscmp (iso639, L"tzm"))
+    {
+      if (!wcscmp (iso3166, L"DZ") && !wcscmp (iso15924, L"Latn;"))
+	snprintf (posix_loc, sizeof posix_loc, "ber_%.27ls", iso3166);
+      else
+	return TRUE;
+    }
+  /* "sd-IN" is no valid Windows locale, only "sd-Deva-IN" is.  However,
+     asking for LOCALE_SSCRIPTS below returns "Arab;" because the first "sd"
+     locale Windows finds is "sd-Arab-PK", so we have to override this here. */
+  else if (!wcscmp (iso639, L"sd") && !wcscmp (iso3166, L"IN"))
+    strcpy (posix_loc, "sd_IN");
+  /* In all other cases, we check if the script from the Windows
+     locale is the default locale in that language.  If not, we
+     add it as modifier if possible, or skip it */
+  else if (iso15924[0])
+    {
+      wchar_t scriptless_win_locale[ENCODING_LEN + 1];
+      wchar_t default_iso15924[ENCODING_LEN + 1];
+
+      wcpcpy (wcpcpy (wcpcpy (scriptless_win_locale, iso639), L"-"),
+	      iso3166);
+      if ((GetLocaleInfoEx (scriptless_win_locale, LOCALE_SSCRIPTS,
+			    default_iso15924, ENCODING_LEN + 1)
+	   || GetLocaleInfoEx (iso639, LOCALE_SSCRIPTS,
+			       default_iso15924, ENCODING_LEN + 1))
+	  && !wcsstr (default_iso15924, iso15924))
+	{
+	  if (!wcscmp (iso15924, L"Latn;"))
+	    stpcpy (modifier, "@latin");
+	  else if (!wcscmp (iso15924, L"Cyrl;"))
+	    stpcpy (modifier, "@cyrillic");
+	  else if (!wcscmp (iso15924, L"Deva;"))
+	    stpcpy (modifier, "@devanagari");
+	  else if (!wcscmp (iso15924, L"Adlm;"))
+	    stpcpy (modifier, "@adlam");
+	  else
+	    return TRUE;
+	}
+    }
+  else if (iso15924_postfix[0])
+    {
+      modifier[0] = '@';
+      wcstombs (modifier + 1, iso15924_postfix, 31);
+    }
+
+  stpcpy (stpcpy (posix_loc_and_modifier, posix_loc), modifier);
+  __set_charset_from_locale (posix_loc_and_modifier, codeset);
+  *bufptr_p = add_locale (*bufptr_p, posix_loc, codeset, false, modifier,
+			  win_locale);
+  if (strcmp (codeset, "UTF-8") != 0)
+    *bufptr_p = add_locale (*bufptr_p, posix_loc, "UTF-8", true, modifier,
+			    win_locale);
+
+  /* Only one cross each */
+  if (modifier[0])
+    return TRUE;
+
+  /* Check for locales sporting an additional modifier for
+     changing the codeset and other stuff. */
+  if (!wcscmp (iso639, L"be") && !wcscmp (iso3166, L"BY"))
+    stpcpy (modifier, "@latin");
+  else if (!wcscmp (iso639, L"tt") && !wcscmp (iso3166, L"RU"))
+    stpcpy (modifier, "@iqtelif");
+  else if (!wcscmp (iso639, L"sd") && !wcscmp (iso3166, L"IN"))
+    stpcpy (modifier, "@devanagari");
+   /* If the base locale is ISO-8859-1 and the locale defines currency
+      as EUR, add a @euro locale. For historical reasons there's also
+      a greek @euro locale, albeit it doesn't change the codeset. */
+  else if ((!strcmp (codeset, "ISO-8859-1")
+	    || !strcmp (posix_loc, "el_GR"))
+	   && GetLocaleInfoEx (win_locale, LOCALE_SINTLSYMBOL, currency, 9)
+	   && !wcsncmp (currency, L"EUR", 3))
+    stpcpy (modifier, "@euro");
+  else if (!wcscmp (iso639, L"ja")
+	   || !wcscmp (iso639, L"ko")
+	   || !wcscmp (iso639, L"zh"))
+    stpcpy (modifier, "@cjknarrow");
+  else
+    return TRUE;
+
+  stpcpy (stpcpy (posix_loc_and_modifier, posix_loc), modifier);
+  __set_charset_from_locale (posix_loc_and_modifier, codeset);
+  *bufptr_p = add_locale (*bufptr_p, posix_loc, codeset, false, modifier,
+			  win_locale);
+  if (strcmp (codeset, "UTF-8") != 0 && strcmp (modifier, "@euro") != 0)
+    *bufptr_p = add_locale (*bufptr_p, posix_loc, "UTF-8", true, modifier,
+			    win_locale);
+
+  return TRUE;
+}
+
+static off_t
+format_proc_locales (void *, char *&destbuf)
+{
+  tmp_pathbuf tp;
+  char *buf = tp.t_get ();
+  char *bufptr = buf;
+
+  bufptr = stpcpy (bufptr, "Locale:\t\t\tCodeset:\t\tWindows-Locale:\n");
+  bufptr = add_locale (bufptr, "C", "ANSI_X3.4-1968", false, NULL, NULL);
+  bufptr = add_locale (bufptr, "C", "UTF-8", true, NULL, NULL);
+  bufptr = add_locale (bufptr, "POSIX", "ANSI_X3.4-1968", false, NULL, NULL);
+
+  EnumSystemLocalesEx (format_proc_locale_proc,
+		       LOCALE_WINDOWS | LOCALE_SUPPLEMENTAL,
+		       (LPARAM) &bufptr, NULL);
+
+  destbuf = (char *) crealloc_abort (destbuf, bufptr - buf);
+  memcpy (destbuf, buf, bufptr - buf);
+  return bufptr - buf;
+}
+
+static off_t
+format_proc_codesets (void *, char *&destbuf)
+{
+  tmp_pathbuf tp;
+  char *buf = tp.c_get ();
+  char *bufptr = stpcpy (buf,
+			 "ASCII\n"
+			 "BIG5\n"
+			 "CP1125\n"
+			 "CP1250\n"
+			 "CP1251\n"
+			 "CP1252\n"
+			 "CP1253\n"
+			 "CP1254\n"
+			 "CP1255\n"
+			 "CP1256\n"
+			 "CP1257\n"
+			 "CP1258\n"
+			 "CP437\n"
+			 "CP720\n"
+			 "CP737\n"
+			 "CP775\n"
+			 "CP850\n"
+			 "CP852\n"
+			 "CP855\n"
+			 "CP857\n"
+			 "CP858\n"
+			 "CP862\n"
+			 "CP866\n"
+			 "CP874\n"
+			 "CP932\n"
+			 "EUC-CN\n"
+			 "EUC-JP\n"
+			 "EUC-KR\n"
+			 "GB18030\n"
+			 "GB2312\n"
+			 "GBK\n"
+			 "GEORGIAN-PS\n"
+			 "ISO-8859-1\n"
+			 "ISO-8859-10\n"
+			 "ISO-8859-11\n"
+			 "ISO-8859-13\n"
+			 "ISO-8859-14\n"
+			 "ISO-8859-15\n"
+			 "ISO-8859-16\n"
+			 "ISO-8859-2\n"
+			 "ISO-8859-3\n"
+			 "ISO-8859-4\n"
+			 "ISO-8859-5\n"
+			 "ISO-8859-6\n"
+			 "ISO-8859-7\n"
+			 "ISO-8859-8\n"
+			 "ISO-8859-9\n"
+			 "KOI8-R\n"
+			 "KOI8-T\n"
+			 "KOI8-U\n"
+			 "PT154\n"
+			 "SJIS\n"
+			 "TIS-620\n"
+			 "UTF-8\n");
 
   destbuf = (char *) crealloc_abort (destbuf, bufptr - buf);
   memcpy (destbuf, buf, bufptr - buf);

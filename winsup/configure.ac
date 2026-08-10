@@ -12,7 +12,7 @@ AC_PREREQ([2.59])
 AC_INIT([Cygwin],[0],[cygwin@cygwin.com],[cygwin],[https://cygwin.com])
 AC_CONFIG_AUX_DIR(..)
 AC_CANONICAL_TARGET
-AM_INIT_AUTOMAKE([dejagnu foreign no-define no-dist subdir-objects -Wall -Wno-portability -Wno-extra-portability])
+AM_INIT_AUTOMAKE([foreign no-define no-dist subdir-objects -Wall -Wno-portability -Wno-extra-portability])
 AM_SILENT_RULES([yes])
 
 realdirpath() {
@@ -117,6 +117,13 @@ AC_ARG_ENABLE([dumper],
 	      [build_dumper=yes])
 
 AM_CONDITIONAL(BUILD_DUMPER, [test "x$build_dumper" = "xyes"])
+
+# libbfd.a doesn't have a pkgconfig file, so we guess what it's dependencies
+# are, based on what's present in the build environment
+BFD_LIBS="-lintl -liconv -liberty -lz"
+AC_CHECK_LIB([sframe], [sframe_decode], [BFD_LIBS="${BFD_LIBS} -lsframe"])
+AC_CHECK_LIB([zstd], [ZSTD_isError], [BFD_LIBS="${BFD_LIBS} -lzstd"])
+AC_SUBST([BFD_LIBS])
 
 AC_CONFIG_FILES([
     Makefile

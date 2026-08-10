@@ -364,7 +364,7 @@ void
 pthread::init_mainthread ()
 {
   pthread *thread = _my_tls.tid;
-  if (!thread)
+  if (!thread || thread == pthread_null::get_null_pthread ())
     {
       thread = new pthread ();
       if (!thread)
@@ -457,6 +457,7 @@ pthread::precreate (pthread_attr *newattr)
       attr.joinable = newattr->joinable;
       attr.contentionscope = newattr->contentionscope;
       attr.inheritsched = newattr->inheritsched;
+      attr.schedparam = newattr->schedparam;
       attr.stackaddr = newattr->stackaddr;
       attr.stacksize = newattr->stacksize;
       attr.guardsize = newattr->guardsize;
@@ -961,12 +962,9 @@ pthread::testcancel ()
      pthread_testcancel function a lot without adding the overhead of
      an OS call.  Only if the thread is marked as canceled, we wait for
      cancel_event being really set, on the off-chance that pthread_cancel
-     gets interrupted before calling SetEvent. */
-  if (canceled)
-    {
-      WaitForSingleObject (cancel_event, INFINITE);
-      cancel_self ();
-    }
+     gets interrupted or terminated before calling SetEvent. */
+  if (canceled && IsEventSignalled (cancel_event))
+    cancel_self ();
 }
 
 /* Return cancel event handle if it exists *and* cancel is not disabled.

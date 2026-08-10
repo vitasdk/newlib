@@ -14,6 +14,7 @@ details. */
 #include <cygwin/_socketflags.h>
 #include <cygwin/_ucred.h>
 #include <sys/un.h>
+#include <sys/param.h>
 
 /* It appears that 64K is the block size used for buffered I/O on NT.
    Using this blocksize in read/write calls in the application results
@@ -37,9 +38,20 @@ details. */
    ERROR_NOT_ENOUGH_MEMORY occurs in win7 if this value is used. */
 #define INREC_SIZE 2048
 
+/* Helper function to allow checking if some offset in a file is so far
+   beyond EOF, that at least one sparse chunk fits into the span. */
+inline bool
+span_sparse_chunk (off_t new_pos, off_t old_eof)
+{
+  return roundup2 (old_eof, FILE_SPARSE_GRANULARITY) + FILE_SPARSE_GRANULARITY
+	 <= rounddown (new_pos, FILE_SPARSE_GRANULARITY);
+}
+
 extern const char *windows_device_names[];
 extern struct __cygwin_perfile *perfile_table;
 #define __fmode (*(user_data->fmode_ptr))
+extern const char dev_disk[];
+extern const size_t dev_disk_len;
 extern const char proc[];
 extern const size_t proc_len;
 extern const char procsys[];
@@ -387,7 +399,7 @@ public:
   virtual ssize_t fgetxattr (const char *, void *, size_t);
   virtual int fsetxattr (const char *, const void *, size_t, int);
   virtual int fadvise (off_t, off_t, int);
-  virtual int ftruncate (off_t, bool);
+  virtual int fallocate (int, off_t, off_t);
   virtual int link (const char *);
   virtual int utimens (const struct timespec *);
   virtual int fsync ();
@@ -1220,7 +1232,7 @@ public:
   int fstat (struct stat *buf);
   int fstatvfs (struct statvfs *buf);
   int fadvise (off_t, off_t, int);
-  int ftruncate (off_t, bool);
+  int fallocate (int, off_t, off_t);
   int init (HANDLE, DWORD, mode_t, int64_t);
   static int create (fhandler_pipe *[2], unsigned, int);
   static DWORD create (LPSECURITY_ATTRIBUTES, HANDLE *, HANDLE *, DWORD,
@@ -1706,6 +1718,10 @@ class fhandler_disk_file: public fhandler_base
   uint64_t fs_ioc_getflags ();
   int fs_ioc_setflags (uint64_t);
 
+  falloc_allocate (int, off_t, off_t);
+  falloc_punch_hole (off_t, off_t);
+  falloc_zero_range (int, off_t, off_t);
+
  public:
   fhandler_disk_file ();
   fhandler_disk_file (path_conv &pc);
@@ -1725,7 +1741,7 @@ class fhandler_disk_file: public fhandler_base
   ssize_t fgetxattr (const char *, void *, size_t);
   int fsetxattr (const char *, const void *, size_t, int);
   int fadvise (off_t, off_t, int);
-  int ftruncate (off_t, bool);
+  int fallocate (int, off_t, off_t);
   int link (const char *);
   int utimens (const struct timespec *);
   int fstatvfs (struct statvfs *buf);
@@ -1905,6 +1921,17 @@ class fhandler_serial: public fhandler_base
 #define release_output_mutex() \
   __release_output_mutex (__PRETTY_FUNCTION__, __LINE__)
 
+/*
+ -1: CTTY is not initialized yet. Can associate with the TTY
+     which is associated with the own session.
+ -2: CTTY has been released by setsid(). Can associate with
+     a new TTY as CTTY, but cannot associate with the TTYs
+     already associated with other sessions.
+*/
+#define CTTY_UNINITIALIZED -1
+#define CTTY_RELEASED -2
+#define CTTY_IS_VALID(c) ((c) > 0)
+
 extern DWORD mutex_timeout;
 DWORD acquire_attach_mutex (DWORD t);
 void release_attach_mutex (void);
@@ -1925,6 +1952,7 @@ class fhandler_termios: public fhandler_base
   virtual void acquire_input_mutex_if_necessary (DWORD ms) {};
   virtual void release_input_mutex_if_necessary (void) {};
   virtual void discard_input () {};
+  dev_t dev_referred_via;
 
   /* Result status of processing keys in process_sigs(). */
   enum process_sig_state {
@@ -1964,6 +1992,7 @@ class fhandler_termios: public fhandler_base
   void echo_erase (int force = 0);
   virtual off_t lseek (off_t, int);
   pid_t tcgetsid ();
+  virtual int fstat (struct stat *buf);
 
   fhandler_termios (void *) {}
 
@@ -2286,7 +2315,9 @@ private:
   void copy_from (fhandler_base *x)
   {
     pc.free_strings ();
+    dev_t via = this->dev_referred_via; /* Do not copy dev_referred_via */
     *this = *reinterpret_cast<fhandler_console *> (x);
+    this->dev_referred_via = via;
     _copy_from_reset_helper ();
   }
 
@@ -2384,7 +2415,8 @@ class fhandler_pty_common: public fhandler_termios
   void resize_pseudo_console (struct winsize *);
   static DWORD get_console_process_id (DWORD pid, bool match,
 				       bool cygwin = false,
-				       bool stub_only = false);
+				       bool stub_only = false,
+				       bool nat = false);
   bool to_be_read_from_nat_pipe (void);
   static DWORD attach_console_temporarily (DWORD target_pid);
   static void resume_from_temporarily_attach (DWORD resume_pid);
@@ -2413,7 +2445,7 @@ class fhandler_pty_slave: public fhandler_pty_common
   typedef ptys_handle_set_t handle_set_t;
 
   /* Constructor */
-  fhandler_pty_slave (int);
+  fhandler_pty_slave (int, dev_t via = 0);
 
   void set_output_handle_nat (HANDLE h) { output_handle_nat = h; }
   HANDLE& get_output_handle_nat () { return output_handle_nat; }
@@ -2451,7 +2483,9 @@ class fhandler_pty_slave: public fhandler_pty_common
   void copy_from (fhandler_base *x)
   {
     pc.free_strings ();
+    dev_t via = this->dev_referred_via; /* Do not copy dev_referred_via */
     *this = *reinterpret_cast<fhandler_pty_slave *> (x);
+    this->dev_referred_via = via;
     _copy_from_reset_helper ();
   }
 
@@ -2526,7 +2560,7 @@ private:
 public:
   HANDLE get_echo_handle () const { return echo_r; }
   /* Constructor */
-  fhandler_pty_master (int);
+  fhandler_pty_master (int, dev_t via = 0);
 
   static DWORD pty_master_thread (const master_thread_param_t *p);
   static DWORD pty_master_fwd_thread (const master_fwd_thread_param_t *p);
@@ -2555,13 +2589,23 @@ public:
   int tcgetpgrp ();
   void flush_to_slave ();
   void discard_input ();
+  void acquire_input_mutex_if_necessary (DWORD ms)
+  {
+    WaitForSingleObject (input_mutex, ms);
+  }
+  void release_input_mutex_if_necessary (void)
+  {
+    ReleaseMutex (input_mutex);
+  }
 
   fhandler_pty_master (void *) {}
 
   void copy_from (fhandler_base *x)
   {
     pc.free_strings ();
+    dev_t via = this->dev_referred_via; /* Do not copy dev_referred_via */
     *this = *reinterpret_cast<fhandler_pty_master *> (x);
+    this->dev_referred_via = via;
     _copy_from_reset_helper ();
   }
 
@@ -2749,6 +2793,35 @@ class fhandler_windows: public fhandler_base
   }
 };
 
+class fhandler_dev_mixer: public fhandler_base
+{
+ private:
+  int rec_source;
+ public:
+  fhandler_dev_mixer () {}
+  int open (int, mode_t mode = 0);
+  ssize_t write (const void *, size_t);
+  void read (void *, size_t&);
+  int ioctl (unsigned int, void *);
+
+  fhandler_dev_mixer (void *) {}
+
+  void copy_from (fhandler_base *x)
+  {
+    pc.free_strings ();
+    *this = *reinterpret_cast<fhandler_dev_mixer *> (x);
+    _copy_from_reset_helper ();
+  }
+
+  fhandler_dev_mixer *clone (cygheap_types malloc_type = HEAP_FHANDLER)
+  {
+    void *ptr = (void *) ccalloc (malloc_type, 1, sizeof (fhandler_dev_mixer));
+    fhandler_dev_mixer *fh = new (ptr) fhandler_dev_mixer (ptr);
+    fh->copy_from (this);
+    return fh;
+  }
+};
+
 class fhandler_dev_dsp: public fhandler_base
 {
  public:
@@ -2762,6 +2835,10 @@ class fhandler_dev_dsp: public fhandler_base
   int audiochannels_;
   Audio_out *audio_out_;
   Audio_in  *audio_in_;
+  bool being_closed;
+  bool fragment_has_been_set;
+  int fragstotal_;
+  int fragsize_;
  public:
   fhandler_dev_dsp ();
   fhandler_dev_dsp *base () const {return (fhandler_dev_dsp *)archetype;}
@@ -2785,6 +2862,11 @@ class fhandler_dev_dsp: public fhandler_base
 
   void close_audio_in ();
   void close_audio_out (bool = false);
+
+  bool _read_ready();
+  bool _write_ready();
+
+ public:
   bool use_archetype () const {return true;}
 
   fhandler_dev_dsp (void *) {}
@@ -2803,6 +2885,15 @@ class fhandler_dev_dsp: public fhandler_base
     fh->copy_from (this);
     return fh;
   }
+
+  /* select.cc */
+  select_record *select_read (select_stuff *);
+  select_record *select_write (select_stuff *);
+  select_record *select_except (select_stuff *);
+
+  bool read_ready ();
+  bool write_ready ();
+  bool is_closed () { return being_closed; };
 };
 
 class fhandler_virtual : public fhandler_base
@@ -3115,6 +3206,57 @@ class fhandler_procnet: public fhandler_proc
   }
 };
 
+class fhandler_dev_disk: public fhandler_virtual
+{
+public:
+  enum dev_disk_location {
+    unknown_loc, invalid_loc, disk_dir,
+    /* Keep these in sync with dev_disk.cc:by_dir_names array: */
+    disk_by_drive, disk_by_id, disk_by_label,
+    disk_by_partuuid, disk_by_uuid, disk_by_voluuid
+  };
+
+private:
+  dev_disk_location loc;
+  bool loc_is_link;
+
+  void init_dev_disk ();
+  void ensure_inited ()
+  {
+    if (loc == unknown_loc)
+      init_dev_disk ();
+  }
+
+  int drive_from_id;
+  int part_from_id;
+
+ public:
+  fhandler_dev_disk ();
+  fhandler_dev_disk (void *) {}
+  virtual_ftype_t exists();
+  DIR *opendir (int fd);
+  int closedir (DIR *);
+  int readdir (DIR *, dirent *);
+  int open (int flags, mode_t mode = 0);
+  int fstat (struct stat *buf);
+  bool fill_filebuf ();
+
+  void copy_from (fhandler_base *x)
+  {
+    pc.free_strings ();
+    *this = *reinterpret_cast<fhandler_dev_disk *> (x);
+    _copy_from_reset_helper ();
+  }
+
+  fhandler_dev_disk *clone (cygheap_types malloc_type = HEAP_FHANDLER)
+  {
+    void *ptr = (void *) ccalloc (malloc_type, 1, sizeof (fhandler_dev_disk));
+    fhandler_dev_disk *fh = new (ptr) fhandler_dev_disk (ptr);
+    fh->copy_from (this);
+    return fh;
+  }
+};
+
 class fhandler_dev_fd: public fhandler_virtual
 {
  public:
@@ -3285,7 +3427,7 @@ public:
   ssize_t fgetxattr (const char *, void *, size_t) NO_IMPL;
   int fsetxattr (const char *, const void *, size_t, int) NO_IMPL;
   int fadvise (off_t, off_t, int) NO_IMPL;
-  int ftruncate (off_t, bool) NO_IMPL;
+  int fallocate (int, off_t, off_t) NO_IMPL;
   int link (const char *) NO_IMPL;
   int mkdir (mode_t) NO_IMPL;
   ssize_t pread (void *, size_t, off_t, void *aio = NULL) NO_IMPL;
@@ -3341,6 +3483,7 @@ typedef union
   char __dev_raw[sizeof (fhandler_dev_raw)];
   char __dev_tape[sizeof (fhandler_dev_tape)];
   char __dev_zero[sizeof (fhandler_dev_zero)];
+  char __dev_disk[sizeof (fhandler_dev_disk)];
   char __dev_fd[sizeof (fhandler_dev_fd)];
   char __disk_file[sizeof (fhandler_disk_file)];
   char __fifo[sizeof (fhandler_fifo)];

@@ -20,31 +20,59 @@ main (int argc, char **argv)
 {
   STARTUPINFO sa;
   PROCESS_INFORMATION pi;
+  DWORD res;
   DWORD ec = 1;
   char *p;
+  DWORD timeout = 60 * 1000;
 
   if (argc < 2)
     {
-      fprintf (stderr, "Usage: cygrun [program] [tmpdir]\n");
-      exit (0);
+      fprintf (stderr, "Usage: cygrun [program]\n");
+      exit (1);
     }
 
-  if (argc >= 3)
-    SetEnvironmentVariable ("TDIRECTORY", argv[2]);
+  int i;
+  for (i = 1; i < argc; ++i)
+    {
+      if (strcmp (argv[i], "-notimeout") == 0)
+	timeout = INFINITE;
+      else
+	break;
+    }
+
+  char *command = argv[i];
+
+  if (i < (argc-1))
+    {
+      fprintf (stderr, "cygrun: excess arguments\n");
+      exit (1);
+    }
 
   SetEnvironmentVariable ("CYGWIN_TESTING", "1");
 
   memset (&sa, 0, sizeof (sa));
   memset (&pi, 0, sizeof (pi));
-  if (!CreateProcess (0, argv[1], 0, 0, 1, 0, 0, 0, &sa, &pi))
+  if (!CreateProcess (0, command, 0, 0, 1, 0, 0, 0, &sa, &pi))
     {
-      fprintf (stderr, "CreateProcess %s failed\n", argv[1]);
+      fprintf (stderr, "CreateProcess %s failed\n", command);
       exit (1);
     }
 
-  WaitForSingleObject (pi.hProcess, INFINITE);
+  res = WaitForSingleObject (pi.hProcess, timeout);
 
-  GetExitCodeProcess (pi.hProcess, &ec);
+  if (res == WAIT_TIMEOUT)
+    {
+      char cmd[1024];
+      // there is no simple API to kill a Windows process tree
+      sprintf(cmd, "taskkill /f /t /pid %lu", GetProcessId(pi.hProcess));
+      system(cmd);
+      fprintf (stderr, "Timeout\n");
+      ec = 124;
+    }
+  else
+    {
+      GetExitCodeProcess (pi.hProcess, &ec);
+    }
 
   CloseHandle (pi.hProcess);
   CloseHandle (pi.hThread);

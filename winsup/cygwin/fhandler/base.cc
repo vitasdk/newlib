@@ -613,7 +613,10 @@ fhandler_base::open (int flags, mode_t mode)
 	options |= FILE_OPEN_REPARSE_POINT;
     }
 
-  if (get_device () == FH_FS)
+  /* If the file is a FIFO, open has been called for an operation on the file
+     constituting the FIFO, e. g., chmod or statvfs.  Handle it like a normal
+     file.  Eespecially the access flags have to be set correctly. */
+  if (get_device () == FH_FS || get_device () == FH_FIFO)
     {
       /* O_TMPFILE files are created with delete-on-close semantics, as well
 	 as with FILE_ATTRIBUTE_TEMPORARY.  The latter speeds up file access,
@@ -773,6 +776,15 @@ fhandler_base::open (int flags, mode_t mode)
 	  NtClose (fh);
 	  goto done;
 	}
+      /* Drop sparseness */
+      if (pc.file_attributes () & FILE_ATTRIBUTE_SPARSE_FILE)
+	{
+	  FILE_SET_SPARSE_BUFFER fssb = { SetSparse: FALSE };
+	  status = NtFsControlFile (fh, NULL, NULL, NULL, &io,
+				    FSCTL_SET_SPARSE, &fssb, sizeof fssb, NULL, 0);
+	  if (NT_SUCCESS (status))
+	    pc.file_attributes (pc.file_attributes () & ~FILE_ATTRIBUTE_SPARSE_FILE);
+	}
     }
 
   set_handle (fh);
@@ -884,6 +896,9 @@ fhandler_base::write (const void *ptr, size_t len)
 
       did_lseek (false); /* don't do it again */
 
+      /* If the file system supports sparse files and the application is
+         writing after a long seek beyond EOF spanning more than one
+	 sparsifiable chunk, convert the file to a sparse file. */
       if (!(get_flags () & O_APPEND)
 	  && !has_attribute (FILE_ATTRIBUTE_SPARSE_FILE)
 	  && NT_SUCCESS (NtQueryInformationFile (get_output_handle (),
@@ -892,12 +907,9 @@ fhandler_base::write (const void *ptr, size_t len)
 	  && NT_SUCCESS (NtQueryInformationFile (get_output_handle (),
 						 &io, &fpi, sizeof fpi,
 						 FilePositionInformation))
-	  && fpi.CurrentByteOffset.QuadPart
-	     >= fsi.EndOfFile.QuadPart + (128 * 1024))
+	  && span_sparse_chunk (fpi.CurrentByteOffset.QuadPart,
+				fsi.EndOfFile.QuadPart))
 	{
-	  /* If the file system supports sparse files and the application
-	     is writing after a long seek beyond EOF, convert the file to
-	     a sparse file. */
 	  NTSTATUS status;
 	  status = NtFsControlFile (get_output_handle (), NULL, NULL, NULL,
 				    &io, FSCTL_SET_SPARSE, NULL, 0, NULL, 0);
@@ -1109,7 +1121,7 @@ fhandler_base::lseek (off_t offset, int whence)
 	}
       fpi.CurrentByteOffset.QuadPart += offset;
       break;
-    default: /* SEEK_END */
+    case SEEK_END:
       status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
 				       FileStandardInformation);
       if (!NT_SUCCESS (status))
@@ -1119,6 +1131,89 @@ fhandler_base::lseek (off_t offset, int whence)
 	}
       fpi.CurrentByteOffset.QuadPart = fsi.EndOfFile.QuadPart + offset;
       break;
+    case SEEK_DATA:
+    case SEEK_HOLE:
+      {
+	FILE_ALLOCATED_RANGE_BUFFER inp, out;
+
+	status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
+					 FileStandardInformation);
+	if (!NT_SUCCESS (status))
+	  {
+	    __seterrno_from_nt_status (status);
+	    return -1;
+	  }
+	/* Per Linux man page, ENXIO if offset is beyond EOF */
+	if (offset > fsi.EndOfFile.QuadPart)
+	  {
+	    set_errno (ENXIO);
+	    return -1;
+	  }
+	if (!has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+	  {
+	    /* Default behaviour if sparse files are not supported:
+	       SEEK_DATA: seek to offset
+	       SEEK_HOLE: seek to EOF */
+	    fpi.CurrentByteOffset.QuadPart = (whence == SEEK_DATA)
+					     ? offset
+					     : fsi.EndOfFile.QuadPart;
+	    break;
+	  }
+	inp.FileOffset.QuadPart = offset;
+	inp.Length.QuadPart = fsi.EndOfFile.QuadPart - offset;
+	/* Note that we only fetch a single region, so we expect the
+	   function to fail with STATUS_BUFFER_OVERFLOW.  It still
+	   returns the data region containing offset, or the next
+	   region after offset, if offset is within a hole. */
+	status = NtFsControlFile (get_output_handle (), NULL, NULL, NULL,
+				  &io, FSCTL_QUERY_ALLOCATED_RANGES,
+				  &inp, sizeof inp,
+				  &out, sizeof out);
+	if (!NT_SUCCESS (status) && status != STATUS_BUFFER_OVERFLOW)
+	  {
+	    /* On error, fall back to default behaviour, see above. */
+	    fpi.CurrentByteOffset.QuadPart = (whence == SEEK_DATA)
+					     ? offset
+					     : fsi.EndOfFile.QuadPart;
+	    break;
+	  }
+	if (io.Information == 0)
+	  {
+	    /* No valid region, so offset is within a hole at EOF.
+	       SEEK_DATA: ENXIO
+	       SEEK_HOLE: seek to offset */
+	    if (whence == SEEK_DATA)
+	      {
+		set_errno (ENXIO);
+		return -1;
+	      }
+	    fpi.CurrentByteOffset.QuadPart = offset;
+	  }
+	else if (out.FileOffset.QuadPart == offset)
+	  {
+	    /* offset within valid data range?  In that case, that region
+	       supposedly starts at offset, and the region length is corrected
+	       accordingly.  That's quite helpful.
+	       SEEK_DATA: seek to offset
+	       SEEK_HOLE: seek to end of range */
+	    fpi.CurrentByteOffset.QuadPart = offset;
+	    if (whence == SEEK_HOLE)
+	      fpi.CurrentByteOffset.QuadPart += out.Length.QuadPart;
+	  }
+	else
+	  {
+	    /* Is range beyond offset?
+	       SEEK_DATA: seek to start of range
+	       SEEK_HOLE: seek to offset */
+	    fpi.CurrentByteOffset.QuadPart = (whence == SEEK_DATA)
+					     ? out.FileOffset.QuadPart
+					     : offset;
+	  }
+      }
+      break;
+    default: /* Should never be reached */
+      set_errno (EINVAL);
+      return -1;
     }
 
   debug_printf ("setting file pointer to %U", fpi.CurrentByteOffset.QuadPart);
@@ -1627,7 +1722,10 @@ int
 fhandler_base::fchmod (mode_t mode)
 {
   if (pc.is_fs_special ())
-    return chmod_device (pc, mode);
+    {
+      fhandler_disk_file fh (pc);
+      return fh.fchmod (mode);
+    }
   /* By default, just succeeds. */
   return 0;
 }
@@ -1636,7 +1734,10 @@ int
 fhandler_base::fchown (uid_t uid, gid_t gid)
 {
   if (pc.is_fs_special ())
-    return ((fhandler_disk_file *) this)->fhandler_disk_file::fchown (uid, gid);
+    {
+      fhandler_disk_file fh (pc);
+      return fh.fchown (uid, gid);
+    }
   /* By default, just succeeds. */
   return 0;
 }
@@ -1703,9 +1804,9 @@ fhandler_base::fadvise (off_t offset, off_t length, int advice)
 }
 
 int
-fhandler_base::ftruncate (off_t length, bool allow_truncate)
+fhandler_base::fallocate (int mode, off_t offset, off_t length)
 {
-  return EINVAL;
+  return ENODEV;
 }
 
 int
@@ -1728,7 +1829,8 @@ fhandler_base::utimens (const struct timespec *tvp)
 int
 fhandler_base::fsync ()
 {
-  if (!get_handle () || nohandle () || pc.isspecial ())
+  if (!get_handle () || nohandle ()
+      || (pc.isspecial () && !S_ISBLK (pc.dev.mode ())))
     {
       set_errno (EINVAL);
       return -1;

@@ -64,7 +64,7 @@
 #define MALLOC_LOCK __malloc_lock(reent_ptr)
 #define MALLOC_UNLOCK __malloc_unlock(reent_ptr)
 
-#define RERRNO reent_ptr->_errno
+#define RERRNO _REENT_ERRNO(reent_ptr)
 
 #define nano_malloc		_malloc_r
 #define nano_free		_free_r
@@ -333,14 +333,23 @@ void * nano_malloc(RARG malloc_size_t s)
                {
                    p->size += alloc_size;
 
-                   /* Remove chunk from free_list */
+                   /* Remove chunk from free_list. Since p != NULL there is
+                      at least one chunk */
                    r = free_list;
-                   while (r && p != r->next)
+                   if (r->next == NULL)
                    {
-                     r = r->next;
+                       /* There is only a single chunk, remove it */
+                       free_list = NULL;
                    }
-                   r->next = NULL;
-
+                   else
+                   {
+                       /* Search for the chunk before the one to be removed */
+                       while (p != r->next)
+                       {
+                           r = r->next;
+                       }
+                       r->next = NULL;
+                   }
                    r = p;
                }
                else
@@ -387,7 +396,7 @@ void * nano_malloc(RARG malloc_size_t s)
         *(long *)((char *)r + offset) = -offset;
     }
 
-    assert(align_ptr + size <= (char *)r + alloc_size);
+    assert(align_ptr + s <= (char *)r + alloc_size);
     return align_ptr;
 }
 #endif /* DEFINE_MALLOC */

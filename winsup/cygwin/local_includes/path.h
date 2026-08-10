@@ -125,10 +125,16 @@ public:
     return nfs ? nfsattr ()->fileid
 	       : fai ()->InternalInformation.IndexNumber.QuadPart;
   }
-  inline DWORD get_dosattr (bool nfs) const
+  inline DWORD get_dosattr (HANDLE h, bool nfs) const
   {
     if (nfs)
-      return (nfsattr ()->type & 7) == NF3DIR ? FILE_ATTRIBUTE_DIRECTORY : 0;
+      {
+	IO_STATUS_BLOCK io;
+	FILE_BASIC_INFORMATION fbi;
+
+	NtQueryInformationFile (h, &io, &fbi, sizeof fbi, FileBasicInformation);
+	return fbi.FileAttributes;
+      }
     return fai ()->BasicInformation.FileAttributes;
   }
 };
@@ -168,8 +174,8 @@ class path_conv
   bool isgood_inode (ino_t ino) const;
   bool support_sparse () const
   {
-    return (mount_flags & MOUNT_SPARSE)
-	   && (fs_flags () & FILE_SUPPORTS_SPARSE_FILES);
+    return (fs_flags () & FILE_SUPPORTS_SPARSE_FILES)
+	   && (fs.is_ssd () || (mount_flags & MOUNT_SPARSE));
   }
   int has_dos_filenames_only () const {return mount_flags & MOUNT_DOS;}
   int has_buggy_reopen () const {return fs.has_buggy_reopen ();}

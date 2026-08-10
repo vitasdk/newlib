@@ -228,6 +228,8 @@ struct system_call_handle
   _sig_func_ptr oldint;
   _sig_func_ptr oldquit;
   sigset_t oldmask;
+  __pthread_cleanup_handler cleanup_handler;
+
   bool is_system_call ()
   {
     return oldint != ILLEGAL_SIG_FUNC_PTR;
@@ -253,18 +255,27 @@ struct system_call_handle
 	sigaddset (&child_block, SIGCHLD);
 	sigprocmask (SIG_BLOCK, &child_block, &oldmask);
 	sig_send (NULL, __SIGNOHOLD);
+
+	cleanup_handler = { system_call_handle::cleanup, this, NULL };
+	_pthread_cleanup_push (&cleanup_handler);
       }
   }
   ~system_call_handle ()
   {
     if (is_system_call ())
+      _pthread_cleanup_pop (1);
+  }
+  static void cleanup (void *arg)
+  {
+# define this_ ((system_call_handle *) arg)
+    if (this_->is_system_call ())
       {
-	signal (SIGINT, oldint);
-	signal (SIGQUIT, oldquit);
-	sigprocmask (SIG_SETMASK, &oldmask, NULL);
+	signal (SIGINT, this_->oldint);
+	signal (SIGQUIT, this_->oldquit);
+	sigprocmask (SIG_SETMASK, &(this_->oldmask), NULL);
       }
   }
-# undef cleanup
+# undef this_
 };
 
 child_info_spawn NO_COPY ch_spawn;
@@ -341,7 +352,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
 
       int ac;
       for (ac = 0; argv[ac]; ac++)
-	/* nothing */;
+	;
 
       int err;
       const char *ext;
@@ -623,7 +634,7 @@ child_info_spawn::worker (const char *prog_arg, const char *const *argv,
       si.cb = sizeof (si);
 
       if (!iscygwin ())
-	init_console_handler (myself->ctty > 0);
+	init_console_handler (CTTY_IS_VALID (myself->ctty));
 
     loop:
       /* When ruid != euid we create the new process under the current original
@@ -1112,11 +1123,16 @@ spawnvpe (int mode, const char *file, const char * const *argv,
 
 int
 av::setup (const char *prog_arg, path_conv& real_path, const char *ext,
-	   int argc, const char *const *argv, bool p_type_exec)
+	   int ac_in, const char *const *av_in, bool p_type_exec)
 {
   const char *p;
   bool exeext = ascii_strcasematch (ext, ".exe");
-  new (this) av (argc, argv);
+  new (this) av (ac_in, av_in);
+  if (!argc)
+    {
+      set_errno (E2BIG);
+      return -1;
+    }
   if ((exeext && real_path.iscygexec ()) || ascii_strcasematch (ext, ".bat")
       || (!*ext && ((p = ext - 4) > real_path.get_win32 ())
 	  && (ascii_strcasematch (p, ".bat") || ascii_strcasematch (p, ".cmd")
@@ -1392,8 +1408,7 @@ __posix_spawn_execvpe (const char *path, char * const *argv, char *const *envp,
   ch_spawn.set_sem (sem);
   ch_spawn.worker (use_env_path ? (find_exec (path, buf, "PATH", FE_NNF) ?: "")
 				: path,
-		   argv, envp,
-		   _P_OVERLAY | (use_env_path ? _P_PATH_TYPE_EXEC : 0));
+		   argv, envp, _P_OVERLAY);
   __posix_spawn_sem_release (sem, errno);
   return -1;
 }

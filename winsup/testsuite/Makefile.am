@@ -325,33 +325,60 @@ AM_CPPFLAGS = -I$(srcdir)/libltp/include
 AM_LDFLAGS = $(LDFLAGS_FOR_TESTDLL)
 LDADD = $(builddir)/libltp.a $(builddir)/../cygwin/binmode.o $(LDADD_FOR_TESTDLL)
 
-DEJATOOL = winsup
+# additional flags for specific test executables
+winsup_api_devdsp_LDADD = -lwinmm $(LDADD)
 
-# Add '-v' to RUNTESTFLAGS if V=1
-RUNTESTFLAGS_1 = -v
-RUNTESTFLAGS = $(RUNTESTFLAGS_$(V))
+# all tests
+TESTS = $(check_PROGRAMS) \
+	mingw/cygload
 
-# a temporary directory, to be used for files created by tests
-tmpdir = $(abspath $(builddir)/tmp/)
-# the same temporary directory, as an absolute, /cygdrive path (so it can be
-# understood by the test DLL, which will have a different mount table)
-testdll_tmpdir = $(shell cygpath -ma $(tmpdir) | sed -e 's#^\([A-Z]\):#/cygdrive/\L\1#')
+# expected fail tests
+XFAIL_TESTS_CI_true = \
+	winsup.api/ltp/umask03$(EXEEXT)
 
-site-extra.exp: ../config.status Makefile
-	@rm -f ./tmp0
-	@echo "set runtime_root \"`pwd`/runtime\"" >> ./tmp0
-	@echo "set tmpdir $(tmpdir)" >> ./tmp0
-	@echo "set testdll_tmpdir $(testdll_tmpdir)" >> ./tmp0
-	@echo "set cygrun \"`pwd`/mingw/cygrun\"" >> ./tmp0
-	@mv ./tmp0 site-extra.exp
+XFAIL_TESTS = \
+	winsup.api/ltp/setgroups01 \
+	winsup.api/ltp/setuid02 \
+	winsup.api/ltp/ulimit01 \
+	winsup.api/ltp/unlink08 \
+	winsup.api/samples/sample-fail \
+	$(XFAIL_TESTS_CI_$(GITHUB_ACTIONS))
 
-EXTRA_DEJAGNU_SITE_CONFIG = site-extra.exp
+# cygrun.sh test-runner script, and variables used by it:
+LOG_COMPILER = $(srcdir)/cygrun.sh
+
+export runtime_root=$(abs_builddir)/testinst/bin
+export cygrun=$(builddir)/mingw/cygrun
+
+# Set up things in the Cygwin 'installation' at testsuite/testinst/ to provide
+# things which tests need to work
+#
+# * Create /tmp
+# * Ensure there is a /usr/bin/sh for tests which use system()
+# * Ensure there is a /usr/bin/sleep for tests which use system("sleep 10")
+# * Ensure there is a /usr/bin/ls for tests which  use system("ls")
+#
+# copy to avoid all the complexities: hardlink will fail if builddir is on a
+# separate filesystem, symlink would need to be constructed with regard to the
+# mounts of the test installation, and making it into /bin/ will cause
+# CreateProcess() to load cygwin1.dll from there.
+#
+# use busybox executables as they don't have any other shared library
+# dependencies other than cygwin1.dll.
+#
+
+check-local:
+	$(MKDIR_P) ${builddir}/testinst/tmp
+	cd ${builddir}/testinst/bin && cp /usr/libexec/busybox/bin/busybox.exe sh.exe
+	cd ${builddir}/testinst/bin && cp /usr/libexec/busybox/bin/busybox.exe sleep.exe
+	cd ${builddir}/testinst/bin && cp /usr/libexec/busybox/bin/busybox.exe ls.exe
 
 # target to build all the programs needed by check, without running check
 check_programs: $(check_PROGRAMS)
 
 clean-local:
-	rm -f *.log *.exe *.exp *.bak *.stackdump winsup.sum
+	rm -f *.stackdump
+	rm -rf ${builddir}/testinst/tmp
 
 if CROSS_BOOTSTRAP
 SUBDIRS = mingw

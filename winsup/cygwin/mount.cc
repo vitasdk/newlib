@@ -35,6 +35,9 @@ details. */
    (path[mount_table->cygdrive_len + 1] == '/' || \
     !path[mount_table->cygdrive_len + 1]))
 
+#define isdev_disk(path) \
+  (path_prefix_p (dev_disk, (path), dev_disk_len, false))
+
 #define isproc(path) \
   (path_prefix_p (proc, (path), proc_len, false))
 
@@ -42,10 +45,32 @@ bool NO_COPY mount_info::got_usr_bin;
 bool NO_COPY mount_info::got_usr_lib;
 int NO_COPY mount_info::root_idx = -1;
 
-/* is_unc_share: Return non-zero if PATH begins with //server/share
+/* is_native_path: Return non-zero if PATH starts with \??\[a-zA-Z] or
+		   with \\?\[a-zA-Z] or with \\.\[a-zA-Z].
+
+   is_unc_share: Return non-zero if PATH begins with //server/share
 		 or with one of the native prefixes //./ or //?/
+
    This function is only used to test for valid input strings.
    The later normalization drops the native prefixes. */
+
+/* list of invalid chars in server names.  Note that underscore is ok,
+   but it cripples interoperability. */
+const char _invalid_server_char[] = ",~:!@#$%^&'.(){} ";
+#define valid_server_char(_c)	({				\
+		const char __c = (_c);				\
+		!iscntrl(__c)					\
+		&& strchr (_invalid_server_char, (_c)) == NULL;	\
+	})
+
+/* list of invalid chars in UNC filenames.  These are a few more than
+   for "normal" filenames. */
+const char _invalid_share_char[] = "\"/\\[]:|<>+=;,?*";
+#define valid_share_char(_c)	({				\
+		const char __c = (_c);				\
+		!iscntrl(__c)					\
+		&& strchr (_invalid_share_char, __c) == NULL;	\
+	})
 
 static inline bool
 is_native_path (const char *path)
@@ -63,9 +88,9 @@ is_unc_share (const char *path)
   const char *p;
   return (isdirsep (path[0])
 	 && isdirsep (path[1])
-	 && isalnum (path[2])
+	 && valid_server_char (path[2])
 	 && ((p = strpbrk (path + 3, "\\/")) != NULL)
-	 && isalnum (p[1]));
+	 && valid_share_char (p[1]));
 }
 
 /* Return true if src_path is a valid, internally supported device name.
@@ -297,12 +322,49 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
    to Windows 11.  The important point here is to test only flags indicating
    capabilities and to ignore flags indicating a specific state of this
    volume.  At present these flags to ignore are FILE_VOLUME_IS_COMPRESSED,
-   FILE_READ_ONLY_VOLUME, and FILE_SEQUENTIAL_WRITE_ONCE.  The additional
-   filesystem flags supported since Windows 7 are also ignored for now.
-   They add information only for filesystems also supporting these flags,
-   right now only NTFS. */
-#define GETVOLINFO_VALID_MASK (0x002701ffUL)
+   FILE_READ_ONLY_VOLUME, FILE_SEQUENTIAL_WRITE_ONCE and FILE_DAX_VOLUME. */
+#define GETVOLINFO_VALID_MASK (FILE_CASE_SENSITIVE_SEARCH		\
+			       | FILE_CASE_PRESERVED_NAMES		\
+			       | FILE_UNICODE_ON_DISK			\
+			       | FILE_PERSISTENT_ACLS			\
+			       | FILE_FILE_COMPRESSION			\
+			       | FILE_VOLUME_QUOTAS			\
+			       | FILE_SUPPORTS_SPARSE_FILES		\
+			       | FILE_SUPPORTS_REPARSE_POINTS		\
+			       | FILE_SUPPORTS_REMOTE_STORAGE		\
+			       | FILE_RETURNS_CLEANUP_RESULT_INFO	\
+			       | FILE_SUPPORTS_POSIX_UNLINK_RENAME	\
+			       | FILE_SUPPORTS_OBJECT_IDS		\
+			       | FILE_SUPPORTS_ENCRYPTION		\
+			       | FILE_NAMED_STREAMS			\
+			       | FILE_SUPPORTS_TRANSACTIONS		\
+			       | FILE_SUPPORTS_HARD_LINKS		\
+			       | FILE_SUPPORTS_EXTENDED_ATTRIBUTES	\
+			       | FILE_SUPPORTS_OPEN_BY_FILE_ID		\
+			       | FILE_SUPPORTS_USN_JOURNAL		\
+			       | FILE_SUPPORTS_INTEGRITY_STREAMS	\
+			       | FILE_SUPPORTS_BLOCK_REFCOUNTING	\
+			       | FILE_SUPPORTS_SPARSE_VDL		\
+			       | FILE_SUPPORTS_GHOSTING)
+/* This is the pre-Win7 mask used to recognize 3rd-party drivers.  We'll never
+   learn in time when those drivers start to support the new (har har) Win7 FS
+   flags.  */
+#define GETVOLINFO_NON_WIN_MASK (FILE_CASE_SENSITIVE_SEARCH		\
+			       | FILE_CASE_PRESERVED_NAMES		\
+			       | FILE_UNICODE_ON_DISK			\
+			       | FILE_PERSISTENT_ACLS			\
+			       | FILE_FILE_COMPRESSION			\
+			       | FILE_VOLUME_QUOTAS			\
+			       | FILE_SUPPORTS_SPARSE_FILES		\
+			       | FILE_SUPPORTS_REPARSE_POINTS		\
+			       | FILE_SUPPORTS_REMOTE_STORAGE		\
+			       | FILE_SUPPORTS_OBJECT_IDS		\
+			       | FILE_SUPPORTS_ENCRYPTION		\
+			       | FILE_NAMED_STREAMS			\
+			       | FILE_SUPPORTS_TRANSACTIONS)
+
 #define TEST_GVI(f,m) (((f) & GETVOLINFO_VALID_MASK) == (m))
+#define TEST_GVI_NON_WIN(f,m) (((f) & GETVOLINFO_NON_WIN_MASK) == (m))
 
 /* FIXME: This flag twist is getting awkward.  There should really be some
    other method.  Maybe we need mount flags to allow the user to fix file
@@ -313,7 +375,7 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
 #define SAMBA_IGNORE (FILE_VOLUME_QUOTAS \
 		      | FILE_SUPPORTS_OBJECT_IDS \
 		      | FILE_UNICODE_ON_DISK)
-#define FS_IS_SAMBA TEST_GVI(flags () & ~SAMBA_IGNORE, \
+#define FS_IS_SAMBA TEST_GVI_NON_WIN(flags () & ~SAMBA_IGNORE, \
 			     FILE_CASE_SENSITIVE_SEARCH \
 			     | FILE_CASE_PRESERVED_NAMES \
 			     | FILE_PERSISTENT_ACLS)
@@ -321,14 +383,15 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
 #define NETAPP_IGNORE (FILE_SUPPORTS_SPARSE_FILES \
 		       | FILE_SUPPORTS_REPARSE_POINTS \
 		       | FILE_PERSISTENT_ACLS)
-#define FS_IS_NETAPP_DATAONTAP TEST_GVI(flags () & ~NETAPP_IGNORE, \
+#define FS_IS_NETAPP_DATAONTAP TEST_GVI_NON_WIN(flags () & ~NETAPP_IGNORE, \
 			     FILE_CASE_SENSITIVE_SEARCH \
 			     | FILE_CASE_PRESERVED_NAMES \
 			     | FILE_UNICODE_ON_DISK \
 			     | FILE_NAMED_STREAMS)
-/* These are the minimal flags supported by NTFS since Windows 2000.  Every
-   filesystem not supporting these flags is not a native NTFS.  We subsume
-   them under the filesystem type "cifs". */
+/* These are the minimal flags supported by NTFS since Windows 7, when
+   checking a remote NTFS filesystem.  Every filesystem not supporting these
+   flags is not a native NTFS.
+   We subsume them under the filesystem type "cifs". */
 #define MINIMAL_WIN_NTFS_FLAGS (FILE_CASE_SENSITIVE_SEARCH \
 				| FILE_CASE_PRESERVED_NAMES \
 				| FILE_UNICODE_ON_DISK \
@@ -339,7 +402,9 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
 				| FILE_SUPPORTS_REPARSE_POINTS \
 				| FILE_SUPPORTS_OBJECT_IDS \
 				| FILE_SUPPORTS_ENCRYPTION \
-				| FILE_NAMED_STREAMS)
+				| FILE_NAMED_STREAMS \
+				| FILE_SUPPORTS_HARD_LINKS \
+				| FILE_SUPPORTS_EXTENDED_ATTRIBUTES)
 #define FS_IS_WINDOWS_NTFS TEST_GVI(flags () & MINIMAL_WIN_NTFS_FLAGS, \
 				    MINIMAL_WIN_NTFS_FLAGS)
 /* These are the exact flags of a real Windows FAT/FAT32 filesystem.
@@ -458,8 +523,22 @@ fs_info::update (PUNICODE_STRING upath, HANDLE in_vol)
   caseinsensitive ((!(flags () & FILE_CASE_SENSITIVE_SEARCH) || is_samba ())
 		   && !is_nfs ());
 
+  /* Check for being an SSD */
+  if (!is_remote_drive () && !is_cdrom ())
+    {
+      /* Theoretically FileFsVolumeFlagsInformation would be sufficient,
+	 but apparently it's not exposed into userspace. */
+      FILE_FS_SECTOR_SIZE_INFORMATION ffssi;
+
+      status = NtQueryVolumeInformationFile (vol, &io, &ffssi, sizeof ffssi,
+					     FileFsSectorSizeInformation);
+      if (NT_SUCCESS (status))
+	is_ssd (!!(ffssi.Flags & SSINFO_FLAGS_NO_SEEK_PENALTY));
+    }
+
   if (!in_vol)
     NtClose (vol);
+
   fsi_cache.add (hash, this);
   return true;
 }
@@ -621,6 +700,13 @@ mount_info::conv_to_win32_path (const char *src_path, char *dst, device& dev,
 	}
       backslashify (src_path, dst, 0);
       /* Go through chroot check */
+      goto out;
+    }
+  if (isdev_disk (src_path))
+    {
+      dev = *dev_disk_dev;
+      *flags = 0;
+      strcpy (dst, src_path);
       goto out;
     }
   if (isproc (src_path))

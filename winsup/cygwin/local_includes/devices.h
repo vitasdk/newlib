@@ -71,6 +71,7 @@ enum fh_devices
   FH_DEV     = FHDEV (DEV_VIRTFS_MAJOR, 193),
   FH_CYGDRIVE= FHDEV (DEV_VIRTFS_MAJOR, 192),
   FH_DEV_FD  = FHDEV (DEV_VIRTFS_MAJOR, 191),
+  FH_DEV_DISK= FHDEV (DEV_VIRTFS_MAJOR, 190),
 
   FH_SIGNALFD= FHDEV (DEV_VIRTFS_MAJOR, 13),
   FH_TIMERFD = FHDEV (DEV_VIRTFS_MAJOR, 14),
@@ -242,6 +243,7 @@ enum fh_devices
   FH_URANDOM = FHDEV (DEV_MEM_MAJOR, 9),
 
   DEV_SOUND_MAJOR = 14,
+  FH_OSS_MIXER = FHDEV (DEV_SOUND_MAJOR, 0),
   FH_OSS_DSP = FHDEV (DEV_SOUND_MAJOR, 3),
 
   DEV_SOCK_MAJOR = 30,
@@ -414,6 +416,8 @@ extern const _device dev_piper_storage;
 #define piper_dev ((device *) &dev_piper_storage)
 extern const _device dev_pipew_storage;
 #define pipew_dev ((device *) &dev_pipew_storage)
+extern const _device dev_dev_disk_storage;
+#define dev_disk_dev ((device *) &dev_dev_disk_storage)
 extern const _device dev_proc_storage;
 #define proc_dev ((device *) &dev_proc_storage)
 extern const _device dev_dev_storage;
@@ -438,7 +442,8 @@ extern const _device dev_fs_storage;
 #define isprocsys_dev(devn) (devn == FH_PROCSYS)
 
 #define isvirtual_dev(devn) \
-  (isproc_dev (devn) || devn == FH_CYGDRIVE || devn == FH_NETDRIVE || devn == FH_DEV_FD)
+  (isproc_dev (devn) || devn == FH_CYGDRIVE || devn == FH_NETDRIVE \
+   || devn == FH_DEV_FD || devn == FH_DEV_DISK)
 
 #define iscons_dev(n) \
   ((device::major ((dev_t) (n)) == DEV_CONS_MAJOR) \

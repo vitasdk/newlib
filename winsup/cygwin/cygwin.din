@@ -49,6 +49,8 @@ __b64_ntop NOSIGFE
 __b64_pton NOSIGFE
 __bsd_qsort_r NOSIGFE
 __chk_fail SIGFE
+__cpuset_alloc SIGFE
+__cpuset_free SIGFE
 __cxa_atexit = cygwin__cxa_atexit SIGFE
 __cxa_finalize SIGFE
 __dn_comp SIGFE
@@ -268,6 +270,8 @@ bindresvport_sa = cygwin_bindresvport_sa SIGFE
 bsearch NOSIGFE
 btowc NOSIGFE
 bzero NOSIGFE
+c16rtomb NOSIGFE
+c32rtomb NOSIGFE
 cabs NOSIGFE
 cabsf NOSIGFE
 cabsl NOSIGFE
@@ -502,6 +506,7 @@ fabsf NOSIGFE
 fabsl NOSIGFE
 faccessat SIGFE
 facl SIGFE
+fallocate SIGFE
 fchdir SIGFE
 fchmod SIGFE
 fchmodat SIGFE
@@ -530,7 +535,7 @@ fegetround NOSIGFE
 feholdexcept SIGFE
 feof SIGFE
 feof_unlocked SIGFE
-feraiseexcept SIGFE
+feraiseexcept NOSIGFE
 ferror SIGFE
 ferror_unlocked SIGFE
 fesetenv SIGFE
@@ -936,6 +941,8 @@ malloc_trim SIGFE
 malloc_usable_size SIGFE
 mallopt SIGFE
 mblen NOSIGFE
+mbrtoc16 NOSIGFE
+mbrtoc32 NOSIGFE
 mbrlen NOSIGFE
 mbrtowc NOSIGFE
 mbsinit NOSIGFE
@@ -1040,8 +1047,10 @@ posix_madvise SIGFE
 posix_memalign SIGFE
 posix_openpt SIGFE
 posix_spawn SIGFE
+posix_spawn_file_actions_addchdir_np SIGFE
 posix_spawn_file_actions_addclose SIGFE
 posix_spawn_file_actions_adddup2 SIGFE
+posix_spawn_file_actions_addfchdir_np SIGFE
 posix_spawn_file_actions_addopen SIGFE
 posix_spawn_file_actions_destroy SIGFE
 posix_spawn_file_actions_init SIGFE

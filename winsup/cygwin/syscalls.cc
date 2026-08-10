@@ -665,8 +665,8 @@ _unlink_nt_post_dir_check (NTSTATUS status, POBJECT_ATTRIBUTES attr, const path_
   return status;
 }
 
-static NTSTATUS
-_unlink_nt (path_conv &pc, bool shareable)
+NTSTATUS
+unlink_nt (path_conv &pc, bool shareable)
 {
   NTSTATUS status;
   HANDLE fh, fh_ro = NULL;
@@ -691,10 +691,12 @@ _unlink_nt (path_conv &pc, bool shareable)
   pc.get_object_attr (attr, sec_none_nih);
 
   /* First check if we can use POSIX unlink semantics: W10 1709+, local NTFS.
-     With POSIX unlink semantics the entire job gets MUCH easier and faster.
-     Just try to do it and if it fails, it fails. */
+     For the OPEN_BY_FILE_ID flag, see MINIMAL_WIN_NTFS_FLAGS comment in
+     fs_info::update.  With POSIX unlink semantics the entire job gets MUCH
+     easier and faster.  Just try to do it and if it fails, it fails. */
   if (wincap.has_posix_unlink_semantics ()
-      && !pc.isremote () && pc.fs_is_ntfs ())
+      && !pc.isremote () && pc.fs_is_ntfs ()
+      && pc.has_attribute (FILE_SUPPORTS_OPEN_BY_FILE_ID))
     {
       FILE_DISPOSITION_INFORMATION_EX fdie;
 
@@ -731,8 +733,15 @@ _unlink_nt (path_conv &pc, bool shareable)
       /* Trying to delete in-use executables and DLLs using
          FILE_DISPOSITION_POSIX_SEMANTICS returns STATUS_CANNOT_DELETE.
 	 Fall back to the default method. */
-      if (status != STATUS_CANNOT_DELETE)
-	goto out;
+      /* Additionaly that returns STATUS_INVALID_PARAMETER
+         on a bind mounted fs in hyper-v container. Falling back too. */
+      if (status != STATUS_CANNOT_DELETE
+          && status != STATUS_INVALID_PARAMETER)
+        {
+          debug_printf ("NtSetInformationFile returns %y "
+                        "with posix semantics. Disable it and retry.", status);
+          goto out;
+        }
     }
 
   /* If the R/O attribute is set, we have to open the file with
@@ -1062,18 +1071,6 @@ out:
   return status;
 }
 
-NTSTATUS
-unlink_nt (path_conv &pc)
-{
-  return _unlink_nt (pc, false);
-}
-
-NTSTATUS
-unlink_nt_shareable (path_conv &pc)
-{
-  return _unlink_nt (pc, true);
-}
-
 extern "C" int
 unlink (const char *ourname)
 {
@@ -1113,7 +1110,7 @@ unlink (const char *ourname)
       goto done;
     }
 
-  status = unlink_nt (win32_name);
+  status = unlink_nt (win32_name, false);
   if (NT_SUCCESS (status))
     res = 0;
   else
@@ -1176,9 +1173,7 @@ setsid (void)
     syscall_printf ("hmm.  pgid %d pid %d", myself->pgid, myself->pid);
   else
     {
-      myself->ctty = -2; /* -2 means CTTY has been released by setsid().
-			    Can be associated only with a new TTY which
-			    is not associated with any session. */
+      myself->ctty = CTTY_RELEASED;
       myself->sid = myself->pid;
       myself->pgid = myself->pid;
       if (cygheap->ctty)
@@ -1452,17 +1447,6 @@ open (const char *unix_path, int flags, ...)
       int opt = PC_OPEN | PC_SYM_NOFOLLOW_PROCFD;
       opt |= (flags & (O_NOFOLLOW | O_EXCL)) ? PC_SYM_NOFOLLOW
 					     : PC_SYM_FOLLOW;
-      /* This is a temporary kludge until all utilities can catch up
-	 with a change in behavior that implements linux functionality:
-	 opening a tty should not automatically cause it to become the
-	 controlling tty for the process.  */
-      if (!(flags & O_NOCTTY) && fd > 2 && myself->ctty != -2)
-	{
-	  flags |= O_NOCTTY;
-	  /* flag that, if opened, this fhandler could later be capable
-	     of being a controlling terminal if /dev/tty is opened. */
-	  opt |= PC_CTTY;
-	}
 
       /* If we're opening a FIFO, we will call device_access_denied
 	 below.  This leads to a call to fstat, which can use the
@@ -1575,7 +1559,7 @@ lseek (int fd, off_t pos, int dir)
 {
   off_t res;
 
-  if (dir != SEEK_SET && dir != SEEK_CUR && dir != SEEK_END)
+  if (dir < SEEK_SET || dir > SEEK_HOLE)
     {
       set_errno (EINVAL);
       res = -1;
@@ -1983,12 +1967,14 @@ stat_worker (path_conv &pc, struct stat *buf)
 	{
 	  fhandler_base *fh;
 
+	  memset (buf, 0, sizeof (*buf));
+
 	  if (!(fh = build_fh_pc (pc)))
 	    __leave;
 
 	  debug_printf ("(%S, %p, %p), file_attributes %d",
 			pc.get_nt_native_path (), buf, fh, (DWORD) *fh);
-	  memset (buf, 0, sizeof (*buf));
+
 	  res = fh->fstat (buf);
 	  if (!res)
 	    fh->stat_fixup (buf);
@@ -2124,6 +2110,14 @@ nt_path_has_executable_suffix (PUNICODE_STRING upath)
   return false;
 }
 
+inline int
+set_same_file_return (bool noreplace)
+{
+  if (!noreplace)
+    return 0;
+  set_errno (EEXIST);
+  return -1;
+}
 /* If newpath names an existing file and the RENAME_NOREPLACE flag is
    specified, fail with EEXIST.  Exception: Don't fail if the purpose
    of the rename is just to change the case of oldpath on a
@@ -2302,7 +2296,7 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 				     newpc.get_nt_native_path (),
 				     FALSE))
 	    {
-	      res = 0;
+	      res = set_same_file_return (noreplace);
 	      __leave;
 	    }
 	  newpc.file_attributes (INVALID_FILE_ATTRIBUTES);
@@ -2317,7 +2311,7 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 	      if (newpc.get_nt_native_path ()->Length
 		  == oldpc.get_nt_native_path ()->Length)
 		{
-		  res = 0;
+		  res = set_same_file_return (noreplace);
 		  __leave;
 		}
 	      if (*(PWCHAR) ((PBYTE) newpc.get_nt_native_path ()->Buffer
@@ -2337,7 +2331,7 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 					 newpc.get_nt_native_path (),
 					 oldpc.objcaseinsensitive ()))
 		{
-		  res = 0;
+		  res = set_same_file_return (noreplace);
 		  __leave;
 		}
 	    }
@@ -2366,7 +2360,7 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 					 newpc.get_nt_native_path (),
 					 oldpc.objcaseinsensitive ()))
 		{
-		  res = 0;
+		  res = set_same_file_return (noreplace);
 		  __leave;
 		}
 	    }
@@ -2432,11 +2426,14 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 	  __leave;
 	}
 
-      /* POSIX semantics only on local NTFS drives. */
+      /* POSIX semantics only on local NTFS drives. For the OPEN_BY_FILE_ID
+         flag, see MINIMAL_WIN_NTFS_FLAGS comment in fs_info::update. */
       use_posix_semantics = wincap.has_posix_rename_semantics ()
 			    && !oldpc.isremote ()
-			    && oldpc.fs_is_ntfs ();
+			    && oldpc.fs_is_ntfs ()
+			    && oldpc.has_attribute (FILE_SUPPORTS_OPEN_BY_FILE_ID);
 
+ignore_posix_semantics_retry:
       /* Opening the file must be part of the transaction.  It's not sufficient
 	 to call only NtSetInformationFile under the transaction.  Therefore we
 	 have to start the transaction here, if necessary.  Don't start
@@ -2517,7 +2514,7 @@ rename2 (const char *oldpath, const char *newpath, unsigned int at2flags)
 	 unlink_nt returns with STATUS_DIRECTORY_NOT_EMPTY. */
       if (dstpc->isdir ())
 	{
-	  status = unlink_nt (*dstpc);
+	  status = unlink_nt (*dstpc, false);
 	  if (!NT_SUCCESS (status))
 	    {
 	      __seterrno_from_nt_status (status);
@@ -2584,7 +2581,7 @@ skip_pre_W10_checks:
 	    {
 	      debug_printf ("%s and %s are the same file", oldpath, newpath);
 	      NtClose (nfh);
-	      res = 0;
+	      res = set_same_file_return (noreplace);
 	      __leave;
 	    }
 	  NtClose (nfh);
@@ -2658,7 +2655,7 @@ skip_pre_W10_checks:
 					? FILE_OPEN_REPARSE_POINT : 0));
 	      if (NT_SUCCESS (status))
 		{
-		  status = unlink_nt (*dstpc);
+		  status = unlink_nt (*dstpc, false);
 		  if (NT_SUCCESS (status))
 		    break;
 		}
@@ -2678,9 +2675,20 @@ skip_pre_W10_checks:
       if (NT_SUCCESS (status))
 	{
 	  if (removepc)
-	    unlink_nt (*removepc);
+	    unlink_nt (*removepc, false);
 	  res = 0;
 	}
+      else if (use_posix_semantics && status == STATUS_INVALID_PARAMETER)
+        {
+          /* NtSetInformationFile returns STATUS_INVALID_PARAMETER
+             on a bind mounted file system in hyper-v container
+             with FILE_RENAME_POSIX_SEMANTICS.
+             Disable the use_posix semntics flag and retry. */
+          debug_printf ("NtSetInformationFile failed with posix semantics. "
+                        "Disable it and retry.");
+          use_posix_semantics = 0;
+          goto ignore_posix_semantics_retry;
+        }
       else
 	__seterrno_from_nt_status (status);
     }
@@ -2843,7 +2851,7 @@ ctermid (char *str)
 {
   if (str == NULL)
     str = _my_tls.locals.ttybuf;
-  if (myself->ctty < 0)
+  if (!CTTY_IS_VALID (myself->ctty))
     strcpy (str, "no tty");
   else
     {
@@ -2980,18 +2988,63 @@ posix_fadvise (int fd, off_t offset, off_t len, int advice)
 }
 
 extern "C" int
-posix_fallocate (int fd, off_t offset, off_t len)
+fallocate (int fd, int mode, off_t offset, off_t len)
 {
   int res = 0;
-  if (offset < 0 || len == 0)
+
+  /* First check mask of allowed flags */
+  if (mode & ~(FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE
+	       | FALLOC_FL_UNSHARE_RANGE | FALLOC_FL_COLLAPSE_RANGE
+	       | FALLOC_FL_INSERT_RANGE | FALLOC_FL_KEEP_SIZE))
+    res = EOPNOTSUPP;
+  /* Either FALLOC_FL_PUNCH_HOLE or FALLOC_FL_ZERO_RANGE, never both */
+  else if ((mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE))
+	   == (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_ZERO_RANGE))
+    res = EOPNOTSUPP;
+  /* FALLOC_FL_PUNCH_HOLE must be ORed with FALLOC_FL_KEEP_SIZE */
+  else if ((mode & (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE))
+	   == FALLOC_FL_PUNCH_HOLE)
+    res = EOPNOTSUPP;
+  else if (offset < 0 || len <= 0)
     res = EINVAL;
+  else if (INT64_MAX - len < offset)
+    res = EFBIG;
   else
     {
       cygheap_fdget cfd (fd);
       if (cfd >= 0)
-	res = cfd->ftruncate (offset + len, false);
+	res = cfd->fallocate (mode, offset, len);
       else
 	res = EBADF;
+      if (res == EISDIR)
+	res = ENODEV;
+    }
+  if (res)
+    {
+      set_errno (res);
+      res = -1;
+    }
+  syscall_printf ("%R = fallocate(%d, %y, %D, %D)", res, fd, mode, offset, len);
+  return res;
+}
+
+extern "C" int
+posix_fallocate (int fd, off_t offset, off_t len)
+{
+  int res = 0;
+  if (offset < 0 || len <= 0)
+    res = EINVAL;
+  else if (INT64_MAX - len < offset)
+    res = EFBIG;
+  else
+    {
+      cygheap_fdget cfd (fd);
+      if (cfd >= 0)
+	res = cfd->fallocate (0, offset, len);
+      else
+	res = EBADF;
+      if (res == EISDIR)
+	res = ENODEV;
     }
   syscall_printf ("%R = posix_fallocate(%d, %D, %D)", res, fd, offset, len);
   return res;
@@ -3004,9 +3057,11 @@ ftruncate (int fd, off_t length)
   cygheap_fdget cfd (fd);
   if (cfd >= 0)
     {
-      res = cfd->ftruncate (length, true);
+      res = cfd->fallocate (__FALLOC_FL_TRUNCATE, 0, length);
       if (res)
 	{
+	  if (res == ENODEV)
+	    res = EINVAL;
 	  set_errno (res);
 	  res = -1;
 	}
@@ -4408,27 +4463,13 @@ pclose (FILE *fp)
 
 static int
 gen_full_path_at (char *path_ret, int dirfd, const char *pathname,
-		  bool null_pathname_allowed = false)
+		  int flags = 0)
 {
-  /* Set null_pathname_allowed to true to allow GLIBC compatible behaviour
-     for NULL pathname.  Only used by futimesat. */
-  if (!pathname && !null_pathname_allowed)
+  /* futimesat allows a NULL pathname. */
+  if (!pathname && !(flags & _AT_NULL_PATHNAME_ALLOWED))
     {
       set_errno (EFAULT);
       return -1;
-    }
-  if (pathname)
-    {
-      if (!*pathname)
-	{
-	  set_errno (ENOENT);
-	  return -1;
-	}
-      if (strlen (pathname) >= PATH_MAX)
-	{
-	  set_errno (ENAMETOOLONG);
-	  return -1;
-	}
     }
   if (pathname && isabspath_strict (pathname))
     stpcpy (path_ret, pathname);
@@ -4447,20 +4488,27 @@ gen_full_path_at (char *path_ret, int dirfd, const char *pathname,
 	  cygheap_fdget cfd (dirfd);
 	  if (cfd < 0)
 	    return -1;
-	  if (!cfd->pc.isdir ())
+	  if (!cfd->pc.isdir () && !(flags & AT_EMPTY_PATH))
 	    {
 	      set_errno (ENOTDIR);
 	      return -1;
 	    }
 	  p = stpcpy (path_ret, cfd->get_name ());
 	}
-      if (!p)
-	{
-	  set_errno (ENOTDIR);
-	  return -1;
-	}
       if (pathname)
 	{
+	  if (!*pathname)
+	    {
+	      if (flags & AT_EMPTY_PATH)
+		return 0;
+	      set_errno (ENOENT);
+	      return -1;
+	    }
+	  if (strlen (pathname) >= PATH_MAX)
+	    {
+	      set_errno (ENAMETOOLONG);
+	      return -1;
+	    }
 	  if (p[-1] != '/')
 	    *p++ = '/';
 	  stpcpy (p, pathname);
@@ -4574,29 +4622,14 @@ fchownat (int dirfd, const char *pathname, uid_t uid, gid_t gid, int flags)
 	  __leave;
 	}
       char *path = tp.c_get ();
-      int res = gen_full_path_at (path, dirfd, pathname);
+      int res = gen_full_path_at (path, dirfd, pathname, flags);
       if (res)
+	__leave;
+      if (!*pathname) /* Implies AT_EMPTY_PATH */
 	{
-	  if (!(errno == ENOENT && (flags & AT_EMPTY_PATH)))
-	    __leave;
-	  /* pathname is an empty string.  Operate on dirfd. */
-	  if (dirfd == AT_FDCWD)
-	    {
-	      cwdstuff::acquire_read ();
-	      strcpy (path, cygheap->cwd.get_posix ());
-	      cwdstuff::release_read ();
-	    }
-	  else
-	    {
-	      cygheap_fdget cfd (dirfd);
-	      if (cfd < 0)
-		__leave;
-	      strcpy (path, cfd->get_name ());
-	      /* If dirfd refers to a symlink (which was necessarily
-		 opened with O_PATH | O_NOFOLLOW), we must operate
-		 directly on that symlink.. */
-	      flags = AT_SYMLINK_NOFOLLOW;
-	    }
+	  /* If dirfd refers to a symlink (which was necessarily opened with
+	     O_PATH | O_NOFOLLOW), we must operate directly on that symlink. */
+	  flags = AT_SYMLINK_NOFOLLOW;
 	}
       return chown_worker (path, (flags & AT_SYMLINK_NOFOLLOW)
 				 ? PC_SYM_NOFOLLOW : PC_SYM_FOLLOW, uid, gid);
@@ -4619,21 +4652,9 @@ fstatat (int dirfd, const char *__restrict pathname, struct stat *__restrict st,
 	  __leave;
 	}
       char *path = tp.c_get ();
-      int res = gen_full_path_at (path, dirfd, pathname);
+      int res = gen_full_path_at (path, dirfd, pathname, flags);
       if (res)
-	{
-	  if (!(errno == ENOENT && (flags & AT_EMPTY_PATH)))
-	    __leave;
-	  /* pathname is an empty string.  Operate on dirfd. */
-	  if (dirfd == AT_FDCWD)
-	    {
-	      cwdstuff::acquire_read ();
-	      strcpy (path, cygheap->cwd.get_posix ());
-	      cwdstuff::release_read ();
-	    }
-	  else
-	    return fstat (dirfd, st);
-	}
+	  __leave;
       path_conv pc (path, ((flags & AT_SYMLINK_NOFOLLOW)
 			   ? PC_SYM_NOFOLLOW : PC_SYM_FOLLOW)
 			  | PC_POSIX | PC_KEEP_HANDLE, stat_suffixes);
@@ -4678,7 +4699,7 @@ futimesat (int dirfd, const char *pathname, const struct timeval times[2])
   __try
     {
       char *path = tp.c_get ();
-      if (gen_full_path_at (path, dirfd, pathname, true))
+      if (gen_full_path_at (path, dirfd, pathname, _AT_NULL_PATHNAME_ALLOWED))
 	__leave;
       return utimes (path, times);
     }
@@ -4805,21 +4826,26 @@ readlinkat (int dirfd, const char *__restrict pathname, char *__restrict buf,
   __try
     {
       char *path = tp.c_get ();
+      int save_errno = errno;
       int res = gen_full_path_at (path, dirfd, pathname);
       if (res)
 	{
-	  if (errno != ENOENT)
+	  if (errno != ENOENT && errno != ENOTDIR)
 	    __leave;
 	  /* pathname is an empty string.  This is OK if dirfd refers
 	     to a symlink that was opened with O_PATH | O_NOFOLLOW.
-	     In this case, readlinkat operates on the symlink. */
+	     In this case, readlinkat operates on the symlink.
+	     Don't propagate errors from gen_full_path_at after this point. */
+	  errno = save_errno;
 	  cygheap_fdget cfd (dirfd);
-	  if (cfd < 0)
-	    __leave;
-	  if (!(cfd->issymlink ()
+	  if (cfd < 0
+	      || (!(cfd->issymlink ()
 		&& cfd->get_flags () & O_PATH
-		&& cfd->get_flags () & O_NOFOLLOW))
-	    __leave;
+		&& cfd->get_flags () & O_NOFOLLOW)))
+	    {
+	      set_errno (ENOENT);
+	      __leave;
+	    }
 	  strcpy (path, cfd->get_name ());
 	}
       return readlink (path, buf, bufsize);

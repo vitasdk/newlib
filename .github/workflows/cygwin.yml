@@ -1,6 +1,12 @@
 name: cygwin
 
-on: push
+on:
+ push:
+   # since master is a symbolic reference to main, don't run for both
+   branches-ignore:
+     - 'master'
+   tags:
+     - '*'
 
 jobs:
   fedora-build:
@@ -14,37 +20,75 @@ jobs:
           pkgarch: 64
     name: Fedora cross ${{ matrix.target }}
 
+    env:
+      HAS_SSH_KEY: ${{ secrets.SSH_KEY != '' }}
+
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     # install build tools
-    - run: dnf install -y autoconf automake make patch perl
-    - run: dnf install -y mingw${{ matrix.pkgarch }}-gcc-c++ mingw${{ matrix.pkgarch }}-winpthreads-static mingw${{ matrix.pkgarch }}-zlib-static
+    - name: Install build tools
+      run: |
+        dnf install -y autoconf automake make patch perl mingw${{ matrix.pkgarch }}-gcc-c++ mingw${{ matrix.pkgarch }}-winpthreads-static mingw${{ matrix.pkgarch }}-zlib-static
 
     # enable 'dnf copr'
-    - run: dnf install -y dnf-plugins-core
-
-    # cocom isn't packaged in Fedora, so we install from a copr
-    - run: dnf copr enable -y jturney/cocom
-    - run: dnf install -y cocom
+    - name: Enable 'dnf copr'
+      run: |
+        dnf install -y dnf-plugins-core
 
     # install cross-cygwin toolchain and libs from copr
-    - run: dnf copr enable -y yselkowitz/cygwin
-    - run: dnf install -y cygwin${{ matrix.pkgarch }}-gcc-c++ cygwin${{ matrix.pkgarch }}-gettext cygwin${{ matrix.pkgarch }}-libbfd cygwin${{ matrix.pkgarch }}-libiconv cygwin${{ matrix.pkgarch }}-zlib
+    - name: Install cross-cygwin toolchain and libs and cocom from copr
+      run: |
+        dnf copr enable -y yselkowitz/cygwin
+        dnf install -y cygwin${{ matrix.pkgarch }}-gcc-c++ cygwin${{ matrix.pkgarch }}-gettext cygwin${{ matrix.pkgarch }}-libbfd cygwin${{ matrix.pkgarch }}-libiconv cygwin${{ matrix.pkgarch }}-zlib cocom
 
     # install doc tools
-    - run: dnf install -y dblatex docbook2X docbook-xsl xmlto
-    - run: dnf install -y python3 python3-lxml python3-ply
-    - run: fmtutil-sys --byfmt pdflatex && texhash
+    - name: Install doc tools
+      run: |
+        dnf install -y dblatex docbook2X docbook-xsl xmlto python3 python3-lxml python3-ply openssh-clients
+        fmtutil-sys --byfmt pdflatex && texhash
 
     # build
-    - run: mkdir build install
-    - run: cd winsup && ./autogen.sh
-    - run: cd build && ../configure --target=${{ matrix.target }} --prefix=$(realpath $(pwd)/../install)
-    - run: make -C build
-    - run: make -C build/*/newlib info man
-    - run: make -C build install
-    - run: make -C build/*/newlib install-info install-man
+    - name: Configure, build and install
+      run: |
+        mkdir build install
+        (cd winsup && ./autogen.sh)
+        (cd build && ../configure --target=${{ matrix.target }} --prefix=$(realpath $(pwd)/../install) )
+        make -C build
+        make -C build/*/newlib info man
+        make -C build install
+        make -C build/*/newlib install-info install-man
+
+    # deploy documentation
+    - name: Deploy documentation
+      env:
+        SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+      run: |
+        # pushes to main are deployed as preview
+        # pushes to cygwin-n.n.n (but not 'cygwin-n.n.n.dev') tags are deployed as stable
+        # other references are ignored by this step
+        case "${{ github.ref }}" in
+          refs/heads/main)
+            DEST='preview'
+            ;;
+          refs/tags/cygwin-[0-9.]*)
+            DEST='stable'
+            ;;
+          *)
+            exit 0
+            ;;
+        esac
+        # unfuck github fuckery of HOME in a container
+        unset HOME
+        # add the hosts public key to known_hosts
+        mkdir -p ~/.ssh/
+        echo "cygwin.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKoejTnTCbXaIIMYfbX7t4tYUOQ2bTxZC3e/td3BageF" >> ~/.ssh/known_hosts
+        # load the key (restricted to scp only) into ssh-agent
+        ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+        ssh-add - <<< "${{ secrets.SSH_KEY }}"
+        # 'make install' doesn't install faq, so instead just deploy from build directory
+        scp -pr build/*/winsup/doc/{cygwin-api,cygwin-ug-net,faq} cygwin-admin@cygwin.com:/sourceware/www/sourceware/htdocs/cygwin/doc/${DEST}/
+      if: env.HAS_SSH_KEY == 'true'
 
   windows-build:
     runs-on: windows-latest
@@ -61,7 +105,7 @@ jobs:
     # endings, but this could still be dangerous e.g if we need symlinks in the
     # repo)
     - run: git config --global core.autocrlf input
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     # install cygwin and build tools
     - name: Install Cygwin
@@ -71,7 +115,9 @@ jobs:
         packages: >-
           autoconf,
           automake,
+          busybox,
           cocom,
+          cygutils-extra,
           dblatex,
           dejagnu,
           docbook-xml45,
@@ -81,6 +127,7 @@ jobs:
           gettext-devel,
           libiconv,
           libiconv-devel,
+          libzstd-devel,
           make,
           mingw64-${{ matrix.pkgarch }}-gcc-g++,
           mingw64-${{ matrix.pkgarch }}-zlib,
@@ -115,6 +162,20 @@ jobs:
         export PATH=/usr/bin:$(cygpath ${SYSTEMROOT})/system32 &&
         export MAKEFLAGS=-j$(nproc) &&
         cd build &&
-        (export PATH=${{ matrix.target }}/winsup/testsuite/runtime:${PATH} && cmd /c $(cygpath -wa ${{ matrix.target }}/winsup/cygserver/cygserver) &) &&
-        (cd ${{ matrix.target }}/winsup; make check || true)
+        (export PATH=${{ matrix.target }}/winsup/testsuite/testinst/bin:${PATH} && cmd /c $(cygpath -wa ${{ matrix.target }}/winsup/cygserver/cygserver) &) &&
+        (cd ${{ matrix.target }}/winsup; make check AM_COLOR_TESTS=always)
       shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail '{0}'
+
+    # upload test logs to facilitate investigation of problems
+    - name: Upload test logs
+      uses: actions/upload-artifact@v3
+      with:
+        name: testlogs
+        path: |
+          build/${{ matrix.target }}/winsup/testsuite/**/*.log
+          build/${{ matrix.target }}/winsup/testsuite/**/*.trs
+      if: ${{ !cancelled() }}
+
+    # workaround problems with actions/checkout post-run step using cygwin git
+    - name: Avoid actions/checkout post-run step using Cygwin git
+      run: bash -c 'rm /usr/bin/git.exe'

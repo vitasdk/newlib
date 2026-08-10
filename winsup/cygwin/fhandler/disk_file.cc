@@ -25,6 +25,7 @@ details. */
 #include "devices.h"
 #include "ldap.h"
 #include <aio.h>
+#include <fcntl.h>
 #include <cygwin/fs.h>
 
 #define _LIBC
@@ -210,13 +211,14 @@ fhandler_base::fstat_by_nfs_ea (struct stat *buf)
   cyg_ldap cldap;
   bool ldap_open = false;
 
-  if (get_handle ())
+  /* NFS stumbles over its own caching.  If you write to the file,
+     a subsequent fstat does not return the actual size of the file,
+     but the size at the time the handle has been opened.  Unless
+     access through another handle invalidates the caching within the
+     NFS client.  Skip this for Cygwin-created Symlinks playing FIFOs
+     (this sets the filler1 member to NF3FIFO). */
+  if (get_handle () && nfs_attr->filler1 != NF3FIFO)
     {
-      /* NFS stumbles over its own caching.  If you write to the file,
-	 a subsequent fstat does not return the actual size of the file,
-	 but the size at the time the handle has been opened.  Unless
-	 access through another handle invalidates the caching within the
-	 NFS client. */
       if (get_access () & GENERIC_WRITE)
 	FlushFileBuffers (get_handle ());
       pc.get_finfo (get_handle ());
@@ -357,8 +359,13 @@ fhandler_base::fstat_fs (struct stat *buf)
 
   if (get_stat_handle ())
     {
-      if (!nohandle () && (!is_fs_special () || get_flags () & O_PATH))
-	res = pc.fs_is_nfs () ? fstat_by_nfs_ea (buf) : fstat_by_handle (buf);
+      if (!nohandle ())
+	{
+	  if (pc.fs_is_nfs ())
+	    res = fstat_by_nfs_ea (buf);
+	  else if (!is_fs_special () || get_flags () & O_PATH)
+	    res = fstat_by_handle (buf);
+	}
       if (res)
 	res = fstat_by_name (buf);
       return res;
@@ -464,16 +471,16 @@ fhandler_base::fstat_helper (struct stat *buf)
   else if (pc.issymlink ())
     {
       buf->st_size = pc.get_symlink_length ();
+      get_file_attribute (h, pc, buf->st_mode,
+			  &buf->st_uid, &buf->st_gid);
       /* symlinks are everything for everyone! */
       buf->st_mode = S_IFLNK | S_IRWXU | S_IRWXG | S_IRWXO;
-      get_file_attribute (h, pc, NULL,
-			  &buf->st_uid, &buf->st_gid);
       goto done;
     }
   else if (pc.issocket ())
     buf->st_mode = S_IFSOCK;
 
-  if (!get_file_attribute (h, pc, &buf->st_mode, &buf->st_uid, &buf->st_gid))
+  if (!get_file_attribute (h, pc, buf->st_mode, &buf->st_uid, &buf->st_gid))
     {
       /* If read-only attribute is set, modify ntsec return value */
       if (::has_attribute (attributes, FILE_ATTRIBUTE_READONLY)
@@ -709,7 +716,10 @@ fhandler_disk_file::fchmod (mode_t mode)
   NTSTATUS status;
   IO_STATUS_BLOCK io;
 
-  if (pc.is_fs_special ())
+  if (pc.is_fs_special ()
+      /* For NFS, only handle Cygwin FIFOs specially.  Changing mode of
+	 native FIFOs will work with the default code below. */
+      && (!pc.fs_is_nfs () || pc.nfsattr ()->filler1 == NF3FIFO))
     return chmod_device (pc, mode);
 
   if (!get_handle ())
@@ -764,11 +774,12 @@ fhandler_disk_file::fchmod (mode_t mode)
       aclent_t *aclp;
       bool standard_acl = false;
       int nentries, idx;
+      mode_t attr = pc.isdir () ? S_IFDIR : 0;
 
       if (!get_file_sd (get_handle (), pc, sd, false))
 	{
 	  aclp = (aclent_t *) tp.c_get ();
-	  if ((nentries = get_posix_access (sd, NULL, &uid, &gid,
+	  if ((nentries = get_posix_access (sd, attr, &uid, &gid,
 					    aclp, MAX_ACL_ENTRIES,
 					    &standard_acl)) >= 0)
 	    {
@@ -878,7 +889,7 @@ fhandler_disk_file::fchown (uid_t uid, gid_t gid)
     goto out;
 
   aclp = (aclent_t *) tp.c_get ();
-  if ((nentries = get_posix_access (sd, &attr, &old_uid, &old_gid,
+  if ((nentries = get_posix_access (sd, attr, &old_uid, &old_gid,
 				    aclp, MAX_ACL_ENTRIES)) < 0)
     goto out;
 
@@ -1120,55 +1131,296 @@ fhandler_disk_file::fadvise (off_t offset, off_t length, int advice)
 }
 
 int
-fhandler_disk_file::ftruncate (off_t length, bool allow_truncate)
+fhandler_disk_file::falloc_allocate (int mode, off_t offset, off_t length)
 {
-  int res = 0;
+  NTSTATUS status;
+  IO_STATUS_BLOCK io;
+  FILE_STANDARD_INFORMATION fsi;
+  FILE_END_OF_FILE_INFORMATION feofi;
+  FILE_ALLOCATION_INFORMATION fai = { 0 };
 
-  if (length < 0 || !get_handle ())
-    res = EINVAL;
-  else if (pc.isdir ())
-    res = EISDIR;
-  else if (!(get_access () & GENERIC_WRITE))
-    res = EBADF;
-  else
+  /* Fetch EOF */
+  status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
+				   FileStandardInformation);
+  if (!NT_SUCCESS (status))
+    return geterrno_from_nt_status (status);
+
+  switch (mode)
     {
-      NTSTATUS status;
-      IO_STATUS_BLOCK io;
-      FILE_STANDARD_INFORMATION fsi;
-      FILE_END_OF_FILE_INFORMATION feofi;
-
-      status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
-				       FileStandardInformation);
-      if (!NT_SUCCESS (status))
-	return geterrno_from_nt_status (status);
-
-      /* If called through posix_fallocate, silently succeed if length
-	 is less than the file's actual length. */
-      if (!allow_truncate && length < fsi.EndOfFile.QuadPart)
-	return 0;
-
+    case 0:
+      /* For posix_fallocate(3), truncating the file is a no-op.  However,
+         for sparse files we still have to allocate the blocks within
+	 offset and offset + length which are currently in holes, due to
+	 the following POSIX requirement:
+	 "If posix_fallocate() returns successfully, subsequent writes to
+	  the specified file data shall not fail due to the lack of free
+	  space on the file system  storage  media." */
+      if (offset + length <= fsi.EndOfFile.QuadPart)
+	{
+	  if (!has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+	    return 0;
+	  feofi.EndOfFile.QuadPart = fsi.EndOfFile.QuadPart;
+	}
+      else
+	feofi.EndOfFile.QuadPart = offset + length;
+      break;
+    case __FALLOC_FL_TRUNCATE:
+      /* For ftruncate(2), offset is 0. Just use length as is. */
       feofi.EndOfFile.QuadPart = length;
-      /* Create sparse files only when called through ftruncate, not when
-	 called through posix_fallocate. */
-      if (allow_truncate && pc.support_sparse ()
+
+      /* Make file sparse only when called through ftruncate and the mount
+	 mode supports sparse files.  Also, make sure that the new region
+	 actually spans over at least one sparsifiable chunk. */
+      if (pc.support_sparse ()
 	  && !has_attribute (FILE_ATTRIBUTE_SPARSE_FILE)
-	  && length >= fsi.EndOfFile.QuadPart + (128 * 1024))
+	  && span_sparse_chunk (feofi.EndOfFile.QuadPart,
+				fsi.EndOfFile.QuadPart))
 	{
 	  status = NtFsControlFile (get_handle (), NULL, NULL, NULL, &io,
 				    FSCTL_SET_SPARSE, NULL, 0, NULL, 0);
 	  if (NT_SUCCESS (status))
 	    pc.file_attributes (pc.file_attributes ()
-			        | FILE_ATTRIBUTE_SPARSE_FILE);
-	  syscall_printf ("%y = NtFsControlFile(%S, FSCTL_SET_SPARSE)",
-			  status, pc.get_nt_native_path ());
+				| FILE_ATTRIBUTE_SPARSE_FILE);
+	  debug_printf ("%y = NtFsControlFile(%S, FSCTL_SET_SPARSE)",
+			status, pc.get_nt_native_path ());
 	}
+      break;
+    case FALLOC_FL_KEEP_SIZE:
+      /* Keep track of the allocation size for overallocation below.
+	 Note that overallocation in Windows is only temporary!
+	 As soon as the last open handle to the file is closed, the
+	 overallocation gets removed by the system.  Also, overallocation
+	 for sparse files fails silently, so just don't bother. */
+      if (offset + length > fsi.EndOfFile.QuadPart
+	  && !has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+	fai.AllocationSize.QuadPart = offset + length;
+
+      feofi.EndOfFile.QuadPart = fsi.EndOfFile.QuadPart;
+      break;
+    }
+
+  /* Now set the new EOF */
+  if (feofi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+    {
       status = NtSetInformationFile (get_handle (), &io,
 				     &feofi, sizeof feofi,
 				     FileEndOfFileInformation);
       if (!NT_SUCCESS (status))
-	res = geterrno_from_nt_status (status);
+	return geterrno_from_nt_status (status);
     }
+
+  /* If called via fallocate(2) or posix_fallocate(3), allocate blocks in
+     sparse file holes. */
+  if (mode != __FALLOC_FL_TRUNCATE
+      && length
+      && has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+    {
+      int res = falloc_zero_range (mode | __FALLOC_FL_ZERO_HOLES,
+				   offset, length);
+      if (res)
+	return res;
+    }
+
+  /* Last but not least, set the new allocation size, if any */
+  if (fai.AllocationSize.QuadPart)
+    {
+      /* This is not fatal. Just note a failure in the debug output. */
+      status = NtSetInformationFile (get_handle (), &io,
+				     &fai, sizeof fai,
+				     FileAllocationInformation);
+      if (!NT_SUCCESS (status))
+	debug_printf ("%y = NtSetInformationFile(%S, "
+		      "FileAllocationInformation)",
+		      status, pc.get_nt_native_path ());
+    }
+
+  return 0;
+}
+
+int
+fhandler_disk_file::falloc_punch_hole (off_t offset, off_t length)
+{
+  NTSTATUS status;
+  IO_STATUS_BLOCK io;
+  FILE_STANDARD_INFORMATION fsi;
+  FILE_ZERO_DATA_INFORMATION fzi;
+
+  /* Fetch EOF */
+  status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
+				   FileStandardInformation);
+  if (!NT_SUCCESS (status))
+    return geterrno_from_nt_status (status);
+
+  if (offset > fsi.EndOfFile.QuadPart) /* no-op */
+    return 0;
+
+  if (offset + length > fsi.EndOfFile.QuadPart)
+    length = fsi.EndOfFile.QuadPart - offset;
+
+  /* If the file isn't sparse yet, make it so. */
+  if (!has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+    {
+      status = NtFsControlFile (get_handle (), NULL, NULL, NULL, &io,
+				FSCTL_SET_SPARSE, NULL, 0, NULL, 0);
+	debug_printf ("%y = NtFsControlFile(%S, FSCTL_SET_SPARSE)",
+		      status, pc.get_nt_native_path ());
+      if (!NT_SUCCESS (status))
+	return geterrno_from_nt_status (status);
+      pc.file_attributes (pc.file_attributes () | FILE_ATTRIBUTE_SPARSE_FILE);
+    }
+
+  /* Now punch a hole. For once, FSCTL_SET_ZERO_DATA does it exactly as per
+     fallocate(FALLOC_FL_PUNCH_HOLE) specs. */
+  fzi.FileOffset.QuadPart = offset;
+  fzi.BeyondFinalZero.QuadPart = offset + length;
+  status = NtFsControlFile (get_handle (), NULL, NULL, NULL, &io,
+			    FSCTL_SET_ZERO_DATA, &fzi, sizeof fzi, NULL, 0);
+  if (!NT_SUCCESS (status))
+    return geterrno_from_nt_status (status);
+
+  return 0;
+}
+
+int
+fhandler_disk_file::falloc_zero_range (int mode, off_t offset, off_t length)
+{
+  NTSTATUS status;
+  IO_STATUS_BLOCK io;
+  FILE_STANDARD_INFORMATION fsi;
+  FILE_ALLOCATED_RANGE_BUFFER inp, *out = NULL;
+  OBJECT_ATTRIBUTES attr;
+  HANDLE zo_handle;
+  tmp_pathbuf tp;
+  size_t data_chunk_count = 0;
+
+  /* Fetch EOF */
+  status = NtQueryInformationFile (get_handle (), &io, &fsi, sizeof fsi,
+				   FileStandardInformation);
+  if (!NT_SUCCESS (status))
+    return geterrno_from_nt_status (status);
+
+  /* offset and length must not exceed EOF with FALLOC_FL_KEEP_SIZE */
+  if (mode & FALLOC_FL_KEEP_SIZE)
+    {
+      if (offset > fsi.EndOfFile.QuadPart) /* no-op */
+	return 0;
+
+      if (offset + length > fsi.EndOfFile.QuadPart)
+	length = fsi.EndOfFile.QuadPart - offset;
+    }
+
+  /* If the file is sparse, fetch the data ranges within the file
+       to be able to recognize holes. */
+  if (has_attribute (FILE_ATTRIBUTE_SPARSE_FILE))
+    {
+      inp.FileOffset.QuadPart = offset;
+      inp.Length.QuadPart = length;
+      out = (FILE_ALLOCATED_RANGE_BUFFER *) tp.t_get ();
+      status = NtFsControlFile (get_handle (), NULL, NULL, NULL,
+				&io, FSCTL_QUERY_ALLOCATED_RANGES,
+				&inp, sizeof inp, out, 2 * NT_MAX_PATH);
+      if (!NT_ERROR (status))
+	data_chunk_count = io.Information / sizeof *out;
+    }
+
+  /* Re-open the file and use this handle ever after, so as not to
+     move the file pointer of the original file object.  */
+  status = NtOpenFile (&zo_handle, SYNCHRONIZE | GENERIC_WRITE,
+		       pc.init_reopen_attr (attr, get_handle ()), &io,
+		       FILE_SHARE_VALID_FLAGS, get_options ());
+  if (!NT_SUCCESS (status))
+    return geterrno_from_nt_status (status);
+
+  /* FILE_SPARSE_GRANULARITY == 2 * NT_MAX_PATH ==> fits exactly */
+  char *nullbuf = tp.t_get ();
+  memset (nullbuf, 0, FILE_SPARSE_GRANULARITY);
+  int res = 0;
+
+  /* Split range into chunks of size FILE_SPARSE_GRANULARITY and handle
+     them according to being data or hole */
+  LARGE_INTEGER off = { QuadPart:offset };
+  size_t start_idx = 0;
+  while (length > 0)
+    {
+      off_t chunk_len;
+      bool in_data = true;
+
+      if (off.QuadPart % FILE_SPARSE_GRANULARITY)	/* First block */
+	chunk_len = roundup2 (off.QuadPart, FILE_SPARSE_GRANULARITY) - off.QuadPart;
+      else
+	chunk_len = FILE_SPARSE_GRANULARITY;
+      if (chunk_len > length)			/* First or last block */
+	chunk_len = length;
+
+      /* Check if the current chunk is within data or hole */
+      if (has_attribute (FILE_ATTRIBUTE_SPARSE_FILE)
+	  && off.QuadPart < fsi.EndOfFile.QuadPart)
+	{
+	  in_data = false;
+	  for (size_t idx = start_idx; idx < data_chunk_count; ++idx)
+	    if (off.QuadPart >= out[idx].FileOffset.QuadPart)
+	      {
+		/* Skip entries with lower start address next time. */
+		start_idx = idx;
+		if (off.QuadPart < out[idx].FileOffset.QuadPart
+				   + out[idx].Length.QuadPart)
+		  {
+		    in_data = true;
+		    break;
+		  }
+	      }
+	}
+
+      /* Eventually, write zeros into the block.  Completely zero out data
+	 blocks, just write a single zero to former holes in sparse files.
+	 If __FALLOC_FL_ZERO_HOLES has been specified, only write to holes. */
+      if (!(mode & __FALLOC_FL_ZERO_HOLES) || !in_data)
+	{
+	  status = NtWriteFile (zo_handle, NULL, NULL, NULL, &io, nullbuf,
+				in_data ? chunk_len : 1, &off, NULL);
+	  if (!NT_SUCCESS (status))
+	    {
+	      res = geterrno_from_nt_status (status);
+	      break;
+	    }
+	}
+
+      off.QuadPart += chunk_len;
+      length -= chunk_len;
+    }
+
+  NtClose (zo_handle);
   return res;
+}
+
+int
+fhandler_disk_file::fallocate (int mode, off_t offset, off_t length)
+{
+  if (length < 0 || !get_handle ())
+    return EINVAL;
+  if (pc.isdir ())
+    return EISDIR;
+  if (!(get_access () & GENERIC_WRITE))
+    return EBADF;
+
+  switch (mode)
+    {
+    case 0:
+    case __FALLOC_FL_TRUNCATE:
+    case FALLOC_FL_KEEP_SIZE:
+      return falloc_allocate (mode, offset, length);
+    case FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE:
+      /* Only if the filesystem supports it... */
+      if (!(pc.fs_flags () & FILE_SUPPORTS_SPARSE_FILES))
+	return EOPNOTSUPP;
+      return falloc_punch_hole (offset, length);
+    case FALLOC_FL_ZERO_RANGE:
+    case FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE:
+      return falloc_zero_range (mode, offset, length);
+    default:
+      break;
+    }
+  return EINVAL;
 }
 
 int
@@ -1681,6 +1933,7 @@ fhandler_disk_file::pwrite (void *buf, size_t count, off_t offset, void *aio)
     {
       NTSTATUS status;
       IO_STATUS_BLOCK io;
+      FILE_STANDARD_INFORMATION fsi;
       LARGE_INTEGER off = { QuadPart:offset };
       HANDLE evt = aio ? (HANDLE) aiocb->aio_wincb.event : NULL;
       PIO_STATUS_BLOCK pio = aio ? (PIO_STATUS_BLOCK) &aiocb->aio_wincb : &io;
@@ -1689,6 +1942,25 @@ fhandler_disk_file::pwrite (void *buf, size_t count, off_t offset, void *aio)
       if (prw_handle && (prw_handle_isasync != !!aio))
         NtClose (prw_handle), prw_handle = NULL;
 
+      /* If the file system supports sparse files and the application is
+         writing beyond EOF spanning more than one sparsifiable chunk,
+	 convert the file to a sparse file. */
+      if (pc.support_sparse ()
+	  && !has_attribute (FILE_ATTRIBUTE_SPARSE_FILE)
+	  && NT_SUCCESS (NtQueryInformationFile (get_handle (),
+						 &io, &fsi, sizeof fsi,
+						 FileStandardInformation))
+	  && span_sparse_chunk (offset, fsi.EndOfFile.QuadPart))
+	{
+	  NTSTATUS status;
+	  status = NtFsControlFile (get_handle (), NULL, NULL, NULL,
+				    &io, FSCTL_SET_SPARSE, NULL, 0, NULL, 0);
+	  if (NT_SUCCESS (status))
+	    pc.file_attributes (pc.file_attributes ()
+				| FILE_ATTRIBUTE_SPARSE_FILE);
+	  debug_printf ("%y = NtFsControlFile(%S, FSCTL_SET_SPARSE)",
+			status, pc.get_nt_native_path ());
+	}
       if (!prw_handle && prw_open (true, aio))
 	goto non_atomic;
       status = NtWriteFile (prw_handle, evt, NULL, NULL, pio, buf, count,
@@ -1835,8 +2107,6 @@ fhandler_disk_file::mkdir (mode_t mode)
 int
 fhandler_disk_file::rmdir ()
 {
-  extern NTSTATUS unlink_nt (path_conv &pc);
-
   if (!pc.isdir ())
     {
       set_errno (ENOTDIR);
@@ -1848,7 +2118,7 @@ fhandler_disk_file::rmdir ()
       return -1;
     }
 
-  NTSTATUS status = unlink_nt (pc);
+  NTSTATUS status = unlink_nt (pc, false);
 
   if (!NT_SUCCESS (status))
     {
@@ -2254,6 +2524,8 @@ fhandler_disk_file::readdir (DIR *dir, dirent *de)
 	      goto go_ahead;
 	    }
 	}
+      /* NFS must use FileNamesInformation!  Any other information class
+	 skips all symlinks. */
       if (!(dir->__flags & dirent_get_d_ino))
 	status = NtQueryDirectoryFile (get_handle (), NULL, NULL, NULL, &io,
 				       d_cache (dir), DIR_BUF_SIZE,
@@ -2338,9 +2610,11 @@ go_ahead:
 		 And, since some filesystems choke on the EAs, we don't
 		 use them unconditionally. */
 	      f_status = (dir->__flags & dirent_nfs_d_ino)
-			 ? NtCreateFile (&hdl, READ_CONTROL, &attr, &io,
-					 NULL, 0, FILE_SHARE_VALID_FLAGS,
-					 FILE_OPEN, FILE_OPEN_FOR_BACKUP_INTENT,
+			 ? NtCreateFile (&hdl,
+					 READ_CONTROL | FILE_READ_ATTRIBUTES,
+					 &attr, &io, NULL, 0,
+					 FILE_SHARE_VALID_FLAGS, FILE_OPEN,
+					 FILE_OPEN_FOR_BACKUP_INTENT,
 					 &nfs_aol_ffei, sizeof nfs_aol_ffei)
 			 : NtOpenFile (&hdl, READ_CONTROL, &attr, &io,
 				       FILE_SHARE_VALID_FLAGS,
@@ -2354,6 +2628,16 @@ go_ahead:
 		  FILE_INTERNAL_INFORMATION fii;
 		  f_status = NtQueryInformationFile (hdl, &io, &fii, sizeof fii,
 						     FileInternalInformation);
+		  /* On NFS fetch the (faked, but useful) DOS attribute.
+		     We need it to recognize shortcut FIFOs. */
+		  if ((dir->__flags & dirent_nfs_d_ino))
+		    {
+		      FILE_BASIC_INFORMATION fbi;
+
+		      if (NT_SUCCESS (NtQueryInformationFile (hdl, &io, &fbi,
+				      sizeof fbi, FileBasicInformation)))
+			FileAttributes = fbi.FileAttributes;
+		    }
 		  NtClose (hdl);
 		  if (NT_SUCCESS (f_status))
 		    {

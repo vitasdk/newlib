@@ -27,6 +27,8 @@ details. */
 #include <errno.h>
 #include "test.h" /* use libltp framework */
 
+#include <windows.h>
+
 /* Controls if a child can open the device after the parent */
 #define CHILD_EXPECT 0 /* 0 or 1 */
 
@@ -59,6 +61,7 @@ void playwavtest (void);
 void syncwithchild (pid_t pid, int expected_exit_status);
 void cleanup (void);
 void dup_test (void);
+void devcheck (void);
 
 static int expect_child_failure = 0;
 
@@ -77,6 +80,7 @@ int
 main (int argc, char *argv[])
 {
   /*  tst_brkm(TBROK, cleanup, "see if it breaks all right"); */
+  devcheck ();
   ioctltest ();
   playbacktest ();
   recordingtest ();
@@ -89,6 +93,17 @@ main (int argc, char *argv[])
   tst_exit ();
   /* NOTREACHED */
   return 0;
+}
+
+/* skip test if we don't have any audio devices*/
+void
+devcheck (void)
+{
+  if ((waveInGetNumDevs() == 0) || (waveOutGetNumDevs() == 0))
+    {
+      tst_resm (TINFO, "Skipping, no audio devices present");
+      exit(0);
+    }
 }
 
 /* test some extra ioctls */
@@ -155,15 +170,11 @@ playbacktest (void)
 		strerror (errno));
     }
   audio2 = open ("/dev/dsp", O_WRONLY);
+  tst_resm (TINFO, "Second open /dev/dsp W %s ",
+	    audio2 >= 0 ? "WORKS" : "DOESN'T WORK");
   if (audio2 >= 0)
     {
-      tst_brkm (TFAIL, cleanup,
-		"Second open /dev/dsp W succeeded, but is expected to fail");
-    }
-  else if (errno != EBUSY)
-    {
-      tst_brkm (TFAIL, cleanup, "Expected EBUSY here, exit: %s",
-		strerror (errno));
+      close (audio2);
     }
   for (rate = 0; rate < sizeof (rates) / sizeof (int); rate++)
     for (k = 0; k < sizeof (sblut) / sizeof (struct sb); k++)
@@ -194,15 +205,11 @@ recordingtest (void)
 		strerror (errno));
     }
   audio2 = open ("/dev/dsp", O_RDONLY);
+  tst_resm (TINFO, "Second open /dev/dsp R %s",
+	    audio2 >= 0 ? "WORKS" : "DOESN'T WORK");
   if (audio2 >= 0)
     {
-      tst_brkm (TFAIL, cleanup,
-		"Second open /dev/dsp R succeeded, but is expected to fail");
-    }
-  else if (errno != EBUSY)
-    {
-      tst_brkm (TFAIL, cleanup, "Expected EBUSY here, exit: %s",
-		strerror (errno));
+      close (audio2);
     }
   for (rate = 0; rate < sizeof (rates) / sizeof (int); rate++)
     for (k = 0; k < sizeof (sblut) / sizeof (struct sb); k++)

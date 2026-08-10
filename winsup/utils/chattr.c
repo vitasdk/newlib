@@ -264,9 +264,7 @@ usage (FILE *stream)
       "  'n', 'Notindexed':    file or directory is not to be indexed by the\n"
       "                        content indexing service\n"
       "  'e', 'Encrypted':     file is encrypted\n"
-      "  'C', 'Casesensitive': directory is handled case sensitive\n"
-      "                        (Windows 10 1803 or later, local NTFS only,\n"
-      "                         WSL must be installed)\n");
+      "  'C', 'Casesensitive': directory is handled case sensitive\n");
   exit (stream == stdout ? 0 : 1);
 }
 
