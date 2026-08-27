@@ -42,11 +42,11 @@ int truncate(const char *path, off_t length)
 
 	if (ret < 0)
 	{
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -61,7 +61,7 @@ int ftruncate(int fd, off_t length)
 
 	if (!fdmap)
 	{
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return -1;
 	}
 
@@ -82,10 +82,10 @@ int ftruncate(int fd, off_t length)
 
 	if (ret < 0)
 	{
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }

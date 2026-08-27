@@ -1,7 +1,12 @@
-// This provides support for __getreent() as well as implementation of our thread-related wrappers
+// Newlib's own reentrancy (struct _reent) lives directly in native ELF TLS
+// now (see --enable-newlib-reent-thread-local), so this file only keeps the
+// per-thread pointer slots pthread-embedded still needs on top of that.
+// Native TLS can't replace those: pte_osThreadCreate writes into a new
+// thread's slot through sceKernelGetThreadTLSAddr(thid, ...) before that
+// thread has even started, and there is no way to reach another thread's
+// TPIDRURO-relative TLS block from outside it, especially pre-start.
 
 #include <reent.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <vitasdk/utils.h>
@@ -12,50 +17,38 @@ void sceClibPrintf(const char *fmt, ...);
 
 #define MAX_THREADS 256
 
-typedef struct reent_for_thread {
+typedef struct thread_ext_data {
 	int thread_id;
-	int needs_reclaim;
 	void *tls_data_ext;
 	void *pthread_data_ext;
-	struct _reent reent;
-} reent_for_thread;
+} thread_ext_data;
 
-static reent_for_thread reent_list[MAX_THREADS];
+static thread_ext_data thread_ext_list[MAX_THREADS];
 static int _newlib_reent_mutex;
-static struct _reent _newlib_global_reent;
 
-#define TLS_REENT_THID_PTR(thid)	sceKernelGetThreadTLSAddr(thid, 0x89)
-#define TLS_REENT_PTR				sceKernelGetTLSAddr(0x89)
-
-#define list_entry(ptr, type, member) \
-	((type *)((char *)(ptr)-(unsigned long)(&((type *)0)->member)))
+#define TLS_EXT_THID_PTR(thid)	sceKernelGetThreadTLSAddr(thid, 0x89)
+#define TLS_EXT_PTR				sceKernelGetTLSAddr(0x89)
 
 int __vita_delete_thread_reent(int thid)
 {
-	struct reent_for_thread *for_thread;
+	struct thread_ext_data **on_tls = NULL;
+	struct thread_ext_data *for_thread;
 
-	// We only need to cleanup if reent is allocated, i.e. if it's on our TLS
-	// We also don't need to clean up the global reent
-	struct _reent **on_tls = NULL;
-	
 	if (thid == 0)
-		on_tls = TLS_REENT_PTR;
+		on_tls = TLS_EXT_PTR;
 	else
-		on_tls = TLS_REENT_THID_PTR(thid);
+		on_tls = TLS_EXT_THID_PTR(thid);
 
-	if (!*on_tls || *on_tls == &_newlib_global_reent)
+	if (!*on_tls)
 		return 0;
 
-	for_thread = list_entry(*on_tls, struct reent_for_thread, reent);
+	for_thread = *on_tls;
 
 	// Remove from TLS
 	*on_tls = 0;
 
-	// Set thread id to zero, which means the reent is free
+	// Set thread id to zero, which means the slot is free
 	for_thread->thread_id = 0;
-
-	// We can't reclaim it here, will be done later in __getreent
-	for_thread->needs_reclaim = 1;
 
 	return 1;
 }
@@ -74,30 +67,22 @@ int vitasdk_delete_thread_reent(int thid)
 
 int _exit_thread_common(int exit_status, int (*exit_func)(int))
 {
-	int res = 0;
-	int ret = 0;
-	int thid = sceKernelGetThreadId();
+	// Reclaim this thread's own newlib TLS-resident buffers (mprec bigints,
+	// _cvtbuf, locale, ...) before its TLS block disappears with it: unlike
+	// the old reent pool, nothing can reach these from outside the thread
+	// once it's gone.
+	_reclaim_reent(NULL);
 
-	// Lock the list because we'll be modifying it
-	sceKernelLockMutex(_newlib_reent_mutex, 1, NULL);
-
-	res = __vita_delete_thread_reent(0);
-
-	ret = exit_func(exit_status);
-
-	if (res)
-	{
-		struct _reent **on_tls = TLS_REENT_PTR;
-		struct reent_for_thread *for_thread = list_entry(*on_tls, struct reent_for_thread, reent);
-
-		for_thread->thread_id = thid;
-
-		// And put it back on TLS
-		*on_tls = &for_thread->reent;
-	}
-
-	sceKernelUnlockMutex(_newlib_reent_mutex, 1);
-	return ret;
+	// Do NOT hold _newlib_reent_mutex across this call: exit_func normally
+	// never returns, which would leave the mutex permanently owned by a
+	// dead thread and deadlock the next vitasdk_get_tls_data/
+	// vitasdk_get_pthread_data/vitasdk_delete_thread_reent call on any
+	// other thread. The thread's slot doesn't need clearing here either -
+	// pte_osThreadDelete already does that via vitasdk_delete_thread_reent
+	// before a normal exit-and-delete, and __vita_clean_thread_ext's
+	// liveness scan reclaims anything left over from threads that exited
+	// without going through it.
+	return exit_func(exit_status);
 }
 
 int vita_exit_thread(int exit_status)
@@ -110,7 +95,7 @@ int vita_exit_delete_thread(int exit_status)
 	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
 }
 
-static inline void __vita_clean_reent(void)
+static inline void __vita_clean_thread_ext(void)
 {
 	int i;
 	SceKernelThreadInfo info;
@@ -119,127 +104,87 @@ static inline void __vita_clean_reent(void)
 	{
 		info.size = sizeof(SceKernelThreadInfo);
 
-		if (sceKernelGetThreadInfo(reent_list[i].thread_id, &info) < 0)
+		if (sceKernelGetThreadInfo(thread_ext_list[i].thread_id, &info) < 0)
 		{
-			reent_list[i].thread_id = 0;
-			reent_list[i].needs_reclaim = 1;
+			thread_ext_list[i].thread_id = 0;
 		}
 	}
 }
 
-static inline struct reent_for_thread *__vita_allocate_reent(void)
+static inline struct thread_ext_data *__vita_allocate_thread_ext(void)
 {
 	int i;
-	struct reent_for_thread *free_reent = 0;
 
 	for (i = 0; i < MAX_THREADS; ++i)
-		if (reent_list[i].thread_id == 0)
-		{
-			free_reent = &reent_list[i];
-			break;
-		}
+		if (thread_ext_list[i].thread_id == 0)
+			return &thread_ext_list[i];
 
-	return free_reent;
+	return 0;
 }
 
-struct _reent *__getreent_for_thread(int thid)
+static struct thread_ext_data *__vita_thread_ext(int thid)
 {
-	struct reent_for_thread *free_reent = 0;
-	struct _reent *returned_reent = 0;
+	struct thread_ext_data **on_tls = NULL;
+	struct thread_ext_data *slot;
 
-	// A pointer to our reent should be on the TLS
-	struct _reent **on_tls = NULL;
-	
 	if (thid == 0)
-		on_tls = TLS_REENT_PTR;
+		on_tls = TLS_EXT_PTR;
 	else
-		on_tls = TLS_REENT_THID_PTR(thid);	
-	
+		on_tls = TLS_EXT_THID_PTR(thid);
+
 	if (*on_tls)
 	{
 		return *on_tls;
 	}
-  
-  	sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
 
-	// If it's not on the TLS this means the thread doesn't have a reent allocated yet
-	// We allocate one and put a pointer to it on the TLS
-	free_reent = __vita_allocate_reent();
+	sceKernelLockMutex(_newlib_reent_mutex, 1, 0);
 
-	if (!free_reent)
+	// If it's not on the TLS this means the thread doesn't have a slot
+	// allocated yet. We allocate one and put a pointer to it on the TLS.
+	slot = __vita_allocate_thread_ext();
+
+	if (!slot)
 	{
 		// clean any hanging thread references
-		__vita_clean_reent();
+		__vita_clean_thread_ext();
 
-		free_reent = __vita_allocate_reent();
+		slot = __vita_allocate_thread_ext();
 
-		if (!free_reent)
+		if (!slot)
 		{
 			// we've exhausted all our resources
-			sceClibPrintf("[VITASDK] FATAL: Exhausted all thread reent resources!");
+			sceClibPrintf("[VITASDK] FATAL: Exhausted all thread data resources!");
 			__builtin_trap();
 		}
 	}
-	else
-	{
-		// First, check if it needs to be cleaned up (if it came from another thread)
-		if (free_reent->needs_reclaim)
-		{
-			_reclaim_reent(&free_reent->reent);
-			free_reent->needs_reclaim = 0;
-		}
 
-		memset(free_reent, 0, sizeof(struct reent_for_thread));
-
-		// Set it up
-		if(thid==0)
-		{
-			thid = sceKernelGetThreadId();
-		}
-		free_reent->thread_id = thid;
-		_REENT_INIT_PTR(&free_reent->reent);
-		returned_reent = &free_reent->reent;
-	}
+	memset(slot, 0, sizeof(*slot));
+	slot->thread_id = (thid == 0) ? sceKernelGetThreadId() : thid;
 
 	// Put it on TLS for faster access time
-	*on_tls = returned_reent;
+	*on_tls = slot;
 
 	sceKernelUnlockMutex(_newlib_reent_mutex, 1);
-	return returned_reent;
-}
-
-struct _reent *__getreent(void)
-{
-	return  __getreent_for_thread(0);
+	return slot;
 }
 
 void *vitasdk_get_tls_data(SceUID thid)
 {
-	struct reent_for_thread *for_thread;
-	struct _reent *reent = __getreent_for_thread(thid);
-
-	for_thread = list_entry(reent, struct reent_for_thread, reent);
-	return &for_thread->tls_data_ext;
+	return &__vita_thread_ext(thid)->tls_data_ext;
 }
 
 void *vitasdk_get_pthread_data(SceUID thid)
 {
-	struct reent_for_thread *for_thread;
-	struct _reent *reent = __getreent_for_thread(thid);
-
-	for_thread = list_entry(reent, struct reent_for_thread, reent);
-	return &for_thread->pthread_data_ext;
+	return &__vita_thread_ext(thid)->pthread_data_ext;
 }
 
-// Called from _start to set up the main thread reentrancy structure
+// Called from _start to set up the main thread's slot
 void _init_vita_reent(void)
 {
-	memset(reent_list, 0, sizeof(reent_list));
-	_newlib_reent_mutex = sceKernelCreateMutex("reent list access mutex", 0, 0, 0);
-	reent_list[0].thread_id = sceKernelGetThreadId();
-	_REENT_INIT_PTR(&reent_list[0].reent);
-	*(struct _reent **)(TLS_REENT_PTR) = &reent_list[0].reent;
-	_REENT_INIT_PTR(&_newlib_global_reent);
+	memset(thread_ext_list, 0, sizeof(thread_ext_list));
+	_newlib_reent_mutex = sceKernelCreateMutex("thread ext data access mutex", 0, 0, 0);
+	thread_ext_list[0].thread_id = sceKernelGetThreadId();
+	*(struct thread_ext_data **)(TLS_EXT_PTR) = &thread_ext_list[0];
 }
 
 void _free_vita_reent(void)

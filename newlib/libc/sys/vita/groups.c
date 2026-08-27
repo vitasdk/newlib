@@ -30,21 +30,21 @@ DEALINGS IN THE SOFTWARE.
 int initgroups(const char *user, gid_t group)
 {
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
 int getgroups(int size, gid_t list[])
 {
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
 int setgroups(size_t size, const gid_t *list)
 {
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
@@ -52,7 +52,7 @@ struct group *getgrent()
 {
 	/* TODO: implement. */
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return NULL;
 }
 
@@ -70,7 +70,7 @@ struct group *getgrnam(const char *name)
 {
 	/* TODO: implement. */
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return NULL;
 }
 
@@ -78,7 +78,7 @@ struct group *getgrgid(gid_t gid)
 {
 	/* TODO: implement. */
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return NULL;
 }
 
@@ -86,6 +86,6 @@ int setpgrp(pid_t pid, pid_t pgid)
 {
 	/* TODO: implement. */
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }

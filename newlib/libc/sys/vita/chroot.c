@@ -29,6 +29,6 @@ DEALINGS IN THE SOFTWARE.
 int chroot(const char *path)
 {
 	struct _reent *reent = _REENT;
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
