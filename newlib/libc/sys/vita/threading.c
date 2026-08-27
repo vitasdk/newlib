@@ -1,7 +1,7 @@
 // Newlib's own reentrancy (struct _reent) lives in native ELF TLS now (see
 // --enable-newlib-reent-thread-local). What is left here is the kernel TLS
 // slot the thread library uses for its per-thread pointers, kept only while
-// __VITA_NEWLIB_THREAD_SLOT__ says newlib is the one that owns it.
+// __VITA_NEWLIB_OWNS_THREAD_SLOT__ says newlib is the one that owns it.
 
 #include <reent.h>
 #include <string.h>
@@ -29,7 +29,7 @@ int vita_exit_delete_thread(int exit_status)
 	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
 }
 
-#if __VITA_NEWLIB_THREAD_SLOT__
+#if __VITA_NEWLIB_OWNS_THREAD_SLOT__
 
 #include <vitasdk/utils.h>
 
@@ -183,7 +183,7 @@ void _free_vita_reent(void)
 	sceKernelDeleteMutex(_newlib_reent_mutex);
 }
 
-#else /* !__VITA_NEWLIB_THREAD_SLOT__ */
+#else /* !__VITA_NEWLIB_OWNS_THREAD_SLOT__ */
 
 void _init_vita_reent(void)
 {

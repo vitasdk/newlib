@@ -5,7 +5,7 @@
    library needs. 0: it owns no per-thread state and the thread library holds
    its own slot. Set here and not on the command line: newlib and everything
    built against it must agree, and only the installed header guarantees it. */
-#define __VITA_NEWLIB_THREAD_SLOT__ 1
+#define __VITA_NEWLIB_OWNS_THREAD_SLOT__ 1
 
 #ifdef __cplusplus
 extern "C" {
