@@ -25,6 +25,9 @@
 extern "C" {
 #endif
 
+/* Must precede <sys/config.h>, which needs _WANT_REENT_THREAD_LOCAL. */
+#include <newlib.h>
+
 #include <_newlib_version.h>
 
 /* Macro to test version of GCC.  Returns 0 for non-GCC or too old GCC. */
