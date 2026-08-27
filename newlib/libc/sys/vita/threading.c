@@ -1,16 +1,37 @@
-// Newlib's own reentrancy (struct _reent) lives directly in native ELF TLS
-// now (see --enable-newlib-reent-thread-local), so this file only keeps the
-// per-thread pointer slots pthread-embedded still needs on top of that.
-// Native TLS can't replace those: pte_osThreadCreate writes into a new
-// thread's slot through sceKernelGetThreadTLSAddr(thid, ...) before that
-// thread has even started, and there is no way to reach another thread's
-// TPIDRURO-relative TLS block from outside it, especially pre-start.
+// Newlib's own reentrancy (struct _reent) lives in native ELF TLS now (see
+// --enable-newlib-reent-thread-local). What is left here is the kernel TLS
+// slot the thread library uses for its per-thread pointers, kept only while
+// __VITA_NEWLIB_THREAD_SLOT__ says newlib is the one that owns it.
 
 #include <reent.h>
 #include <string.h>
 
-#include <vitasdk/utils.h>
+#include <sys/vita_thread.h>
 #include <psp2/kernel/threadmgr.h>
+
+int _exit_thread_common(int exit_status, int (*exit_func)(int))
+{
+	// The thread's own TLS-resident buffers (mprec bigints, _cvtbuf, locale)
+	// die with its TLS block, so reclaim them while it is still alive.
+	_reclaim_reent(NULL);
+
+	// exit_func normally never returns: hold no lock across it.
+	return exit_func(exit_status);
+}
+
+int vita_exit_thread(int exit_status)
+{
+	return _exit_thread_common(exit_status, sceKernelExitThread);
+}
+
+int vita_exit_delete_thread(int exit_status)
+{
+	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
+}
+
+#if __VITA_NEWLIB_THREAD_SLOT__
+
+#include <vitasdk/utils.h>
 
 // not in sdk
 void sceClibPrintf(const char *fmt, ...);
@@ -63,36 +84,6 @@ int vitasdk_delete_thread_reent(int thid)
 
 	sceKernelUnlockMutex(_newlib_reent_mutex, 1);
 	return res;
-}
-
-int _exit_thread_common(int exit_status, int (*exit_func)(int))
-{
-	// Reclaim this thread's own newlib TLS-resident buffers (mprec bigints,
-	// _cvtbuf, locale, ...) before its TLS block disappears with it: unlike
-	// the old reent pool, nothing can reach these from outside the thread
-	// once it's gone.
-	_reclaim_reent(NULL);
-
-	// Do NOT hold _newlib_reent_mutex across this call: exit_func normally
-	// never returns, which would leave the mutex permanently owned by a
-	// dead thread and deadlock the next vitasdk_get_tls_data/
-	// vitasdk_get_pthread_data/vitasdk_delete_thread_reent call on any
-	// other thread. The thread's slot doesn't need clearing here either -
-	// pte_osThreadDelete already does that via vitasdk_delete_thread_reent
-	// before a normal exit-and-delete, and __vita_clean_thread_ext's
-	// liveness scan reclaims anything left over from threads that exited
-	// without going through it.
-	return exit_func(exit_status);
-}
-
-int vita_exit_thread(int exit_status)
-{
-	return _exit_thread_common(exit_status, sceKernelExitThread);
-}
-
-int vita_exit_delete_thread(int exit_status)
-{
-	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
 }
 
 static inline void __vita_clean_thread_ext(void)
@@ -191,3 +182,15 @@ void _free_vita_reent(void)
 {
 	sceKernelDeleteMutex(_newlib_reent_mutex);
 }
+
+#else /* !__VITA_NEWLIB_THREAD_SLOT__ */
+
+void _init_vita_reent(void)
+{
+}
+
+void _free_vita_reent(void)
+{
+}
+
+#endif
