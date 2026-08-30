@@ -154,6 +154,13 @@
 
 def_fn memcpy p2align=6
 
+#ifdef VITA_LARGE_COPY
+	/* Past this size the loops below lose badly to a plain ldm/stm with
+	   a real pld; see memcpy-vita-large.S for the numbers.  */
+	cmp	count, #VITA_LARGE_COPY
+	bhs	__vita_memcpy_large
+#endif
+
 	mov	dst, dstin	/* Preserve dstin, we need to return it.  */
 	cmp	count, #64
 	bge	.Lcpy_not_short

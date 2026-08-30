@@ -36,6 +36,10 @@
 
 #elif (__ARM_ARCH >= 7 && __ARM_ARCH_PROFILE == 'A' \
        && defined (__ARM_FEATURE_UNALIGNED))
+#ifdef __vita__
+/* Hand copies larger than this to memcpy-vita-large.S.  */
+#define VITA_LARGE_COPY 16384
+#endif
 #include "memcpy-armv7a.S"
 
 #elif __ARM_ARCH_ISA_THUMB == 2 && !__ARM_ARCH_ISA_ARM

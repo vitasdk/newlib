@@ -5,8 +5,11 @@ libc_a_SOURCES += \
 	%D%/aeabi_memset.c %D%/aeabi_memset-soft.S %D%/aeabi_memclr.c \
 	%D%/memchr-stub.c \
 	%D%/memchr.S \
+	%D%/memcmp.c \
+	%D%/memcmp.S \
 	%D%/memcpy-stub.c \
 	%D%/memcpy.S \
+	%D%/memcpy-vita-large.S \
 	%D%/memmove.c \
 	%D%/memmove.S \
 	%D%/memset.c \
