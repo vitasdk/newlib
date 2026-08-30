@@ -56,9 +56,17 @@ _reclaim_reent (struct _reent *ptr)
 	    }    
 
 	  _free_r (ptr, _REENT_MP_FREELIST(ptr));
+#ifdef _REENT_THREAD_LOCAL
+	  _REENT_MP_FREELIST(ptr) = NULL;
+#endif
 	}
       if (_REENT_MP_RESULT(ptr))
-	_free_r (ptr, _REENT_MP_RESULT(ptr));
+	{
+	  _free_r (ptr, _REENT_MP_RESULT(ptr));
+#ifdef _REENT_THREAD_LOCAL
+	  _REENT_MP_RESULT(ptr) = NULL;
+#endif
+	}
       if (_REENT_MP_P5S(ptr))
         {
           struct _Bigint *thisone, *nextone;
@@ -69,6 +77,9 @@ _reclaim_reent (struct _reent *ptr)
              nextone = nextone->_next;
              _free_r (ptr, thisone);
            }
+#ifdef _REENT_THREAD_LOCAL
+          _REENT_MP_P5S(ptr) = NULL;
+#endif
         }
 #ifdef _REENT_SMALL
       }
@@ -92,7 +103,12 @@ _reclaim_reent (struct _reent *ptr)
 #endif
 
       if (_REENT_CVTBUF(ptr))
-	_free_r (ptr, _REENT_CVTBUF(ptr));
+	{
+	  _free_r (ptr, _REENT_CVTBUF(ptr));
+#ifdef _REENT_THREAD_LOCAL
+	  _REENT_CVTBUF(ptr) = NULL;
+#endif
+	}
     /* We should free _sig_func to avoid a memory leak, but how to
 	   do it safely considering that a signal may be delivered immediately
 	   after the free?
@@ -104,6 +120,9 @@ _reclaim_reent (struct _reent *ptr)
 	  /* cleanup won't reclaim memory 'coz usually it's run
 	     before the program exits, and who wants to wait for that? */
 	  _REENT_CLEANUP(ptr) (ptr);
+#ifdef _REENT_THREAD_LOCAL
+	  _REENT_CLEANUP(ptr) = NULL;
+#endif
 	}
 
       /* Malloc memory not reclaimed; no good way to return memory anyway. */
