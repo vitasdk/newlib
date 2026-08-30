@@ -7,6 +7,8 @@ libc_a_SOURCES += \
 	%D%/memchr.S \
 	%D%/memcpy-stub.c \
 	%D%/memcpy.S \
+	%D%/memmove.c \
+	%D%/memmove.S \
 	%D%/memset.c \
 	%D%/memset.S \
 	%D%/strlen-stub.c \
