@@ -65,10 +65,10 @@ _remove_r (struct _reent *ptr,
        const char *filename)
 {
   if (_unlink_r (ptr, filename) != -1) return 0;
-  if (ptr->_errno != EISDIR) return -1;
+  if (_REENT_ERRNO (ptr) != EISDIR) return -1;
   if (rmdir(filename) == -1)
   {
-      ptr->_errno = errno;
+      _REENT_ERRNO (ptr) = errno;
       return -1;
   }
   return 0;

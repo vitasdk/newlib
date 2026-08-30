@@ -19,7 +19,7 @@ void * _sbrk_r(struct _reent *reent, ptrdiff_t incr)
 	{
 		sceKernelUnlockLwMutex(&_newlib_sbrk_mutex, 1);
 fail:
-		reent->_errno = ENOMEM;
+		_REENT_ERRNO(reent) = ENOMEM;
 		return (void*) -1;
 	}
 

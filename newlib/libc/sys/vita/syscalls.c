@@ -33,7 +33,7 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
 	if (!fdmap) {
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return -1;
 	}
 
@@ -67,11 +67,11 @@ _write_r(struct _reent * reent, int fd, const void *buf, size_t nbytes)
 
 	if (ret < 0) {
 		if (ret != -1)
-			reent->_errno = __vita_sce_errno_to_errno(ret, type);
+			_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, type);
 		return -1;
 	}
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return ret;
 }
 
@@ -90,11 +90,11 @@ _close_r(struct _reent *reent, int fd)
 
 	if (res < 0)
 	{
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return -1;
 	}
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -102,21 +102,21 @@ int
 _execve_r(struct _reent *reent, const char *name, char * const *argv,
 		char * const *env)
 {
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
 int
 _fork_r(struct _reent *reent)
 {
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
 int
 _getpid_r(struct _reent *reent)
 {
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return sceKernelGetProcessId();
 }
 
@@ -125,10 +125,10 @@ _gettimeofday_r(struct _reent *reent, struct timeval *ptimeval, void *ptimezone)
 {
 	int ret = sceKernelLibcGettimeofday((SceKernelTimeval*)ptimeval, (SceKernelTimezone *)ptimezone);
 	if (ret < 0) {
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -138,7 +138,7 @@ _isatty_r(struct _reent *reent, int fd)
 	DescriptorTranslation *fdmap = __vita_fd_grab(fd);
 
 	if (!fdmap) {
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return 0;
 	}
 
@@ -153,7 +153,7 @@ _kill_r(struct _reent *reent, int pid, int sig)
 {
 	if (pid != sceKernelGetProcessId())
 	{
-		reent->_errno = EPERM;
+		_REENT_ERRNO(reent) = EPERM;
 		return -1;
 	}
 	switch (sig)
@@ -174,7 +174,7 @@ _kill_r(struct _reent *reent, int pid, int sig)
 int
 _link_r(struct _reent *reent, const char *existing, const char *new)
 {
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
@@ -201,7 +201,7 @@ _lseek_r(struct _reent *reent, int fd, _off_t ptr, int dir)
 
 	if (ret < 0)
 	{
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -215,17 +215,17 @@ _mkdir_r (struct _reent * reent, const char * path, int mode)
 	char* full_path = __realpath(path);
 	if(!full_path)
 	{
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 	if ((ret = sceIoMkdir(full_path, 0777)) < 0)
 	{
 		free(full_path);
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 	free(full_path);
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -263,7 +263,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	char* full_path = __realpath(file);
 	if (!full_path)
 	{
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 
@@ -276,7 +276,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	if (flags & O_DIRECTORY && !is_dir)
 	{
 		free(full_path);
-		reent->_errno = ENOTDIR;
+		_REENT_ERRNO(reent) = ENOTDIR;
 		return -1;
 	}
 
@@ -284,7 +284,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	if (ret < 0)
 	{
 		free(full_path);
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
@@ -295,7 +295,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 	{
 		free(full_path);
 		is_dir ? sceIoDclose(ret) : sceIoClose(ret);
-		reent->_errno = EMFILE;
+		_REENT_ERRNO(reent) = EMFILE;
 		return -1;
 	}
 
@@ -306,7 +306,7 @@ _open_r(struct _reent *reent, const char *file, int flags, int mode)
 
 	free(full_path);
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return fd;
 }
 
@@ -319,7 +319,7 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 
 	if (!fdmap)
 	{
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return -1;
 	}
 
@@ -352,18 +352,18 @@ _read_r(struct _reent *reent, int fd, void *ptr, size_t len)
 	if (ret < 0)
 	{
 		if (ret != -1)
-			reent->_errno = __vita_sce_errno_to_errno(ret, type);
+			_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, type);
 		return -1;
 	}
 
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return ret;
 }
 
 int
 _readlink_r(struct _reent *reent, const char *path, char *buf, size_t bufsize)
 {
-	reent->_errno = ENOSYS;
+	_REENT_ERRNO(reent) = ENOSYS;
 	return -1;
 }
 
@@ -374,18 +374,18 @@ _unlink_r(struct _reent *reent, const char * path)
 	char* full_path = __realpath(path);
 	if (!full_path)
 	{
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 	ret = sceIoRemove(full_path);
 	if (ret < 0)
 	{
 		free(full_path);
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 	free(full_path);
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -396,14 +396,14 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 	char* full_path_old = __realpath(old);
 	if (!full_path_old)
 	{
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 	char* full_path_new = __realpath(new);
 	if (!full_path_new)
 	{
 		free(full_path_old);
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 
@@ -412,7 +412,7 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 	{
 		free(full_path_old);
 		free(full_path_new);
-		reent->_errno = 0;
+		_REENT_ERRNO(reent) = 0;
 		return 0;
 	}
 
@@ -431,12 +431,12 @@ _rename_r(struct _reent *reent, const char *old, const char *new)
 	{
 		free(full_path_old);
 		free(full_path_new);
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 	free(full_path_old);
 	free(full_path_new);
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -475,7 +475,7 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 
 	if (!fdmap)
 	{
-		reent->_errno = EBADF;
+		_REENT_ERRNO(reent) = EBADF;
 		return -1;
 	}
 
@@ -496,12 +496,12 @@ _fstat_r(struct _reent *reent, int fd, struct stat *st)
 
 	if (ret < 0)
 	{
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 
 	scestat_to_stat(&stat, st);
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
 
@@ -513,17 +513,17 @@ _stat_r(struct _reent *reent, const char *path, struct stat *st)
 	char* full_path = __realpath(path);
 	if (!full_path)
 	{
-		reent->_errno = errno; // set by realpath
+		_REENT_ERRNO(reent) = errno; // set by realpath
 		return -1;
 	}
 	if ((ret = sceIoGetstat(full_path, &stat)) < 0)
 	{
 		free(full_path);
-		reent->_errno = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
+		_REENT_ERRNO(reent) = __vita_sce_errno_to_errno(ret, ERROR_GENERIC);
 		return -1;
 	}
 	free(full_path);
 	scestat_to_stat(&stat, st);
-	reent->_errno = 0;
+	_REENT_ERRNO(reent) = 0;
 	return 0;
 }
