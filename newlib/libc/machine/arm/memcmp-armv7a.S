@@ -89,25 +89,22 @@ def_fn memcmp p2align=6
 	cmp	r2, #4
 	blo	.Lcmp_bytes
 
+	/* No frame here: the small sizes go through this path and a
+	   push/pop pair cost them a third of their throughput.  */
 .Lcmp_words:
-	push	{r4, lr}
 1:
 	cmp	r2, #4
-	blo	2f
+	blo	.Lcmp_bytes
 	ldr	r3, [r0], #4
-	ldr	r4, [r1], #4
-	cmp	r3, r4
+	ldr	ip, [r1], #4
+	cmp	r3, ip
 	bne	3f
 	sub	r2, r2, #4
 	b	1b
-2:
-	pop	{r4, lr}
-	b	.Lcmp_bytes
 3:
 	sub	r0, r0, #4
 	sub	r1, r1, #4
 	mov	r2, #4
-	pop	{r4, lr}
 
 .Lcmp_bytes:
 	cmp	r2, #0
