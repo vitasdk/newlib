@@ -1,5 +1,5 @@
 /* The structure of the following #if #else #endif conditional chain
-   must match the chain in memmove.c.  */
+   must match the chain in memmove-stub.c.  */
 
 #include "arm-acle-compat.h"
 
@@ -8,6 +8,6 @@
 #include "memmove-armv7a.S"
 
 #else
-  /* Defined in memmove.c.  */
+  /* Defined in memmove-stub.c.  */
 
 #endif

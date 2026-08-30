@@ -1,5 +1,5 @@
 /* The structure of the following #if #else #endif conditional chain
-   must match the chain in memcmp.c.  */
+   must match the chain in memcmp-stub.c.  */
 
 #include "arm-acle-compat.h"
 
@@ -8,6 +8,6 @@
 #include "memcmp-armv7a.S"
 
 #else
-  /* Defined in memcmp.c.  */
+  /* Defined in memcmp-stub.c.  */
 
 #endif

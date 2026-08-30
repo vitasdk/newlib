@@ -1,5 +1,5 @@
 /* The structure of the following #if #else #endif conditional chain
-   must match the chain in memset.c.  */
+   must match the chain in memset-stub.c.  */
 
 #include "arm-acle-compat.h"
 
@@ -8,6 +8,6 @@
 #include "memset-armv7a.S"
 
 #else
-  /* Defined in memset.c.  */
+  /* Defined in memset-stub.c.  */
 
 #endif
