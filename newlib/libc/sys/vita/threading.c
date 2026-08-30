@@ -9,11 +9,18 @@
 #include <sys/vita_thread.h>
 #include <psp2/kernel/threadmgr.h>
 
+// the stdio cleanup hook closes every stream in the process: that is exit()'s job
+static void _reclaim_thread_reent(void)
+{
+	_REENT_CLEANUP(_REENT) = NULL;
+	_reclaim_reent(NULL);
+}
+
 int _exit_thread_common(int exit_status, int (*exit_func)(int))
 {
 	// The thread's own TLS-resident buffers (mprec bigints, _cvtbuf, locale)
 	// die with its TLS block, so reclaim them while it is still alive.
-	_reclaim_reent(NULL);
+	_reclaim_thread_reent();
 
 	// exit_func normally never returns: hold no lock across it.
 	return exit_func(exit_status);
@@ -37,7 +44,7 @@ static SceUID _newlib_reent_exit_handler = -1;
 static int _reclaim_reent_on_exit(SceInt32 type, SceUID thid, SceInt32 arg, void *common)
 {
 	// runs in the exiting thread's context, like SceLibc's own handler
-	_reclaim_reent(NULL);
+	_reclaim_thread_reent();
 	return 0;
 }
 
