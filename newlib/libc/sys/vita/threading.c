@@ -4,14 +4,54 @@
 // __VITA_NEWLIB_OWNS_THREAD_SLOT__ says newlib is the one that owns it.
 
 #include <reent.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <sys/vita_thread.h>
 #include <psp2/kernel/threadmgr.h>
 
+struct _thread_dtor {
+	void (*fn)(void *);
+	void *obj;
+	struct _thread_dtor *next;
+};
+
+static _Thread_local struct _thread_dtor *_thread_dtors;
+
+static void _run_thread_dtors(void)
+{
+	while (_thread_dtors) {
+		struct _thread_dtor *d = _thread_dtors;
+		_thread_dtors = d->next;
+		d->fn(d->obj);
+		free(d);
+	}
+}
+
+// C++ ABI: thread_local destructors, run when this thread exits or at exit()
+int __cxa_thread_atexit(void (*fn)(void *), void *obj, void *dso)
+{
+	static int at_exit_registered;
+	struct _thread_dtor *d = malloc(sizeof *d);
+
+	(void)dso;
+	if (!d)
+		return -1;
+	d->fn = fn;
+	d->obj = obj;
+	d->next = _thread_dtors;
+	_thread_dtors = d;
+	if (!at_exit_registered) {
+		at_exit_registered = 1;
+		atexit(_run_thread_dtors);
+	}
+	return 0;
+}
+
 // the stdio cleanup hook closes every stream in the process: that is exit()'s job
 static void _reclaim_thread_reent(void)
 {
+	_run_thread_dtors();
 	_REENT_CLEANUP(_REENT) = NULL;
 	_reclaim_reent(NULL);
 }
