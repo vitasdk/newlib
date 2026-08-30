@@ -451,13 +451,35 @@ _times_r(struct _reent *reent, struct tms *ptms)
 	return result;
 }
 
+/* What stdio buffers a regular file with.  __swhatbuf_r asks fstat for it
+   and falls back to BUFSIZ, 1024, when nobody answers -- which on Vita was
+   always, since nothing here ever filled st_blksize in.  Reading a file in
+   4 KiB calls measured 2.64 MB/s that way, against 6.99 with no buffer at
+   all: the caller asks for 4 KiB, the buffer holds 1, so every read turns
+   into four device reads plus a copy through the buffer.
+
+   Measured on hardware, MB/s, against a 11.78 ceiling from sceIoRead:
+   1 KiB 2.64, 4 KiB 6.97, 16 KiB 9.93, 32 KiB 10.71, 64 KiB 11.12,
+   256 KiB 11.49.  SceLibc uses 64 KiB and that is where the curve flattens.
+
+   The device cannot be asked: sceIoDevctl 0x3001, which is what statvfs
+   uses for cluster_size, returns 0x80010030 from a normal application for
+   every spelling of the drive.
+
+   Only regular files get it.  A tty answering 64 KiB would put that much
+   on every process that prints, and stdout wants none of it.  */
+#define VITA_ST_BLKSIZE (64 * 1024)
+
 static void
 scestat_to_stat(struct SceIoStat *in, struct stat *out)
 {
 	memset(out, 0, sizeof(*out));
 	out->st_size = in->st_size;
 	if (SCE_S_ISREG(in->st_mode))
+	{
 		out->st_mode |= _IFREG;
+		out->st_blksize = VITA_ST_BLKSIZE;
+	}
 	if (SCE_S_ISDIR(in->st_mode))
 		out->st_mode |= _IFDIR;
 	sceRtcGetTime_t(&in->st_atime, &out->st_atime);
