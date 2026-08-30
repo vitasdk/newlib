@@ -29,6 +29,26 @@ int vita_exit_delete_thread(int exit_status)
 	return _exit_thread_common(exit_status, sceKernelExitDeleteThread);
 }
 
+// SCE_KERNEL_THREAD_ID_PROCESS_ALL_ID, only in the kernel headers
+#define _VITA_THREAD_ID_PROCESS_ALL 0x10027
+
+static SceUID _newlib_reent_exit_handler = -1;
+
+static int _reclaim_reent_on_exit(SceInt32 type, SceUID thid, SceInt32 arg, void *common)
+{
+	// runs in the exiting thread's context, like SceLibc's own handler
+	_reclaim_reent(NULL);
+	return 0;
+}
+
+static void _init_vita_reent_reclaim(void)
+{
+	_newlib_reent_exit_handler = sceKernelRegisterThreadEventHandler(
+		"VitaLibcReentReclaim", _VITA_THREAD_ID_PROCESS_ALL,
+		SCE_KERNEL_THREAD_EVENT_TYPE_EXIT, _reclaim_reent_on_exit, NULL);
+	// on failure only the old leak comes back
+}
+
 #if __VITA_NEWLIB_OWNS_THREAD_SLOT__
 
 #include <vitasdk/utils.h>
@@ -176,10 +196,12 @@ void _init_vita_reent(void)
 	_newlib_reent_mutex = sceKernelCreateMutex("thread ext data access mutex", 0, 0, 0);
 	thread_ext_list[0].thread_id = sceKernelGetThreadId();
 	*(struct thread_ext_data **)(TLS_EXT_PTR) = &thread_ext_list[0];
+	_init_vita_reent_reclaim();
 }
 
 void _free_vita_reent(void)
 {
+	// not unregistered: _exit() calls sceKernelExitProcess() right after
 	sceKernelDeleteMutex(_newlib_reent_mutex);
 }
 
@@ -187,6 +209,7 @@ void _free_vita_reent(void)
 
 void _init_vita_reent(void)
 {
+	_init_vita_reent_reclaim();
 }
 
 void _free_vita_reent(void)
