@@ -30,8 +30,7 @@
 
 /* NOTE: This ifdef MUST match the one in aeabi_memcpy.c.  */
 #if defined (__ARM_ARCH_7A__) && defined (__ARM_FEATURE_UNALIGNED) && \
-	(defined (__ARM_NEON__) || !defined (__SOFTFP__)) && \
-	!defined (__vita__)
+	(defined (__ARM_NEON__) || !defined (__SOFTFP__))
 
 	.syntax unified
 	.global __aeabi_memcpy
