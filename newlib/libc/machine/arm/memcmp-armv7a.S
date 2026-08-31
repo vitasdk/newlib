@@ -37,11 +37,7 @@
    together, and only when that is non-zero does it go back over those
    16 bytes a byte at a time to find which one differs and in which
    direction.  ldm needs word alignment, so a misaligned pair drops to a
-   plain ldr loop, which ARMv7-A serves unaligned.
-
-   The bulk loop only earns its frame past 64 bytes.  Measured at 64:
-   entering it at 16 gives 206 MB/s, at 64 gives 244.  Larger sizes do not
-   care where the threshold sits.  */
+   plain ldr loop, which ARMv7-A serves unaligned.  */
 
 	.syntax unified
 	.arm
@@ -57,7 +53,7 @@
 	.arch	armv7-a
 
 def_fn memcmp p2align=6
-	cmp	r2, #64
+	cmp	r2, #16
 	blo	.Lcmp_short
 	orr	r3, r0, r1
 	tst	r3, #3
