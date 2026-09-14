@@ -23,22 +23,21 @@ DEALINGS IN THE SOFTWARE.
 */
 
 #include <errno.h>
+#include <reent.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <psp2/kernel/rng.h>
 
 #define MAX_ENTROPY 256
 
-int getentropy(void *ptr, size_t n)
+int _getentropy_r(struct _reent *reent, void *ptr, size_t n)
 {
 	size_t target = n;
-	void* p = ptr;
 	int ret;
 
 	if (n > MAX_ENTROPY)
 	{
-		errno = EIO;
+		reent->_errno = EIO;
 		return -1;
 	}
 
@@ -49,7 +48,7 @@ int getentropy(void *ptr, size_t n)
 		target -= 64;
 		if (ret < 0 )
 		{
-			errno = EIO;
+			reent->_errno = EIO;
 			return -1;
 		}
 	}
@@ -57,7 +56,7 @@ int getentropy(void *ptr, size_t n)
 	ret = sceKernelGetRandomNumber(ptr, target);
 	if (ret < 0 )
 	{
-		errno = EIO;
+		reent->_errno = EIO;
 		return -1;
 	}
 	
